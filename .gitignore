@@ -1,0 +1,29 @@
+# Environment variables — DO NOT commit
+.env
+.env.local
+.env*.local
+
+# Dependencies
+node_modules/
+
+# Logs
+server-error.log
+server-output.log
+*.log
+
+# Database (sensitive data)
+database/*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dashboard build output
+dashboard-web/dist/
+dashboard-web/node_modules/
+
+owner-mobile-app/
+.env
+node_modules/
+server-error.log
+server-output.log
