@@ -1136,24 +1136,25 @@ export const verifyWebhook = (req, res) => {
 // =============================
 
 export const receiveWebhook = async (req, res) => {
-    // Always respond 200 immediately so Meta doesn't retry
-    res.sendStatus(200);
-
     try {
         const msg = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-        if (!msg) return;
+        if (!msg) {
+            return res.sendStatus(200);
+        }
 
         console.log(`[USER -> BOT] Message ID: ${msg.id}, Text: "${msg.text?.body}"`);
 
         if (processed.has(msg.id)) {
             console.log(`[USER -> BOT] Duplicate message ID ignored: ${msg.id}`);
-            return;
+            return res.sendStatus(200);
         }
         processed.add(msg.id);
 
         await handleMessage(msg);
+        res.sendStatus(200);
     } catch (err) {
         console.error('❌ Webhook Processing Error:', err.message);
+        res.sendStatus(200); // Still respond 200 to prevent Meta from retrying
     }
 };
 
