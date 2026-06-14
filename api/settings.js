@@ -10,7 +10,7 @@ export const getWooSettings = async (req, res) => {
 
         if (error) {
             // Handle table not existing gracefully
-            if (error.code === '42P01') {
+            if (error.code === '42P01' || error.code === 'PGRST205') {
                 return res.json({ siteUrl: '', consumerKey: '', consumerSecret: '' });
             }
             throw error;
@@ -50,7 +50,7 @@ export const saveWooSettings = async (req, res) => {
             .upsert(payload, { onConflict: 'key' });
 
         if (error) {
-            if (error.code === '42P01') {
+            if (error.code === '42P01' || error.code === 'PGRST205') {
                 return res.status(400).json({
                     success: false,
                     message: 'Settings table does not exist in Supabase. Please run the SQL setup script in your Supabase SQL Editor first!'
