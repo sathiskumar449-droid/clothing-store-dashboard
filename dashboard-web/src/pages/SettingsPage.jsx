@@ -230,7 +230,7 @@ export default function SettingsPage() {
         {/* Backend info */}
         <Section title="Backend Connection" icon={Globe}>
           <div className="bg-gray-50 rounded-xl p-4 font-mono text-xs text-gray-600 space-y-1">
-            <p><span className="text-gray-400">API URL:</span> {import.meta.env.VITE_API_URL || 'http://localhost:3000'}</p>
+            <p><span className="text-gray-400">API URL:</span> {import.meta.env.VITE_API_URL || 'https://clothing-store-api-two.vercel.app'}</p>
             <p><span className="text-gray-400">Chats:</span> GET /chats</p>
             <p><span className="text-gray-400">Orders:</span> GET /orders</p>
             <p><span className="text-gray-400">WhatsApp:</span> POST /webhook</p>
