@@ -114,7 +114,7 @@ export function logChatMessage(customerPhone, sender, text, type = 'text', image
     chats[customerPhone].lastMessage = type === 'image' ? `📷 Image${text ? ': ' + text : ''}` : text;
     chats[customerPhone].lastUpdated = new Date().toISOString();
 
-    saveChats(chats);
+    //saveChats(chats);
 }
 
 // =============================
