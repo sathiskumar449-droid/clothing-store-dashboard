@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Package, RefreshCw, AlertCircle, ExternalLink, CheckCircle } from 'lucide-react';
 import { getWooProducts, syncWooProductsToDb } from '../api/productsApi';
 import Loader from '../components/ui/Loader';
@@ -28,6 +28,21 @@ export default function ProductsPage() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('woo_settings');
+      if (raw) {
+        const { siteUrl, consumerKey, consumerSecret } = JSON.parse(raw);
+        if (siteUrl && consumerKey && consumerSecret) {
+          fetchProducts();
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [fetchProducts]);
+
 
   const handleSync = async () => {
     setSyncing(true);
