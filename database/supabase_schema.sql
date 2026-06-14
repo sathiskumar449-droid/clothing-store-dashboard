@@ -86,6 +86,11 @@ ALTER TABLE orders   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chats    ENABLE ROW LEVEL SECURITY;
 
 -- Allow full access with the service_role key (used by backend)
+-- DROP first so this script is safe to re-run multiple times
+DROP POLICY IF EXISTS "service_role_all_products" ON products;
+DROP POLICY IF EXISTS "service_role_all_orders"   ON orders;
+DROP POLICY IF EXISTS "service_role_all_chats"    ON chats;
+
 CREATE POLICY "service_role_all_products" ON products FOR ALL USING (true);
 CREATE POLICY "service_role_all_orders"   ON orders   FOR ALL USING (true);
 CREATE POLICY "service_role_all_chats"    ON chats    FOR ALL USING (true);

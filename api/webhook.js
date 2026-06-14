@@ -5,16 +5,16 @@ import { supabase } from '../lib/supabase.js';
 
 dotenv.config();
 
-const VERIFY_TOKEN    = process.env.VERIFY_TOKEN;
-const WHATSAPP_TOKEN  = process.env.WHATSAPP_TOKEN;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_ID || process.env.PHONE_NUMBER_ID;
 
 // ✅ Startup diagnostic — visible in Vercel logs immediately on cold start
 console.log('[STARTUP] ENV CHECK:');
-console.log('  WHATSAPP_TOKEN  :', WHATSAPP_TOKEN  ? `SET (${WHATSAPP_TOKEN.slice(0,10)}...)` : '❌ MISSING');
-console.log('  PHONE_NUMBER_ID :', PHONE_NUMBER_ID ? `SET (${PHONE_NUMBER_ID})`               : '❌ MISSING');
-console.log('  VERIFY_TOKEN    :', VERIFY_TOKEN    ? `SET (${VERIFY_TOKEN})`                   : '❌ MISSING');
-console.log('  SUPABASE_URL    :', process.env.SUPABASE_URL ? 'SET' : '❌ MISSING');
+console.log('  WHATSAPP_TOKEN exists:', !!WHATSAPP_TOKEN);
+console.log('  PHONE_NUMBER_ID exists:', !!PHONE_NUMBER_ID);
+console.log('  VERIFY_TOKEN exists:', !!VERIFY_TOKEN);
+console.log('  SUPABASE_URL exists:', !!process.env.SUPABASE_URL);
 
 const processed = new Set();
 export const userSessions = {}; // In-memory per-user conversation state
@@ -34,15 +34,15 @@ export async function getProducts() {
 
         // Return in the same shape as the original JSON array
         return (data || []).map(row => ({
-            id:       row.id,
-            name:     row.name,
-            code:     row.code,
+            id: row.id,
+            name: row.name,
+            code: row.code,
             category: row.category,
-            pattern:  row.pattern,
-            color:    row.color,
-            price:    row.price,
-            stock:    row.stock,
-            sizes:    row.sizes    || [],
+            pattern: row.pattern,
+            color: row.color,
+            price: row.price,
+            stock: row.stock,
+            sizes: row.sizes || [],
             imageUri: row.image_uri
         }));
     } catch (error) {
@@ -106,20 +106,20 @@ export async function saveOrders(orders) {
 // ── helper for getOrders ──────────────────────────────────────
 function dbRowToOrder(row) {
     const base = {
-        id:              row.id,
-        status:          row.status,
-        customerPhone:   row.customer_phone,
-        customerName:    row.customer_name,
+        id: row.id,
+        status: row.status,
+        customerPhone: row.customer_phone,
+        customerName: row.customer_name,
         customerAddress: row.customer_address,
-        items:           row.items || [],
-        totalPrice:      row.total_price,
-        date:            row.date
+        items: row.items || [],
+        totalPrice: row.total_price,
+        date: row.date
     };
-    if (row.order_id)         base.orderId         = row.order_id;
-    if (row.shirt_name)       base.shirtName       = row.shirt_name;
-    if (row.pant_name)        base.pantName        = row.pant_name;
+    if (row.order_id) base.orderId = row.order_id;
+    if (row.shirt_name) base.shirtName = row.shirt_name;
+    if (row.pant_name) base.pantName = row.pant_name;
     if (row.customer_details) base.customerDetails = row.customer_details;
-    if (row.payment_method)   base.paymentMethod   = row.payment_method;
+    if (row.payment_method) base.paymentMethod = row.payment_method;
     return base;
 }
 
@@ -140,11 +140,11 @@ export async function getChats() {
         for (const row of (data || [])) {
             chatsObj[row.customer_phone] = {
                 customerPhone: row.customer_phone,
-                customerName:  row.customer_name,
-                lastMessage:   row.last_message,
-                lastUpdated:   row.last_updated,
-                botPaused:     row.bot_paused,
-                messages:      row.messages || []
+                customerName: row.customer_name,
+                lastMessage: row.last_message,
+                lastUpdated: row.last_updated,
+                botPaused: row.bot_paused,
+                messages: row.messages || []
             };
         }
         return chatsObj;
@@ -162,11 +162,11 @@ export async function saveChats(chats) {
                 .from('chats')
                 .upsert({
                     customer_phone: phone,
-                    customer_name:  chat.customerName  || 'Customer',
-                    last_message:   chat.lastMessage   || '',
-                    last_updated:   chat.lastUpdated   || new Date().toISOString(),
-                    bot_paused:     chat.botPaused     || false,
-                    messages:       chat.messages      || []
+                    customer_name: chat.customerName || 'Customer',
+                    last_message: chat.lastMessage || '',
+                    last_updated: chat.lastUpdated || new Date().toISOString(),
+                    bot_paused: chat.botPaused || false,
+                    messages: chat.messages || []
                 }, { onConflict: 'customer_phone' });
 
             if (error) {
@@ -191,11 +191,11 @@ export async function logChatMessage(customerPhone, sender, text, type = 'text',
 
         const existing = rows || {
             customer_phone: customerPhone,
-            customer_name:  'Customer',
-            last_message:   '',
-            last_updated:   new Date().toISOString(),
-            bot_paused:     false,
-            messages:       []
+            customer_name: 'Customer',
+            last_message: '',
+            last_updated: new Date().toISOString(),
+            bot_paused: false,
+            messages: []
         };
 
         // Try to resolve customer name from active session
@@ -221,10 +221,10 @@ export async function logChatMessage(customerPhone, sender, text, type = 'text',
             .from('chats')
             .upsert({
                 customer_phone: customerPhone,
-                customer_name:  customerName,
-                last_message:   lastMessage,
-                last_updated:   new Date().toISOString(),
-                bot_paused:     existing.bot_paused,
+                customer_name: customerName,
+                last_message: lastMessage,
+                last_updated: new Date().toISOString(),
+                bot_paused: existing.bot_paused,
                 messages
             }, { onConflict: 'customer_phone' });
 
@@ -242,7 +242,7 @@ async function sendRequest(payload) {
     // ── Guard: env vars missing ──────────────────────────────────────
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
         console.error('❌ [sendRequest] BLOCKED — env vars missing!');
-        console.error('   WHATSAPP_TOKEN  :', WHATSAPP_TOKEN  ? 'SET' : '❌ MISSING');
+        console.error('   WHATSAPP_TOKEN  :', WHATSAPP_TOKEN ? 'SET' : '❌ MISSING');
         console.error('   PHONE_NUMBER_ID :', PHONE_NUMBER_ID ? 'SET' : '❌ MISSING');
         return;
     }
@@ -273,7 +273,41 @@ async function sendRequest(payload) {
 }
 
 export async function sendText(to, text) {
-    await sendRequest({ to, type: 'text', text: { body: text } });
+    const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+    const payload = {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: text }
+    };
+
+    try {
+        console.log(`[sendText] Request URL: ${url}`);
+        console.log(`[sendText] Phone number: ${to}`);
+        console.log(`[sendText] Payload being sent:`, JSON.stringify(payload, null, 2));
+
+        if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+            throw new Error(`Environment variables missing! WHATSAPP_TOKEN: ${WHATSAPP_TOKEN ? 'exists' : 'missing'}, PHONE_NUMBER_ID: ${PHONE_NUMBER_ID ? 'exists' : 'missing'}`);
+        }
+
+        const response = await axios.post(url, payload, {
+            headers: {
+                Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log(`[sendText] Meta API response:`, JSON.stringify(response.data, null, 2));
+        return response.data;
+    } catch (error) {
+        if (error.response) {
+            console.error(`[sendText] Meta API errors:`, JSON.stringify(error.response.data, null, 2));
+        } else {
+            console.error(`[sendText] Error message:`, error.message);
+        }
+        console.error(`[sendText] Full error stack:`, error.stack || error);
+        throw error;
+    }
 }
 
 export async function sendImage(to, imageUrl, caption = '') {
@@ -342,7 +376,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     // STATE CHECK: AWAITING_HELP_CONFIRM
     if (session.state === "AWAITING_HELP_CONFIRM") {
         const yesKeywords = ['yes', 'aama', 'help_yes', 'y', 'aam', 'ok', 'okay', 'sari', 'sari bro', 'saree', 'sari da', 'seri', 'seri bro', 'seri da', 'aama bro'];
-        const noKeywords  = ['no', 'help_no', 'n', 'illai', 'illa', 'vendam', 'ethum venam', 'no bro', 'nothing', 'no thanks', 'no thank you'];
+        const noKeywords = ['no', 'help_no', 'n', 'illai', 'illa', 'vendam', 'ethum venam', 'no bro', 'nothing', 'no thanks', 'no thank you'];
 
         if (yesKeywords.includes(textLower) || textLower.includes('yes') || textLower.includes('aama') || textLower.includes('sari') || textLower.includes('seri')) {
             session.state = "AWAITING_CATEGORY";
@@ -351,10 +385,10 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 sendImages: []
             };
         } else if (noKeywords.includes(textLower) || textLower.includes('no') || textLower.includes('illa') || textLower.includes('vendam')) {
-            session.state     = "AWAITING_CATEGORY";
-            session.cart      = [];
+            session.state = "AWAITING_CATEGORY";
+            session.cart = [];
             session.pendingProduct = null;
-            session.selectedSize   = null;
+            session.selectedSize = null;
             return {
                 replyText: "🙏 Thanks bro! Super Collections support pannathuku nandri ❤️ Anytime message pannunga 😊",
                 sendImages: []
@@ -389,7 +423,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 body: "Vera edhavadhu help venuma bro? 😊",
                 buttons: [
                     { id: 'help_yes', title: '✅ YES' },
-                    { id: 'help_no',  title: '❌ NO'  }
+                    { id: 'help_no', title: '❌ NO' }
                 ]
             },
             sendImages: []
@@ -488,10 +522,10 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     // Not Interested
     const notInterestedKeywords = ["no bro", "ethum venam", "vendam", "later", "paravala"];
     if (notInterestedKeywords.some(kw => textLower.includes(kw))) {
-        session.cart          = [];
-        session.state         = "AWAITING_CATEGORY";
+        session.cart = [];
+        session.state = "AWAITING_CATEGORY";
         session.pendingProduct = null;
-        session.selectedSize  = null;
+        session.selectedSize = null;
         return {
             replyText: "🙏 Thanks bro.\n\nFuture la dress venumna anytime message pannunga.\n\nSuper Collections support pannathuku thanks 😊",
             sendImages: []
@@ -518,7 +552,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         });
         const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
         cartSummary += `\n💰 Total: ₹${cartTotal}\n\n📝 Order confirm panna details fill pannuga:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`;
-        session.state        = "AWAITING_CHECKOUT_DETAILS";
+        session.state = "AWAITING_CHECKOUT_DETAILS";
         session.orderDetails = { customerName: '', customerPhone: '', customerAddress: '', paymentMethod: 'UPI' };
         return { replyText: cartSummary, sendImages: [] };
     }
@@ -527,8 +561,8 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_CHECKOUT_DETAILS") {
         const parts = userMessage.split(',').map(s => s.trim());
         if (parts.length >= 3) {
-            session.orderDetails.customerName    = parts[0];
-            session.orderDetails.customerPhone   = parts[1];
+            session.orderDetails.customerName = parts[0];
+            session.orderDetails.customerPhone = parts[1];
             session.orderDetails.customerAddress = parts.slice(2).join(', ');
             session.isOrderConfirmed = true;
             return {
@@ -561,7 +595,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
     // D. Category Search
     const categoryKeywords = ["shirt", "pant", "jeans", "cargo", "tshirt", "t shirt", "t-shirt", "shorts", "phant"];
-    const isCategorySearch  = categoryKeywords.some(keyword => textLower.includes(keyword));
+    const isCategorySearch = categoryKeywords.some(keyword => textLower.includes(keyword));
 
     if (isCategorySearch) {
         let matched = products.filter(p => Number(p.stock) > 0);
@@ -588,7 +622,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
         if (matched.length > 0) {
             session.searchProducts = matched;
-            session.state          = "AWAITING_MODEL_SELECTION";
+            session.state = "AWAITING_MODEL_SELECTION";
 
             const catEmoji = textLower.includes('shirt') ? '👕' :
                 textLower.includes('pant') || textLower.includes('phant') ? '👖' :
@@ -618,9 +652,9 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     if (numberMatch && session.state === "AWAITING_MODEL_SELECTION" && session.searchProducts?.length > 0) {
         const idx = parseInt(numberMatch[0], 10) - 1;
         if (idx >= 0 && idx < session.searchProducts.length) {
-            const product       = session.searchProducts[idx];
+            const product = session.searchProducts[idx];
             session.pendingProduct = product;
-            session.state          = "AWAITING_SIZE_SELECTION";
+            session.state = "AWAITING_SIZE_SELECTION";
 
             const sizeList = (Array.isArray(product.sizes)
                 ? product.sizes
@@ -640,20 +674,20 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
     // F. Size Selection
     if (session.state === "AWAITING_SIZE_SELECTION" && session.pendingProduct) {
-        const product        = session.pendingProduct;
+        const product = session.pendingProduct;
         const availableSizes = Array.isArray(product.sizes)
             ? product.sizes.map(s => s.toLowerCase().trim())
             : String(product.sizes).toLowerCase().split(',').map(s => s.trim());
 
         if (availableSizes.includes(textLower)) {
             session.selectedSize = userMessage.toUpperCase();
-            session.state        = "AWAITING_CART_CONFIRM";
+            session.state = "AWAITING_CART_CONFIRM";
             return {
                 sendButtons: {
                     body: `✅ ${product.name} - ${session.selectedSize}\n\nCart la add pannalama bro?`,
                     buttons: [
                         { id: 'yes', title: '✅ YES' },
-                        { id: 'no',  title: '❌ NO'  }
+                        { id: 'no', title: '❌ NO' }
                     ]
                 },
                 selectedSize: session.selectedSize
@@ -679,14 +713,14 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 : products.find(p => (p.category?.toLowerCase().includes("shirt") || p.name.toLowerCase().includes("shirt")) && Number(p.stock) > 0);
 
             session.pendingProduct = null;
-            session.selectedSize   = null;
+            session.selectedSize = null;
 
             if (recommended) {
                 session.lastRecommendation = recommended;
-                session.state              = "AWAITING_RECOMMENDATION_CONFIRM";
+                session.state = "AWAITING_RECOMMENDATION_CONFIRM";
 
                 const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
-                const recName   = `${recommended.color ? recommended.color + ' ' : ''}${recommended.name}`;
+                const recName = `${recommended.color ? recommended.color + ' ' : ''}${recommended.name}`;
                 const isShirtAdded = product.name.toLowerCase().includes('shirt') || product.category?.toLowerCase().includes('shirt');
                 const matchMsg = isShirtAdded
                     ? `Bro 🔥 Intha *${addedName}*-ku *${recName}* super best match aagum!\n\n💰 ₹${recommended.price}\n\nRomba nalla combo bro 😎 Look-u super-a varum, sure try pannunga!`
@@ -697,7 +731,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                         body: matchMsg + `\n\nVenuma bro?`,
                         buttons: [
                             { id: 'yes', title: '✅ YES - Add' },
-                            { id: 'no',  title: '❌ NO' }
+                            { id: 'no', title: '❌ NO' }
                         ]
                     },
                     sendImages: [{ url: recommended.imageUri, caption: recName }],
@@ -711,7 +745,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                         body: `✅ Cart la add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
                         buttons: [
                             { id: 'yes', title: '🛍️ YES' },
-                            { id: 'no',  title: '🛒 NO - Checkout' }
+                            { id: 'no', title: '🛒 NO - Checkout' }
                         ]
                     },
                     sendImages: [],
@@ -720,8 +754,8 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             }
         } else if (textLower === "no" || textLower === "n" || textLower === "illai") {
             session.pendingProduct = null;
-            session.selectedSize   = null;
-            session.state          = "AWAITING_CATEGORY";
+            session.selectedSize = null;
+            session.state = "AWAITING_CATEGORY";
             return { replyText: "Ok bro 😊 Vera category search pannunga or BUY nu type pannunga.", sendImages: [] };
         }
     }
@@ -730,16 +764,16 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_RECOMMENDATION_CONFIRM" && session.lastRecommendation) {
         const rec = session.lastRecommendation;
         if (textLower === "yes" || textLower === "y" || textLower === "aama" || textLower === "add") {
-            const originalItem  = session.cart[session.cart.length - 1];
-            session.state       = "AWAITING_COMBO_CART_CONFIRM";
-            const origName    = `${originalItem.color ? originalItem.color + ' ' : ''}${originalItem.name}`;
+            const originalItem = session.cart[session.cart.length - 1];
+            session.state = "AWAITING_COMBO_CART_CONFIRM";
+            const origName = `${originalItem.color ? originalItem.color + ' ' : ''}${originalItem.name}`;
             const recCombName = `${rec.color ? rec.color + ' ' : ''}${rec.name}`;
             return {
                 sendButtons: {
                     body: `🔥 *Combo Set:*\n\n• ${origName} (${originalItem.size})\n• ${recCombName}\n\n💰 Combo Total: ₹${Number(originalItem.price) + Number(rec.price)}\n\nBro, intha combo potu paarunga - super-a irukum! 😎👌\n\nCart la add pannalama?`,
                     buttons: [
                         { id: 'yes', title: '✅ YES - Super!' },
-                        { id: 'no',  title: '❌ NO' }
+                        { id: 'no', title: '❌ NO' }
                     ]
                 },
                 sendImages: [{ url: rec.imageUri, caption: recCombName }],
@@ -747,13 +781,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai") {
             session.lastRecommendation = null;
-            session.state              = "AWAITING_MORE_ITEMS";
+            session.state = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
                     body: `Ok bro! 😊\n\nVera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no',  title: '🛒 NO - Checkout' }
+                        { id: 'no', title: '🛒 NO - Checkout' }
                     ]
                 },
                 sendImages: []
@@ -768,13 +802,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             const recSize = rec.sizes && rec.sizes.length > 0 ? rec.sizes[0] : "32";
             session.cart.push({ id: rec.id, name: rec.name, price: Number(rec.price), color: rec.color, size: recSize });
             session.lastRecommendation = null;
-            session.state              = "AWAITING_MORE_ITEMS";
+            session.state = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
                     body: `Super combo add achu bro! 😎\n\nVera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no',  title: '🛒 NO - Checkout' }
+                        { id: 'no', title: '🛒 NO - Checkout' }
                     ]
                 },
                 sendImages: [],
@@ -782,13 +816,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai") {
             session.lastRecommendation = null;
-            session.state              = "AWAITING_MORE_ITEMS";
+            session.state = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
                     body: `Ok bro! 😊\n\nVera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no',  title: '🛒 NO - Checkout' }
+                        { id: 'no', title: '🛒 NO - Checkout' }
                     ]
                 },
                 sendImages: []
@@ -817,7 +851,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             });
             const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
             cartSummary += `\n💰 Total: ₹${cartTotal}\n\n📝 Order confirm panna oru line la anuppunga bro:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`;
-            session.state        = "AWAITING_CHECKOUT_DETAILS";
+            session.state = "AWAITING_CHECKOUT_DETAILS";
             session.orderDetails = { customerName: '', customerPhone: '', customerAddress: '', paymentMethod: 'UPI' };
             return { replyText: cartSummary, sendImages: [] };
         }
@@ -857,8 +891,16 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 // =============================
 
 async function handleMessage(msg) {
+    const from = msg.from;
+    console.log("TEST REPLY START");
+    try {
+        await sendText(from, "Bot Working Test");
+    } catch (e) {
+        console.error("Test reply in handleMessage failed:", e.message);
+    }
+    console.log("TEST REPLY END");
+
     const text = msg.text?.body?.trim() || msg.interactive?.button_reply?.id?.trim() || '';
-    const from  = msg.from;
 
     console.log(`[handleMessage] from=${from} | text="${text}"`);
 
@@ -881,13 +923,13 @@ async function handleMessage(msg) {
 
     try {
         const products = await getProducts();
-        const orders   = await getOrders();
+        const orders = await getOrders();
         console.log(`[handleMessage] Loaded ${products.length} products, ${orders.length} orders from Supabase.`);
 
         // Admin Commands
         if (text.toUpperCase().startsWith('ADMIN')) {
             const parts = text.toUpperCase().split(' ');
-            const cmd   = parts[1];
+            const cmd = parts[1];
 
             if (cmd === 'ORDERS') {
                 const activeOrders = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').slice(-10);
@@ -902,7 +944,7 @@ async function handleMessage(msg) {
             }
 
             if (cmd === 'DELIVER' && parts[2]) {
-                const id    = parts[2];
+                const id = parts[2];
                 const order = orders.find(o => o.id === id || o.orderId === id);
                 if (order) {
                     // Update status directly in Supabase
@@ -914,7 +956,7 @@ async function handleMessage(msg) {
             }
 
             if (cmd === 'CANCEL' && parts[2]) {
-                const id    = parts[2];
+                const id = parts[2];
                 const order = orders.find(o => o.id === id || o.orderId === id);
                 if (order && order.status !== 'cancelled') {
                     const { error } = await supabase.from('orders').update({ status: 'cancelled' }).eq('id', id);
@@ -952,44 +994,44 @@ async function handleMessage(msg) {
             };
         }
 
-        const session    = userSessions[from];
+        const session = userSessions[from];
         const aiResponse = handleSalesAssistantJS(from, text, products, session);
 
         // Execute session side effects
-        if (aiResponse.cart)                                    session.cart                            = aiResponse.cart;
-        if (aiResponse.selectedColor   !== undefined)           session.selectedColor                   = aiResponse.selectedColor;
-        if (aiResponse.selectedSize    !== undefined)           session.selectedSize                    = aiResponse.selectedSize;
-        if (aiResponse.searchProducts  !== undefined)           session.searchProducts                  = aiResponse.searchProducts;
-        if (aiResponse.lastRecommendation !== undefined)        session.lastRecommendation              = aiResponse.lastRecommendation;
+        if (aiResponse.cart) session.cart = aiResponse.cart;
+        if (aiResponse.selectedColor !== undefined) session.selectedColor = aiResponse.selectedColor;
+        if (aiResponse.selectedSize !== undefined) session.selectedSize = aiResponse.selectedSize;
+        if (aiResponse.searchProducts !== undefined) session.searchProducts = aiResponse.searchProducts;
+        if (aiResponse.lastRecommendation !== undefined) session.lastRecommendation = aiResponse.lastRecommendation;
         if (aiResponse.awaitingRecommendationResponse !== undefined) session.awaitingRecommendationResponse = aiResponse.awaitingRecommendationResponse;
         if (aiResponse.awaitingCartAdditionConfirmation !== undefined) session.awaitingCartAdditionConfirmation = aiResponse.awaitingCartAdditionConfirmation;
-        if (aiResponse.pendingProduct  !== undefined)           session.pendingProduct                  = aiResponse.pendingProduct;
+        if (aiResponse.pendingProduct !== undefined) session.pendingProduct = aiResponse.pendingProduct;
 
         // Order Confirmed — save to Supabase + update stock
         if (aiResponse.isOrderConfirmed && aiResponse.orderDetails) {
-            const orderId   = 'ORD-' + Date.now();
+            const orderId = 'ORD-' + Date.now();
             const orderDate = new Date();
-            const dateStr   = orderDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-            const timeStr   = orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            const dateStr = orderDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const timeStr = orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-            const cartItems  = session.cart;
+            const cartItems = session.cart;
             const totalPrice = cartItems.reduce((sum, item) => sum + Number(item.price), 0);
 
             const newOrder = {
-                id:               orderId,
-                customer_phone:   from,
-                customer_name:    aiResponse.orderDetails.customerName  || '',
+                id: orderId,
+                customer_phone: from,
+                customer_name: aiResponse.orderDetails.customerName || '',
                 customer_address: aiResponse.orderDetails.customerAddress || '',
-                items:            cartItems.map(item => ({
+                items: cartItems.map(item => ({
                     productId: item.id || item.productId,
-                    product:   item.name,
-                    color:     item.color || '',
-                    size:      item.size  || 'N/A',
-                    price:     item.price
+                    product: item.name,
+                    color: item.color || '',
+                    size: item.size || 'N/A',
+                    price: item.price
                 })),
                 total_price: totalPrice,
-                status:      'confirmed',
-                date:        orderDate.toISOString()
+                status: 'confirmed',
+                date: orderDate.toISOString()
             };
 
             const { error: insertError } = await supabase.from('orders').insert([newOrder]);
@@ -1074,8 +1116,8 @@ async function handleMessage(msg) {
 // =============================
 
 export const verifyWebhook = (req, res) => {
-    const mode      = req.query['hub.mode'];
-    const token     = req.query['hub.verify_token'];
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
     console.log(`[WEBHOOK-VERIFY] mode="${mode}" | token="${token}" | expected="${VERIFY_TOKEN}"`);
