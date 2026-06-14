@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Package, RefreshCw, AlertCircle, ExternalLink } from 'lucide-react';
-import { getWooProducts } from '../api/productsApi';
+import { Package, RefreshCw, AlertCircle, ExternalLink, CheckCircle } from 'lucide-react';
+import { getWooProducts, syncWooProductsToDb } from '../api/productsApi';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 
@@ -9,10 +9,15 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [fetched, setFetched] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState(null);
+  const [syncError, setSyncError] = useState(null);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setSyncMessage(null);
+    setSyncError(null);
     try {
       const data = await getWooProducts();
       setProducts(data);
@@ -23,6 +28,24 @@ export default function ProductsPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncMessage(null);
+    try {
+      const result = await syncWooProductsToDb(products);
+      if (result.success) {
+        setSyncMessage(result.message || `Successfully synced ${products.length} products to database!`);
+      } else {
+        throw new Error(result.message || 'Sync failed');
+      }
+    } catch (err) {
+      setSyncError(err.message || 'Failed to sync products to database');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const formatPrice = (price) => {
     if (!price) return '—';
@@ -39,17 +62,51 @@ export default function ProductsPage() {
             Live from your WooCommerce store
           </p>
         </div>
-        <button
-          onClick={fetchProducts}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60 shadow-sm transition-colors"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          {fetched ? 'Refresh' : 'Load Products'}
-        </button>
+        <div className="flex items-center gap-2">
+          {fetched && products.length > 0 && (
+            <button
+              onClick={handleSync}
+              disabled={syncing || loading}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 shadow-sm transition-colors"
+            >
+              <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Syncing...' : 'Sync to Database'}
+            </button>
+          )}
+          <button
+            onClick={fetchProducts}
+            disabled={loading || syncing}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60 shadow-sm transition-colors"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            {fetched ? 'Refresh' : 'Load Products'}
+          </button>
+        </div>
       </div>
 
-      {/* Error */}
+      {/* Sync Success */}
+      {syncMessage && (
+        <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-6">
+          <CheckCircle size={18} className="text-emerald-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-emerald-700">Sync Successful</p>
+            <p className="text-xs text-emerald-600 mt-0.5">{syncMessage}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Sync Error */}
+      {syncError && (
+        <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-xl p-4 mb-6">
+          <AlertCircle size={18} className="text-rose-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-rose-700">Sync Error</p>
+            <p className="text-xs text-rose-600 mt-0.5">{syncError}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Connection Error */}
       {error && (
         <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-xl p-4 mb-6">
           <AlertCircle size={18} className="text-rose-500 shrink-0 mt-0.5" />

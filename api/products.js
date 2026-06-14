@@ -161,3 +161,65 @@ function dbRowToProduct(row) {
         imageUri: row.image_uri
     };
 }
+
+// ✅ Batch Sync products from WooCommerce
+export const syncProducts = async (req, res) => {
+    try {
+        const { products } = req.body;
+
+        if (!Array.isArray(products)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Products array required'
+            });
+        }
+
+        console.log(`🔄 Syncing ${products.length} products from WooCommerce...`);
+
+        // Format products to match database schema
+        const dbProducts = products.map(p => {
+            // Find "Size" attribute options
+            const sizeAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'size');
+            const sizes = sizeAttr ? (Array.isArray(sizeAttr.options) ? sizeAttr.options : []) : [];
+
+            // Find "Color" attribute value
+            const colorAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'color');
+            const color = colorAttr ? (Array.isArray(colorAttr.options) ? colorAttr.options[0] : colorAttr.options) : null;
+
+            // Map WooCommerce fields
+            return {
+                id:          p.id, // WooCommerce numeric ID
+                name:        p.name,
+                code:        p.sku || String(p.id),
+                category:    p.categories?.[0]?.name || 'General',
+                pattern:     p.pattern || null,
+                color:       color || p.color || null,
+                price:       p.price !== undefined ? String(p.price) : '0',
+                stock:       p.stock_quantity !== null && p.stock_quantity !== undefined 
+                                ? String(p.stock_quantity) 
+                                : (p.stock_status === 'instock' ? '10' : '0'),
+                sizes:       sizes,
+                image_uri:   p.images?.[0]?.src || null
+            };
+        });
+
+        // Batch upsert to Supabase
+        const { data, error } = await supabase
+            .from('products')
+            .upsert(dbProducts, { onConflict: 'id' })
+            .select();
+
+        if (error) throw error;
+
+        console.log(`✅ Successfully synced ${dbProducts.length} products to database!`);
+
+        res.json({
+            success: true,
+            message: `Successfully synced ${dbProducts.length} products to database!`,
+            count: dbProducts.length
+        });
+    } catch (error) {
+        console.error('❌ Sync Products Error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

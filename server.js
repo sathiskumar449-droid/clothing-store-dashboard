@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 import { getOutfitMatches } from './api/matchOutfit.js';
 import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook } from './api/webhook.js';
-import { addProduct, getProducts, updateProduct, deleteProduct } from './api/products.js';
+import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts } from './api/products.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
 import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat } from './api/chats.js';
 
@@ -42,6 +42,7 @@ app.post('/api/products', addProduct);
 app.get('/api/products', getProducts);
 app.put('/api/products/:id', updateProduct);
 app.delete('/api/products/:id', deleteProduct);
+app.post('/api/products/sync', syncProducts);
 
 // =============================
 // 📦 Orders API

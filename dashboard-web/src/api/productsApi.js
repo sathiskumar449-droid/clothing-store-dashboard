@@ -1,4 +1,5 @@
 import axios from 'axios';
+import api from './axiosInstance';
 
 /**
  * Fetch WooCommerce products using credentials stored in localStorage.
@@ -20,3 +21,12 @@ export const getWooProducts = async (page = 1, perPage = 50) => {
   });
   return response.data;
 };
+
+/**
+ * Sync WooCommerce products to Supabase database via the backend API.
+ */
+export const syncWooProductsToDb = async (products) => {
+  const response = await api.post('/products/sync', { products });
+  return response.data;
+};
+
