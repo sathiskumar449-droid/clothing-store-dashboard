@@ -1,0 +1,261 @@
+[
+  {
+    "name": "Cotton phant",
+    "code": "Ph001",
+    "category": "Phant",
+    "pattern": "Solid",
+    "color": "Beige",
+    "price": "650",
+    "stock": 2,
+    "sizes": [
+      "36"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1779255843/ytb6mz3kdpywgtcrsv0j.jpg",
+    "id": 1779255844147
+  },
+  {
+    "name": "Cotton shirt",
+    "code": "S002",
+    "category": "Shirts",
+    "pattern": "Solid",
+    "color": "White",
+    "price": "650",
+    "stock": "4",
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "Xl"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1779275046/zcw3e67v6ehlxxpc0xer.jpg",
+    "id": 1779275046453
+  },
+  {
+    "name": "Cotton shirt",
+    "code": "S001",
+    "category": "Shirt",
+    "pattern": "Plain",
+    "color": "Dark blue",
+    "price": "450",
+    "stock": 3,
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "Xl"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781106396/iduabar5opaj7ckdzqta.jpg",
+    "id": 1781106396982
+  },
+  {
+    "name": "Cotton shirt",
+    "code": "Cs01",
+    "category": "Shirts",
+    "pattern": "Solid",
+    "color": "Green",
+    "price": "500",
+    "stock": 2,
+    "sizes": [
+      "S",
+      "m",
+      "l",
+      "xl"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159161/jiyh0ppu9viszanvfxte.png",
+    "id": 1781159162535
+  },
+  {
+    "name": "Stripe shirt",
+    "code": "St01",
+    "category": "Shirt",
+    "pattern": "Stripe",
+    "color": "White with blue",
+    "price": "600",
+    "stock": "5",
+    "sizes": [
+      "S",
+      "m",
+      "l",
+      "xl",
+      "2xl"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159231/wep3wpqrj1oxvm53ycff.jpg",
+    "id": 1781159233047
+  },
+  {
+    "name": "Printed shirt ",
+    "code": "Pst01",
+    "category": "Shirt",
+    "pattern": "Printed",
+    "color": "Blue",
+    "price": "600",
+    "stock": "2",
+    "sizes": [
+      "S",
+      "m",
+      "l",
+      "xl"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159290/lq1pq8lvteydx8rbkv5t.jpg",
+    "id": 1781159291866
+  },
+  {
+    "name": "Linen shirt",
+    "code": "Ls01",
+    "category": "Shirt",
+    "pattern": "Plain",
+    "color": "White",
+    "price": "800",
+    "stock": 4,
+    "sizes": [
+      "S",
+      "m",
+      "l",
+      "xl",
+      "2xl",
+      "3xl"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159361/idw4tfco79l0zlzjhmqd.jpg",
+    "id": 1781159362431
+  },
+  {
+    "name": "T shirt",
+    "code": "Tsh01",
+    "category": "Tshirt",
+    "pattern": "Plain",
+    "color": "Green",
+    "price": "299",
+    "stock": 3,
+    "sizes": [
+      "S",
+      "m",
+      "l",
+      "xl",
+      "2xl",
+      "3xl",
+      ""
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159409/cb12dtlqexs0qt29qvrc.jpg",
+    "id": 1781159410839
+  },
+  {
+    "name": "Jeans pant",
+    "code": "JPt01",
+    "category": "Pant",
+    "pattern": "Plain",
+    "color": "Blue",
+    "price": "599",
+    "stock": "6",
+    "sizes": [
+      "28",
+      "30",
+      "32",
+      "34",
+      "36",
+      "38",
+      "40"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159499/tvxg16hz1krb8srlkc1v.jpg",
+    "id": 1781159500877
+  },
+  {
+    "name": "Jeans pant",
+    "code": "Jpt002",
+    "category": "Pant",
+    "pattern": "Plain",
+    "color": "Black",
+    "price": "599",
+    "stock": "4",
+    "sizes": [
+      "28",
+      "30",
+      "32",
+      "34",
+      "36",
+      "38",
+      "40"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159562/qy2tcowtrznmki1aix0h.jpg",
+    "id": 1781159563969
+  },
+  {
+    "name": "Cotton pant",
+    "code": "Pant003",
+    "category": "Pant",
+    "pattern": "Plain",
+    "color": "Green",
+    "price": "499",
+    "stock": "5",
+    "sizes": [
+      "30",
+      "32",
+      "34",
+      "36"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159621/rskozd5shuwymx9wlfjw.jpg",
+    "id": 1781159622926
+  },
+  {
+    "name": "Polo fit",
+    "code": "Polo1",
+    "category": "Pant",
+    "pattern": "Plain",
+    "color": "Olive Green",
+    "price": "399",
+    "stock": 4,
+    "sizes": [
+      "34",
+      "36",
+      "40",
+      "42"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159679/ztd7su1naogna7ikovbs.jpg",
+    "id": 1781159680262
+  },
+  {
+    "name": "Cargo pant",
+    "code": "Cgo01",
+    "category": "Pant",
+    "pattern": "Palin",
+    "color": "Blue",
+    "price": "599",
+    "stock": 2,
+    "sizes": [
+      "36",
+      "38"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159728/rgduzouarylrytf1lpp1.jpg",
+    "id": 1781159730184
+  },
+  {
+    "name": "Shorts",
+    "code": "Shts01",
+    "category": "Shorts",
+    "pattern": "Plain",
+    "color": "Black",
+    "price": "299",
+    "stock": "5",
+    "sizes": [
+      "L",
+      "xl"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159783/ghvi83deksc5kjxjlbkd.jpg",
+    "id": 1781159784462
+  },
+  {
+    "name": "Shorts",
+    "code": "Shts02",
+    "category": "Shorts",
+    "pattern": "Plain",
+    "color": "White",
+    "price": "299",
+    "stock": "3",
+    "sizes": [
+      "Xl",
+      "2xl",
+      "3xl"
+    ],
+    "imageUri": "https://res.cloudinary.com/dheu8hvzc/image/upload/v1781159828/cna2sl2bq9tsgrxgwvvn.jpg",
+    "id": 1781159829496
+  }
+]

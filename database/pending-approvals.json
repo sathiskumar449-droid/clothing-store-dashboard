@@ -1,0 +1,26 @@
+[
+  {
+    "requestId": "REQ-198796",
+    "createdAt": "2026-04-18T02:43:20.116Z",
+    "customerId": "919994914295",
+    "customerPhone": "919994914295",
+    "shirt": "White Shirt",
+    "shirtSize": "M",
+    "pant": "Black Pant",
+    "pantSize": "34",
+    "status": "pending_manual_admin_review",
+    "reason": "(#131030) Recipient phone number not in allowed list"
+  },
+  {
+    "requestId": "REQ-350335",
+    "createdAt": "2026-04-18T02:45:51.784Z",
+    "customerId": "919994914295",
+    "customerPhone": "919994914295",
+    "shirt": "Blue Shirt",
+    "shirtSize": "M",
+    "pant": "Navy Pant",
+    "pantSize": "34",
+    "status": "pending_manual_admin_review",
+    "reason": "(#131030) Recipient phone number not in allowed list"
+  }
+]

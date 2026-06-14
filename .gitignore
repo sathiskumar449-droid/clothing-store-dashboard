@@ -11,8 +11,7 @@ server-error.log
 server-output.log
 *.log
 
-# Database (sensitive data)
-database/*.json
+
 
 # OS
 .DS_Store
