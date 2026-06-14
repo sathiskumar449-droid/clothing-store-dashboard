@@ -891,16 +891,8 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 // =============================
 
 async function handleMessage(msg) {
-    const from = msg.from;
-    console.log("TEST REPLY START");
-    try {
-        await sendText(from, "Bot Working Test");
-    } catch (e) {
-        console.error("Test reply in handleMessage failed:", e.message);
-    }
-    console.log("TEST REPLY END");
-
     const text = msg.text?.body?.trim() || msg.interactive?.button_reply?.id?.trim() || '';
+    const from = msg.from;
 
     console.log(`[handleMessage] from=${from} | text="${text}"`);
 
