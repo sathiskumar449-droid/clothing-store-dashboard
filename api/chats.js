@@ -1,16 +1,21 @@
+// api/chats.js  — Supabase version (replaces fs-based implementation)
+// All getChats/saveChats calls are now async
 import { getChats, saveChats, sendText, sendImage, userSessions } from './webhook.js';
+import { supabase } from '../lib/supabase.js';
 
 // GET /chats
-export const getAllChats = (req, res) => {
+export const getAllChats = async (req, res) => {
     try {
-        const chats = getChats();
-        const chatList = Object.values(chats).map(chat => ({
-            customerPhone: chat.customerPhone,
-            customerName: chat.customerName || 'Customer',
-            lastMessage: chat.lastMessage || '',
-            lastUpdated: chat.lastUpdated || '',
-            botPaused: chat.botPaused || false
-        })).sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
+        const chats = await getChats();
+        const chatList = Object.values(chats)
+            .map(chat => ({
+                customerPhone: chat.customerPhone,
+                customerName:  chat.customerName  || 'Customer',
+                lastMessage:   chat.lastMessage   || '',
+                lastUpdated:   chat.lastUpdated   || '',
+                botPaused:     chat.botPaused     || false
+            }))
+            .sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
 
         res.json({ success: true, chats: chatList });
     } catch (error) {
@@ -20,17 +25,17 @@ export const getAllChats = (req, res) => {
 };
 
 // GET /chats/:phone
-export const getChatHistory = (req, res) => {
+export const getChatHistory = async (req, res) => {
     try {
         const { phone } = req.params;
-        const chats = getChats();
-        const chat = chats[phone] || {
+        const chats     = await getChats();
+        const chat      = chats[phone] || {
             customerPhone: phone,
-            customerName: 'Customer',
-            lastMessage: '',
-            lastUpdated: '',
-            botPaused: false,
-            messages: []
+            customerName:  'Customer',
+            lastMessage:   '',
+            lastUpdated:   '',
+            botPaused:     false,
+            messages:      []
         };
 
         res.json({ success: true, chat });
@@ -43,50 +48,63 @@ export const getChatHistory = (req, res) => {
 // POST /chats/:phone/message
 export const sendChatMessage = async (req, res) => {
     try {
-        const { phone } = req.params;
+        const { phone }              = req.params;
         const { text, type, imageUrl } = req.body;
 
         if (type === 'image' && imageUrl) {
-            // Send image via WhatsApp API
             await sendImage(phone, imageUrl, text || '');
         } else {
             if (!text) {
                 return res.status(400).json({ success: false, message: 'Message text is required' });
             }
-            // Send text via WhatsApp API
             await sendText(phone, text);
         }
 
-        // Save to chat history
-        const chats = getChats();
-        if (!chats[phone]) {
-            chats[phone] = {
-                customerPhone: phone,
-                customerName: 'Customer',
-                lastMessage: '',
-                lastUpdated: '',
-                botPaused: false,
-                messages: []
-            };
-        }
+        // Fetch existing chat row from Supabase
+        const { data: existingRow } = await supabase
+            .from('chats')
+            .select('*')
+            .eq('customer_phone', phone)
+            .maybeSingle();
 
-        chats[phone].messages.push({
-            sender: 'owner',
-            type: type || 'text',
-            text: text || '',
-            imageUrl: imageUrl || null,
+        const messages = existingRow?.messages || [];
+        messages.push({
+            sender:    'owner',
+            type:      type      || 'text',
+            text:      text      || '',
+            imageUrl:  imageUrl  || null,
             timestamp: new Date().toISOString()
         });
 
-        chats[phone].lastMessage = type === 'image' ? `📷 Image${text ? ': ' + text : ''}` : text;
-        chats[phone].lastUpdated = new Date().toISOString();
-        
-        // Auto-pause bot if owner sends a manual reply
-        chats[phone].botPaused = true;
+        const lastMessage = type === 'image' ? `📷 Image${text ? ': ' + text : ''}` : text;
+        const now         = new Date().toISOString();
 
-        saveChats(chats);
+        const { data, error } = await supabase
+            .from('chats')
+            .upsert({
+                customer_phone: phone,
+                customer_name:  existingRow?.customer_name  || 'Customer',
+                last_message:   lastMessage,
+                last_updated:   now,
+                bot_paused:     true,        // auto-pause when owner manually replies
+                messages
+            }, { onConflict: 'customer_phone' })
+            .select()
+            .single();
 
-        res.json({ success: true, chat: chats[phone] });
+        if (error) throw error;
+
+        // Return in the same shape as the old code
+        const chat = {
+            customerPhone: data.customer_phone,
+            customerName:  data.customer_name,
+            lastMessage:   data.last_message,
+            lastUpdated:   data.last_updated,
+            botPaused:     data.bot_paused,
+            messages:      data.messages || []
+        };
+
+        res.json({ success: true, chat });
     } catch (error) {
         console.error(`❌ Error sending message to ${req.params.phone}:`, error);
         res.status(500).json({ success: false, message: error.message });
@@ -94,36 +112,42 @@ export const sendChatMessage = async (req, res) => {
 };
 
 // POST /chats/:phone/toggle-bot
-export const toggleBot = (req, res) => {
+export const toggleBot = async (req, res) => {
     try {
-        const { phone } = req.params;
-        const { botPaused } = req.body;
+        const { phone }      = req.params;
+        const { botPaused }  = req.body;
 
-        const chats = getChats();
-        if (!chats[phone]) {
-            chats[phone] = {
-                customerPhone: phone,
-                customerName: 'Customer',
-                lastMessage: '',
-                lastUpdated: '',
-                botPaused: false,
-                messages: []
-            };
-        }
+        const { data: existingRow } = await supabase
+            .from('chats')
+            .select('*')
+            .eq('customer_phone', phone)
+            .maybeSingle();
 
-        const targetPausedState = typeof botPaused === 'boolean' ? botPaused : !chats[phone].botPaused;
-        chats[phone].botPaused = targetPausedState;
-        chats[phone].lastUpdated = new Date().toISOString();
+        const currentPaused     = existingRow?.bot_paused || false;
+        const targetPausedState = typeof botPaused === 'boolean' ? botPaused : !currentPaused;
 
-        saveChats(chats);
+        const { data, error } = await supabase
+            .from('chats')
+            .upsert({
+                customer_phone: phone,
+                customer_name:  existingRow?.customer_name  || 'Customer',
+                last_message:   existingRow?.last_message   || '',
+                last_updated:   new Date().toISOString(),
+                bot_paused:     targetPausedState,
+                messages:       existingRow?.messages       || []
+            }, { onConflict: 'customer_phone' })
+            .select()
+            .single();
 
-        // If resuming the bot, clear active session state to reset flow
+        if (error) throw error;
+
+        // If resuming the bot, clear active session state
         if (!targetPausedState && userSessions[phone]) {
             delete userSessions[phone];
             console.log(`[BOT] Reset active session for ${phone} due to bot resume.`);
         }
 
-        res.json({ success: true, botPaused: chats[phone].botPaused });
+        res.json({ success: true, botPaused: data.bot_paused });
     } catch (error) {
         console.error(`❌ Error toggling bot for ${req.params.phone}:`, error);
         res.status(500).json({ success: false, message: error.message });
@@ -131,23 +155,31 @@ export const toggleBot = (req, res) => {
 };
 
 // DELETE /chats/:phone — completely remove a chat conversation
-export const deleteChat = (req, res) => {
+export const deleteChat = async (req, res) => {
     try {
         const { phone } = req.params;
-        const chats = getChats();
 
-        if (!chats[phone]) {
+        const { data: existing } = await supabase
+            .from('chats')
+            .select('customer_phone')
+            .eq('customer_phone', phone)
+            .maybeSingle();
+
+        if (!existing) {
             return res.status(404).json({ success: false, message: 'Chat not found' });
         }
 
-        delete chats[phone];
+        const { error } = await supabase
+            .from('chats')
+            .delete()
+            .eq('customer_phone', phone);
 
-        // Clear active bot session too
+        if (error) throw error;
+
         if (userSessions[phone]) {
             delete userSessions[phone];
         }
 
-        saveChats(chats);
         res.json({ success: true, message: `Chat for ${phone} deleted.` });
     } catch (error) {
         console.error(`❌ Error deleting chat for ${req.params.phone}:`, error);
@@ -156,25 +188,47 @@ export const deleteChat = (req, res) => {
 };
 
 // PUT /chats/:phone/rename — update customer display name
-export const renameChat = (req, res) => {
+export const renameChat = async (req, res) => {
     try {
-        const { phone } = req.params;
+        const { phone }        = req.params;
         const { customerName } = req.body;
 
         if (!customerName || !customerName.trim()) {
             return res.status(400).json({ success: false, message: 'customerName is required' });
         }
 
-        const chats = getChats();
-        if (!chats[phone]) {
+        const { data: existing } = await supabase
+            .from('chats')
+            .select('*')
+            .eq('customer_phone', phone)
+            .maybeSingle();
+
+        if (!existing) {
             return res.status(404).json({ success: false, message: 'Chat not found' });
         }
 
-        chats[phone].customerName = customerName.trim();
-        chats[phone].lastUpdated = new Date().toISOString();
-        saveChats(chats);
+        const { data, error } = await supabase
+            .from('chats')
+            .update({
+                customer_name: customerName.trim(),
+                last_updated:  new Date().toISOString()
+            })
+            .eq('customer_phone', phone)
+            .select()
+            .single();
 
-        res.json({ success: true, chat: chats[phone] });
+        if (error) throw error;
+
+        const chat = {
+            customerPhone: data.customer_phone,
+            customerName:  data.customer_name,
+            lastMessage:   data.last_message,
+            lastUpdated:   data.last_updated,
+            botPaused:     data.bot_paused,
+            messages:      data.messages || []
+        };
+
+        res.json({ success: true, chat });
     } catch (error) {
         console.error(`❌ Error renaming chat for ${req.params.phone}:`, error);
         res.status(500).json({ success: false, message: error.message });

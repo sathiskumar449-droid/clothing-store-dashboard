@@ -1,120 +1,230 @@
+// api/webhook.js  — Supabase version (replaces fs-based implementation)
 import axios from 'axios';
 import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
+import { supabase } from '../lib/supabase.js';
+
 dotenv.config();
 
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const VERIFY_TOKEN    = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN  = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_ID || process.env.PHONE_NUMBER_ID;
 
 const processed = new Set();
-export const userSessions = {}; // Store conversation state per user
-
-const ORDERS_FILE = path.join(process.cwd(), 'database', 'orders.json');
-const PRODUCTS_FILE = path.join(process.cwd(), 'database', 'products.json');
-
+export const userSessions = {}; // In-memory per-user conversation state
 
 // =============================
-// Database Helpers
+// Database Helpers  (all async — Supabase)
 // =============================
-function getProducts() {
+
+export async function getProducts() {
     try {
-        if (fs.existsSync(PRODUCTS_FILE)) {
-            return JSON.parse(fs.readFileSync(PRODUCTS_FILE, 'utf8'));
-        }
+        const { data, error } = await supabase
+            .from('products')
+            .select('*')
+            .order('created_at', { ascending: true });
+
+        if (error) throw error;
+
+        // Return in the same shape as the original JSON array
+        return (data || []).map(row => ({
+            id:       row.id,
+            name:     row.name,
+            code:     row.code,
+            category: row.category,
+            pattern:  row.pattern,
+            color:    row.color,
+            price:    row.price,
+            stock:    row.stock,
+            sizes:    row.sizes    || [],
+            imageUri: row.image_uri
+        }));
     } catch (error) {
         console.error('❌ Error reading products:', error.message);
+        return [];
     }
-    return [];
 }
 
-function saveProducts(products) {
-    fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
-}
-
-function getOrders() {
+export async function saveProducts(products) {
     try {
-        if (fs.existsSync(ORDERS_FILE)) {
-            return JSON.parse(fs.readFileSync(ORDERS_FILE, 'utf8'));
+        for (const p of products) {
+            const { error } = await supabase
+                .from('products')
+                .update({ stock: String(p.stock) })
+                .eq('id', p.id);
+
+            if (error) {
+                console.error(`❌ Error updating stock for product ${p.id}:`, error.message);
+            }
         }
+    } catch (error) {
+        console.error('❌ Error saving products:', error.message);
+    }
+}
+
+export async function getOrders() {
+    try {
+        const { data, error } = await supabase
+            .from('orders')
+            .select('*')
+            .order('date', { ascending: false, nullsFirst: false });
+
+        if (error) throw error;
+
+        return (data || []).map(dbRowToOrder);
     } catch (error) {
         console.error('❌ Error reading orders:', error.message);
+        return [];
     }
-    return [];
 }
 
-function saveOrders(orders) {
-    fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2));
-}
-
-// =============================
-// Chats Database Helpers
-// =============================
-const CHATS_FILE = path.join(process.cwd(), 'database', 'chats.json');
-
-export function getChats() {
+export async function saveOrders(orders) {
+    // saveOrders is called after mutating the in-memory array.
+    // We upsert the full array so any status changes are persisted.
     try {
-        if (fs.existsSync(CHATS_FILE)) {
-            return JSON.parse(fs.readFileSync(CHATS_FILE, 'utf8'));
+        for (const order of orders) {
+            const { error } = await supabase
+                .from('orders')
+                .update({ status: order.status })
+                .eq('id', order.id || order.orderId);
+
+            if (error) {
+                console.error(`❌ Error updating order status:`, error.message);
+            }
         }
     } catch (error) {
-        console.error('❌ Error reading chats:', error.message);
+        console.error('❌ Error saving orders:', error.message);
     }
-    return {};
 }
 
-export function saveChats(chats) {
+// ── helper for getOrders ──────────────────────────────────────
+function dbRowToOrder(row) {
+    const base = {
+        id:              row.id,
+        status:          row.status,
+        customerPhone:   row.customer_phone,
+        customerName:    row.customer_name,
+        customerAddress: row.customer_address,
+        items:           row.items || [],
+        totalPrice:      row.total_price,
+        date:            row.date
+    };
+    if (row.order_id)         base.orderId         = row.order_id;
+    if (row.shirt_name)       base.shirtName       = row.shirt_name;
+    if (row.pant_name)        base.pantName        = row.pant_name;
+    if (row.customer_details) base.customerDetails = row.customer_details;
+    if (row.payment_method)   base.paymentMethod   = row.payment_method;
+    return base;
+}
+
+// =============================
+// Chats Database Helpers  (async — Supabase)
+// =============================
+
+export async function getChats() {
     try {
-        fs.writeFileSync(CHATS_FILE, JSON.stringify(chats, null, 2));
+        const { data, error } = await supabase
+            .from('chats')
+            .select('*');
+
+        if (error) throw error;
+
+        // Return as an object keyed by customerPhone (same shape as the old chats.json)
+        const chatsObj = {};
+        for (const row of (data || [])) {
+            chatsObj[row.customer_phone] = {
+                customerPhone: row.customer_phone,
+                customerName:  row.customer_name,
+                lastMessage:   row.last_message,
+                lastUpdated:   row.last_updated,
+                botPaused:     row.bot_paused,
+                messages:      row.messages || []
+            };
+        }
+        return chatsObj;
+    } catch (error) {
+        console.error('❌ Error reading chats:', error.message);
+        return {};
+    }
+}
+
+export async function saveChats(chats) {
+    try {
+        for (const phone of Object.keys(chats)) {
+            const chat = chats[phone];
+            const { error } = await supabase
+                .from('chats')
+                .upsert({
+                    customer_phone: phone,
+                    customer_name:  chat.customerName  || 'Customer',
+                    last_message:   chat.lastMessage   || '',
+                    last_updated:   chat.lastUpdated   || new Date().toISOString(),
+                    bot_paused:     chat.botPaused     || false,
+                    messages:       chat.messages      || []
+                }, { onConflict: 'customer_phone' });
+
+            if (error) {
+                console.error(`❌ Error saving chat for ${phone}:`, error.message);
+            }
+        }
     } catch (error) {
         console.error('❌ Error saving chats:', error.message);
     }
 }
 
-export function logChatMessage(customerPhone, sender, text, type = 'text', imageUrl = null) {
-    const chats = getChats();
-    if (!chats[customerPhone]) {
-        chats[customerPhone] = {
-            customerPhone: customerPhone,
-            customerName: 'Customer',
-            lastMessage: '',
-            lastUpdated: '',
-            botPaused: false,
-            messages: []
+export async function logChatMessage(customerPhone, sender, text, type = 'text', imageUrl = null) {
+    try {
+        // Fetch current row (or create default)
+        const { data: rows, error: fetchError } = await supabase
+            .from('chats')
+            .select('*')
+            .eq('customer_phone', customerPhone)
+            .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        const existing = rows || {
+            customer_phone: customerPhone,
+            customer_name:  'Customer',
+            last_message:   '',
+            last_updated:   new Date().toISOString(),
+            bot_paused:     false,
+            messages:       []
         };
-    }
 
-    // Attempt to update customerName from active session
-    if (userSessions[customerPhone]?.orderDetails?.customerName) {
-        chats[customerPhone].customerName = userSessions[customerPhone].orderDetails.customerName;
-    }
-
-    // Fallback search in orders if customerName is still generic 'Customer'
-    if (chats[customerPhone].customerName === 'Customer') {
-        const orders = getOrders();
-        const customerOrder = orders.find(o => o.customerPhone === customerPhone);
-        if (customerOrder && (customerOrder.customerName || customerOrder.customer)) {
-            chats[customerPhone].customerName = customerOrder.customerName || customerOrder.customer;
+        // Try to resolve customer name from active session
+        let customerName = existing.customer_name;
+        if (userSessions[customerPhone]?.orderDetails?.customerName) {
+            customerName = userSessions[customerPhone].orderDetails.customerName;
         }
+
+        // Trim messages to last 100
+        const messages = Array.isArray(existing.messages) ? existing.messages : [];
+        messages.push({
+            sender,
+            type,
+            text,
+            imageUrl,
+            timestamp: new Date().toISOString()
+        });
+        if (messages.length > 100) messages.shift();
+
+        const lastMessage = type === 'image' ? `📷 Image${text ? ': ' + text : ''}` : text;
+
+        const { error: upsertError } = await supabase
+            .from('chats')
+            .upsert({
+                customer_phone: customerPhone,
+                customer_name:  customerName,
+                last_message:   lastMessage,
+                last_updated:   new Date().toISOString(),
+                bot_paused:     existing.bot_paused,
+                messages
+            }, { onConflict: 'customer_phone' });
+
+        if (upsertError) throw upsertError;
+    } catch (error) {
+        console.error('❌ Error logging chat message:', error.message);
     }
-
-    chats[customerPhone].messages.push({
-        sender: sender,
-        type: type,
-        text: text,
-        imageUrl: imageUrl,
-        timestamp: new Date().toISOString()
-    });
-
-    if (chats[customerPhone].messages.length > 100) {
-        chats[customerPhone].messages.shift();
-    }
-
-    chats[customerPhone].lastMessage = type === 'image' ? `📷 Image${text ? ': ' + text : ''}` : text;
-    chats[customerPhone].lastUpdated = new Date().toISOString();
-
-    //saveChats(chats);
 }
 
 // =============================
@@ -142,26 +252,14 @@ async function sendRequest(payload) {
 }
 
 export async function sendText(to, text) {
-    await sendRequest({
-        to,
-        type: 'text',
-        text: { body: text }
-    });
+    await sendRequest({ to, type: 'text', text: { body: text } });
 }
 
 export async function sendImage(to, imageUrl, caption = '') {
-    await sendRequest({
-        to,
-        type: 'image',
-        image: {
-            link: imageUrl,
-            caption
-        }
-    });
+    await sendRequest({ to, type: 'image', image: { link: imageUrl, caption } });
 }
 
 async function sendButtons(to, bodyText, buttons) {
-    // buttons: array of { id, title } (max 3)
     await sendRequest({
         to,
         type: 'interactive',
@@ -179,19 +277,12 @@ async function sendButtons(to, bodyText, buttons) {
 }
 
 // =============================
-// AI Assistant Helper & Core Logic
-// =============================
-
-// =============================
-// pure JS Sales Flow core Logic (Gemini Removed)
-// =============================
 // Intent Detection
 // =============================
 
 function detectIntent(text) {
     const t = text.toLowerCase();
 
-    // COMPLAINT / SUPPORT — check before everything else
     const complaintKeywords = [
         'wrong', 'mistake', 'damage', 'defect', 'torn', 'dirty', 'complaint',
         'problem', 'issue', 'not received', 'kedaikala', 'varala', 'receive pannala',
@@ -203,22 +294,17 @@ function detectIntent(text) {
     ];
     if (complaintKeywords.some(k => t.includes(k))) return 'COMPLAINT';
 
-    // RETURN / EXCHANGE
     const returnKeywords = ['return', 'exchange', 'refund', 'replace', 'maatunga', 'size match agala', 'size match agulana', 'size wrong', 'size poda'];
     if (returnKeywords.some(k => t.includes(k))) return 'RETURN_EXCHANGE';
 
-    // GREETING
     const greetKeywords = ['hi', 'hello', 'hey', 'vanakkam', 'hai', 'hii'];
     if (greetKeywords.some(k => t === k || t === k + ' bro' || t === k + ' anna')) return 'GREETING';
 
-    // ORDER CONFIRMATION
     if (t === 'buy' || t === 'checkout' || t.includes('buy pannalama') || t.includes('order confirm')) return 'ORDER_CONFIRMATION';
 
-    // ORDER PLACEMENT (in cart/size/checkout flow)
     const orderKeywords = ['cart', 'order', 'size', 'quantity', 'buy'];
     if (orderKeywords.some(k => t.includes(k))) return 'ORDER_PLACEMENT';
 
-    // PRODUCT ENQUIRY
     const productKeywords = ['shirt', 'pant', 'jeans', 'cargo', 'tshirt', 't-shirt', 'shorts', 'phant', 'linen', 'cotton', 'price', 'stock', 'available', 'colour iruka', 'color iruka'];
     if (productKeywords.some(k => t.includes(k))) return 'PRODUCT_ENQUIRY';
 
@@ -226,18 +312,16 @@ function detectIntent(text) {
 }
 
 // =============================
-// pure JS Sales Flow core Logic (Gemini Removed)
+// Pure JS Sales Flow (Gemini Removed)
 // =============================
 
 export function handleSalesAssistantJS(from, userMessage, products, session) {
     const textLower = userMessage.trim().toLowerCase();
 
-    // =============================================
-    // STATE CHECK: AWAITING_HELP_CONFIRM (check before isAck)
-    // =============================================
+    // STATE CHECK: AWAITING_HELP_CONFIRM
     if (session.state === "AWAITING_HELP_CONFIRM") {
         const yesKeywords = ['yes', 'aama', 'help_yes', 'y', 'aam', 'ok', 'okay', 'sari', 'sari bro', 'saree', 'sari da', 'seri', 'seri bro', 'seri da', 'aama bro'];
-        const noKeywords = ['no', 'help_no', 'n', 'illai', 'illa', 'vendam', 'ethum venam', 'no bro', 'nothing', 'no thanks', 'no thank you'];
+        const noKeywords  = ['no', 'help_no', 'n', 'illai', 'illa', 'vendam', 'ethum venam', 'no bro', 'nothing', 'no thanks', 'no thank you'];
 
         if (yesKeywords.includes(textLower) || textLower.includes('yes') || textLower.includes('aama') || textLower.includes('sari') || textLower.includes('seri')) {
             session.state = "AWAITING_CATEGORY";
@@ -246,24 +330,20 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 sendImages: []
             };
         } else if (noKeywords.includes(textLower) || textLower.includes('no') || textLower.includes('illa') || textLower.includes('vendam')) {
-            session.state = "AWAITING_CATEGORY";
-            session.cart = [];
+            session.state     = "AWAITING_CATEGORY";
+            session.cart      = [];
             session.pendingProduct = null;
-            session.selectedSize = null;
+            session.selectedSize   = null;
             return {
                 replyText: "🙏 Thanks bro! Super Collections support pannathuku nandri ❤️ Anytime message pannunga 😊",
                 sendImages: []
             };
         } else {
-            // If they replied with something else, reset help state and fall through to process as intent/category
             session.state = "AWAITING_CATEGORY";
         }
     }
 
-    // =============================================
-    // STEP 0: ACKNOWLEDGEMENT — check FIRST, always
-    // Never show products for filler/closing messages
-    // =============================================
+    // STEP 0: ACKNOWLEDGEMENT
     const ACK_LIST = [
         'ok', 'okay', 'otay', 'ok bro', 'ok anna', 'okey', 'ok da',
         'k', 'kk', 'hmm', 'hm', 'mm', 'mmm', 'oh ok', 'oh okay',
@@ -275,7 +355,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         '👍', '👌', '✅', '🙏', '😊'
     ];
     const isAck = ACK_LIST.includes(textLower)
-        || /^[👍👌✅🙏]+$/.test(textLower)  // emoji only
+        || /^[👍👌✅🙏]+$/.test(textLower)
         || (textLower.startsWith('👍') && textLower.length <= 5)
         || (textLower.startsWith('👌') && textLower.length <= 5)
         || (textLower.includes('thanks') && textLower.length <= 20)
@@ -288,51 +368,38 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 body: "Vera edhavadhu help venuma bro? 😊",
                 buttons: [
                     { id: 'help_yes', title: '✅ YES' },
-                    { id: 'help_no', title: '❌ NO' }
+                    { id: 'help_no',  title: '❌ NO'  }
                 ]
             },
             sendImages: []
         };
     }
 
-    // =============================================
     // INTENT DETECTION GATE
-    // =============================================
     const intent = detectIntent(textLower);
 
-    // If currently in complaint mode, keep answering as support
-    if (session.complaintMode && intent !== 'GREETING' && intent !== 'PRODUCT_ENQUIRY' && intent !== 'ORDER_PLACEMENT' && intent !== 'ORDER_CONFIRMATION') {
-        // Stay in support mode for follow-up messages
-        // (handled below in the COMPLAINT block)
-    }
-
-    // --- COMPLAINT HANDLER (strict: never show products) ---
+    // COMPLAINT HANDLER
     if (intent === 'COMPLAINT' || (session.complaintMode && intent !== 'GREETING')) {
         session.complaintMode = true;
 
-        // Wrong product / wrong colour
         if (textLower.includes('wrong') || textLower.includes('vera colour') || textLower.includes('vera color') || textLower.includes('wrong colour') || textLower.includes('wrong color') || textLower.includes('wrong item') || textLower.includes('wrong product') || textLower.includes('colour wrong') || textLower.includes('color wrong')) {
             return { replyText: '📸 Sorry bro 😔\n\nProduct photo + Order ID anuppunga bro.\nCheck pannitu udan sort out panrom.', sendImages: [] };
         }
-        // Damage / defect
         if (textLower.includes('damage') || textLower.includes('defect') || textLower.includes('torn') || textLower.includes('dirty') || textLower.includes('stain') || textLower.includes('hole') || textLower.includes('bad quality') || textLower.includes('quality illa') || textLower.includes('used item') || textLower.includes('packaging')) {
             return { replyText: '😔 Really sorry bro!\n\nPhoto / video anuppunga + Order ID.\nTeam check pannitu replacement arrange panrom.', sendImages: [] };
         }
-        // Not received / delivery delay
         if (textLower.includes('not received') || textLower.includes('kedaikala') || textLower.includes('varala') || textLower.includes('receive pannala') || textLower.includes('delivery delay') || textLower.includes('still not') || textLower.includes('not yet') || textLower.includes('late achu') || textLower.includes('late aguthu') || textLower.includes('parcel varala') || textLower.includes('pakketla')) {
             return { replyText: '😔 Sorry for the delay bro.\n\nOrder ID anuppunga - tracking details check pannitu update sollrom. 📦', sendImages: [] };
         }
-        // Missing item
         if (textLower.includes('missing') || textLower.includes('item missing') || textLower.includes('parcel missing')) {
             return { replyText: '😔 Sorry bro! Order ID + unboxing photo irundha anuppunga.\nCheck pannitu sort out panrom.', sendImages: [] };
         }
-        // Generic complaint fallback
         return { replyText: '😔 Sorry for the inconvenience bro.\n\nOrder ID anuppunga - udan check pannitu help panrom. 🙏', sendImages: [] };
     }
 
-    // --- RETURN / EXCHANGE HANDLER ---
+    // RETURN / EXCHANGE HANDLER
     if (intent === 'RETURN_EXCHANGE') {
-        session.complaintMode = true; // stay in support mode
+        session.complaintMode = true;
         if (textLower.includes('size match agala') || textLower.includes('size match agulana') || textLower.includes('size wrong') || textLower.includes('size poda')) {
             return { replyText: '📌 Size issue bro?\n\n7 days exchange available.\nOrder ID + product photo anuppunga.', sendImages: [] };
         }
@@ -347,11 +414,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         session.complaintMode = false;
     }
 
-    // =============================================
-    // FAQ MATCHES — check first regardless of state
-    // =============================================
-
-    // Delivery time
+    // FAQ MATCHES
     if (textLower.includes("delivery eppo") || textLower.includes("delivery time") || textLower.includes("evlo naal") || textLower.includes("evvalavu naal") || textLower.includes("kku evlo naal") || textLower.includes("vanthudum")) {
         return { replyText: "🚚 Delivery usually 2-5 working days bro.", sendImages: [] };
     }
@@ -364,23 +427,15 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     if (textLower.includes("tracking") || textLower.includes("where is my order") || textLower.includes("order enga") || textLower.includes("track order") || textLower.includes("order status")) {
         return { replyText: "Order ID anuppunga bro. Tracking details check pannitu sollrom. 📦", sendImages: [] };
     }
-
-    // Size / Fit issues
     if (textLower.includes("size match agala") || textLower.includes("size match agulana") || textLower.includes("size chart") || textLower.includes("shirt small") || textLower.includes("shirt big") || textLower.includes("wrong size") || textLower.includes("size poda") || textLower.includes("size guide")) {
         return { replyText: "📌 Size Guide bro:\n\nS - 38 chest\nM - 40 chest\nL - 42 chest\nXL - 44 chest\n\nDoubt irundha order ID anuppunga, exchange arrange panrom! 😊", sendImages: [] };
     }
-
-    // Return / Exchange / Refund
     if (textLower.includes("return") || textLower.includes("exchange") || textLower.includes("refund") || textLower.includes("replace") || textLower.includes("maatunga")) {
         return { replyText: "✅ 7 days Return / Exchange available bro.\n\nOrder ID + product photo anuppunga.", sendImages: [] };
     }
-
-    // Wrong / Damage product
     if (textLower.includes("damage") || textLower.includes("torn") || textLower.includes("wrong colour") || textLower.includes("vera colour") || textLower.includes("wrong color") || textLower.includes("wrong product") || textLower.includes("defect")) {
         return { replyText: "📸 Product photo + Order ID anuppunga bro.\n\nCheck pannitu exchange arrange panrom. 😊", sendImages: [] };
     }
-
-    // Payment
     if (textLower.includes("cod iruka") || textLower.includes("cash on delivery") || textLower.includes("cod available") || textLower === "cod") {
         return { replyText: "Sorry bro 😊 COD available illa.\nGPay / UPI mattum available.", sendImages: [] };
     }
@@ -393,49 +448,34 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     if (textLower.includes("online pay") || textLower.includes("prepaid") || textLower.includes("netbanking") || textLower.includes("card")) {
         return { replyText: "💳 GPay / PhonePe / UPI available bro!\n\nUPI: yourupi@okaxis", sendImages: [] };
     }
-
-    // Discount / Offer / Price
     if (textLower.includes("discount") || textLower.includes("offer") || textLower.includes("sale") || textLower.includes("coupon") || textLower.includes("rate kam") || textLower.includes("cheap") || textLower.includes("kammiya")) {
         return { replyText: "Sorry bro 😊 Fixed price taan. Already best price la iruku! 🔥", sendImages: [] };
     }
-
-    // Bulk / Minimum order
     if (textLower.includes("bulk") || textLower.includes("wholesale") || textLower.includes("minimum order") || textLower.includes("lots")) {
         return { replyText: "Bulk order venumna directly call pannunga bro! 📞 Owner contact pannuvanga.", sendImages: [] };
     }
-
-    // Color availability
     if (textLower.includes("vere color") || textLower.includes("vera colour") || textLower.includes("other color") || textLower.includes("different color") || textLower.includes("color available") || textLower.includes("colour iruka")) {
         return { replyText: "Enna category venumnu sollunga bro 😊 Available colors list kaaturen!", sendImages: [] };
     }
-
-    // Quality
     if (textLower.includes("quality") || textLower.includes("fabric") || textLower.includes("material") || textLower.includes("genuine") || textLower.includes("original")) {
         return { replyText: "💪 100% quality product bro! Super Collections - premium quality guaranteed 😊", sendImages: [] };
     }
-
-    // Store / Contact
     if (textLower.includes("shop address") || textLower.includes("store address") || textLower.includes("shop enga") || textLower.includes("location") || textLower.includes("contact number") || textLower.includes("phone number kodu")) {
         return { replyText: "🏪 Super Collections\n\nOnline orders mattum bro. WhatsApp la order pannunga! 😊", sendImages: [] };
     }
 
-    // Thank you / acknowledgement — handled at TOP of function (STEP 0)
-
-    // 2. Customer Not Interested check
+    // Not Interested
     const notInterestedKeywords = ["no bro", "ethum venam", "vendam", "later", "paravala"];
-    const isNotInterested = notInterestedKeywords.some(kw => textLower.includes(kw));
-    if (isNotInterested) {
-        session.cart = [];
-        session.state = "AWAITING_CATEGORY";
+    if (notInterestedKeywords.some(kw => textLower.includes(kw))) {
+        session.cart          = [];
+        session.state         = "AWAITING_CATEGORY";
         session.pendingProduct = null;
-        session.selectedSize = null;
+        session.selectedSize  = null;
         return {
             replyText: "🙏 Thanks bro.\n\nFuture la dress venumna anytime message pannunga.\n\nSuper Collections support pannathuku thanks 😊",
             sendImages: []
         };
     }
-
-    // 3. State-Based Sales Flow
 
     // A. Greeting
     if (textLower === "hi" || textLower === "hello" || textLower === "hey" || textLower === "hi bro" || textLower === "hi anna" || textLower === "hii" || textLower === "hai" || textLower === "vanakkam") {
@@ -451,25 +491,23 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         if (!session.cart || session.cart.length === 0) {
             return { replyText: "Cart empty bro 😊 Mudhalla category search pannunga.", sendImages: [] };
         }
-        // Show cart summary then ask one-line details
         let cartSummary = `🛒 *Your Cart:*\n\n`;
         session.cart.forEach((item, i) => {
             cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.name} (${item.size}) - ₹${item.price}\n`;
         });
         const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
         cartSummary += `\n💰 Total: ₹${cartTotal}\n\n📝 Order confirm panna details fill pannuga:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`;
-        session.state = "AWAITING_CHECKOUT_DETAILS";
+        session.state        = "AWAITING_CHECKOUT_DETAILS";
         session.orderDetails = { customerName: '', customerPhone: '', customerAddress: '', paymentMethod: 'UPI' };
         return { replyText: cartSummary, sendImages: [] };
     }
 
-    // C. Checkout details collection (one-line: Name, Phone, Address)
+    // C. Checkout details collection
     if (session.state === "AWAITING_CHECKOUT_DETAILS") {
-        // Parse comma-separated: Name, Phone, Address
         const parts = userMessage.split(',').map(s => s.trim());
         if (parts.length >= 3) {
-            session.orderDetails.customerName = parts[0];
-            session.orderDetails.customerPhone = parts[1];
+            session.orderDetails.customerName    = parts[0];
+            session.orderDetails.customerPhone   = parts[1];
             session.orderDetails.customerAddress = parts.slice(2).join(', ');
             session.isOrderConfirmed = true;
             return {
@@ -485,8 +523,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         }
     }
 
-    // D-0. Welcome Category Number shortcut (1=Cotton Shirt, 2=Linen Shirt, etc.)
-    // Only active when in AWAITING_CATEGORY state (i.e. after greeting or "more items" flow)
+    // D-0. Welcome Category Number shortcut
     if (session.state === "AWAITING_CATEGORY" && /^[1-5]$/.test(textLower)) {
         const welcomeCategories = {
             '1': 'cotton shirt',
@@ -497,14 +534,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         };
         const mappedCategory = welcomeCategories[textLower];
         if (mappedCategory) {
-            // Re-run with the mapped category text
             return handleSalesAssistantJS(from, mappedCategory, products, session);
         }
     }
 
-    // D. Category Search Check
+    // D. Category Search
     const categoryKeywords = ["shirt", "pant", "jeans", "cargo", "tshirt", "t shirt", "t-shirt", "shorts", "phant"];
-    const isCategorySearch = categoryKeywords.some(keyword => textLower.includes(keyword));
+    const isCategorySearch  = categoryKeywords.some(keyword => textLower.includes(keyword));
 
     if (isCategorySearch) {
         let matched = products.filter(p => Number(p.stock) > 0);
@@ -531,9 +567,8 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
         if (matched.length > 0) {
             session.searchProducts = matched;
-            session.state = "AWAITING_MODEL_SELECTION";
+            session.state          = "AWAITING_MODEL_SELECTION";
 
-            // Category-specific emoji
             const catEmoji = textLower.includes('shirt') ? '👕' :
                 textLower.includes('pant') || textLower.includes('phant') ? '👖' :
                     textLower.includes('jeans') ? '👖' :
@@ -562,9 +597,9 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     if (numberMatch && session.state === "AWAITING_MODEL_SELECTION" && session.searchProducts?.length > 0) {
         const idx = parseInt(numberMatch[0], 10) - 1;
         if (idx >= 0 && idx < session.searchProducts.length) {
-            const product = session.searchProducts[idx];
+            const product       = session.searchProducts[idx];
             session.pendingProduct = product;
-            session.state = "AWAITING_SIZE_SELECTION";
+            session.state          = "AWAITING_SIZE_SELECTION";
 
             const sizeList = (Array.isArray(product.sizes)
                 ? product.sizes
@@ -584,20 +619,20 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
     // F. Size Selection
     if (session.state === "AWAITING_SIZE_SELECTION" && session.pendingProduct) {
-        const product = session.pendingProduct;
+        const product        = session.pendingProduct;
         const availableSizes = Array.isArray(product.sizes)
             ? product.sizes.map(s => s.toLowerCase().trim())
             : String(product.sizes).toLowerCase().split(',').map(s => s.trim());
 
         if (availableSizes.includes(textLower)) {
             session.selectedSize = userMessage.toUpperCase();
-            session.state = "AWAITING_CART_CONFIRM";
+            session.state        = "AWAITING_CART_CONFIRM";
             return {
                 sendButtons: {
                     body: `✅ ${product.name} - ${session.selectedSize}\n\nCart la add pannalama bro?`,
                     buttons: [
                         { id: 'yes', title: '✅ YES' },
-                        { id: 'no', title: '❌ NO' }
+                        { id: 'no',  title: '❌ NO'  }
                     ]
                 },
                 selectedSize: session.selectedSize
@@ -623,15 +658,14 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 : products.find(p => (p.category?.toLowerCase().includes("shirt") || p.name.toLowerCase().includes("shirt")) && Number(p.stock) > 0);
 
             session.pendingProduct = null;
-            session.selectedSize = null;
+            session.selectedSize   = null;
 
             if (recommended) {
                 session.lastRecommendation = recommended;
-                session.state = "AWAITING_RECOMMENDATION_CONFIRM";
+                session.state              = "AWAITING_RECOMMENDATION_CONFIRM";
 
-                // Salesman-style specific recommendation
                 const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
-                const recName = `${recommended.color ? recommended.color + ' ' : ''}${recommended.name}`;
+                const recName   = `${recommended.color ? recommended.color + ' ' : ''}${recommended.name}`;
                 const isShirtAdded = product.name.toLowerCase().includes('shirt') || product.category?.toLowerCase().includes('shirt');
                 const matchMsg = isShirtAdded
                     ? `Bro 🔥 Intha *${addedName}*-ku *${recName}* super best match aagum!\n\n💰 ₹${recommended.price}\n\nRomba nalla combo bro 😎 Look-u super-a varum, sure try pannunga!`
@@ -642,7 +676,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                         body: matchMsg + `\n\nVenuma bro?`,
                         buttons: [
                             { id: 'yes', title: '✅ YES - Add' },
-                            { id: 'no', title: '❌ NO' }
+                            { id: 'no',  title: '❌ NO' }
                         ]
                     },
                     sendImages: [{ url: recommended.imageUri, caption: recName }],
@@ -650,14 +684,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                     lastRecommendation: recommended
                 };
             } else {
-                // No recommendation — ask if they want more items
                 session.state = "AWAITING_MORE_ITEMS";
                 return {
                     sendButtons: {
                         body: `✅ Cart la add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
                         buttons: [
                             { id: 'yes', title: '🛍️ YES' },
-                            { id: 'no', title: '🛒 NO - Checkout' }
+                            { id: 'no',  title: '🛒 NO - Checkout' }
                         ]
                     },
                     sendImages: [],
@@ -666,8 +699,8 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             }
         } else if (textLower === "no" || textLower === "n" || textLower === "illai") {
             session.pendingProduct = null;
-            session.selectedSize = null;
-            session.state = "AWAITING_CATEGORY";
+            session.selectedSize   = null;
+            session.state          = "AWAITING_CATEGORY";
             return { replyText: "Ok bro 😊 Vera category search pannunga or BUY nu type pannunga.", sendImages: [] };
         }
     }
@@ -676,16 +709,16 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_RECOMMENDATION_CONFIRM" && session.lastRecommendation) {
         const rec = session.lastRecommendation;
         if (textLower === "yes" || textLower === "y" || textLower === "aama" || textLower === "add") {
-            const originalItem = session.cart[session.cart.length - 1];
-            session.state = "AWAITING_COMBO_CART_CONFIRM";
-            const origName = `${originalItem.color ? originalItem.color + ' ' : ''}${originalItem.name}`;
+            const originalItem  = session.cart[session.cart.length - 1];
+            session.state       = "AWAITING_COMBO_CART_CONFIRM";
+            const origName    = `${originalItem.color ? originalItem.color + ' ' : ''}${originalItem.name}`;
             const recCombName = `${rec.color ? rec.color + ' ' : ''}${rec.name}`;
             return {
                 sendButtons: {
                     body: `🔥 *Combo Set:*\n\n• ${origName} (${originalItem.size})\n• ${recCombName}\n\n💰 Combo Total: ₹${Number(originalItem.price) + Number(rec.price)}\n\nBro, intha combo potu paarunga - super-a irukum! 😎👌\n\nCart la add pannalama?`,
                     buttons: [
                         { id: 'yes', title: '✅ YES - Super!' },
-                        { id: 'no', title: '❌ NO' }
+                        { id: 'no',  title: '❌ NO' }
                     ]
                 },
                 sendImages: [{ url: rec.imageUri, caption: recCombName }],
@@ -693,14 +726,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai") {
             session.lastRecommendation = null;
-            // Ask if they want more items
-            session.state = "AWAITING_MORE_ITEMS";
+            session.state              = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
                     body: `Ok bro! 😊\n\nVera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no', title: '🛒 NO - Checkout' }
+                        { id: 'no',  title: '🛒 NO - Checkout' }
                     ]
                 },
                 sendImages: []
@@ -715,14 +747,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             const recSize = rec.sizes && rec.sizes.length > 0 ? rec.sizes[0] : "32";
             session.cart.push({ id: rec.id, name: rec.name, price: Number(rec.price), color: rec.color, size: recSize });
             session.lastRecommendation = null;
-            // Ask if they want more items
-            session.state = "AWAITING_MORE_ITEMS";
+            session.state              = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
                     body: `Super combo add achu bro! 😎\n\nVera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no', title: '🛒 NO - Checkout' }
+                        { id: 'no',  title: '🛒 NO - Checkout' }
                     ]
                 },
                 sendImages: [],
@@ -730,13 +761,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai") {
             session.lastRecommendation = null;
-            session.state = "AWAITING_MORE_ITEMS";
+            session.state              = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
                     body: `Ok bro! 😊\n\nVera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no', title: '🛒 NO - Checkout' }
+                        { id: 'no',  title: '🛒 NO - Checkout' }
                     ]
                 },
                 sendImages: []
@@ -747,7 +778,6 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     // J. More Items? (AWAITING_MORE_ITEMS)
     if (session.state === "AWAITING_MORE_ITEMS") {
         if (textLower === "yes" || textLower === "y" || textLower === "aama") {
-            // Go back to category search, keep cart intact
             session.state = "AWAITING_CATEGORY";
             const cartCount = session.cart.length;
             const cartTotal = session.cart.reduce((sum, i) => sum + Number(i.price), 0);
@@ -756,7 +786,6 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 sendImages: []
             };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai") {
-            // Go directly to checkout — show cart & ask one-line details
             if (!session.cart || session.cart.length === 0) {
                 session.state = "AWAITING_CATEGORY";
                 return { replyText: "Cart empty bro 😊 Mudhalla category search pannunga.", sendImages: [] };
@@ -767,13 +796,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             });
             const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
             cartSummary += `\n💰 Total: ₹${cartTotal}\n\n📝 Order confirm panna oru line la anuppunga bro:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`;
-            session.state = "AWAITING_CHECKOUT_DETAILS";
+            session.state        = "AWAITING_CHECKOUT_DETAILS";
             session.orderDetails = { customerName: '', customerPhone: '', customerAddress: '', paymentMethod: 'UPI' };
             return { replyText: cartSummary, sendImages: [] };
         }
     }
 
-    // Smart fallback based on current state
+    // Smart fallbacks
     if (session.state === "AWAITING_CHECKOUT_DETAILS") {
         return {
             replyText: `📝 Order details anuppunga bro:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`,
@@ -787,7 +816,9 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         };
     }
     if (session.state === "AWAITING_SIZE_SELECTION") {
-        const sizeList = session.pendingProduct?.sizes ? (Array.isArray(session.pendingProduct.sizes) ? session.pendingProduct.sizes.join(', ') : session.pendingProduct.sizes) : 'S, M, L, XL';
+        const sizeList = session.pendingProduct?.sizes
+            ? (Array.isArray(session.pendingProduct.sizes) ? session.pendingProduct.sizes.join(', ') : session.pendingProduct.sizes)
+            : 'S, M, L, XL';
         return {
             replyText: `Size sollunga bro 😊 Available: ${sizeList}`,
             sendImages: []
@@ -800,32 +831,34 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     };
 }
 
+// =============================
+// Core Message Handler (async — uses await for all DB calls)
+// =============================
+
 async function handleMessage(msg) {
-    // Support both plain text and interactive button replies
     const text = msg.text?.body?.trim() || msg.interactive?.button_reply?.id?.trim() || '';
-    const from = msg.from;
+    const from  = msg.from;
 
     if (!text) return;
 
-    // Log incoming customer message
     const logText = msg.text?.body?.trim() || msg.interactive?.button_reply?.title?.trim() || msg.interactive?.button_reply?.id?.trim() || '';
-    logChatMessage(from, 'customer', logText);
+    await logChatMessage(from, 'customer', logText);
 
     // Check if bot is paused
-    const chats = getChats();
+    const chats = await getChats();
     if (chats[from]?.botPaused) {
         console.log(`[BOT -> USER] Bot is PAUSED for ${from}. Ignoring message for automated reply.`);
         return;
     }
 
     try {
-        const products = getProducts();
-        const orders = getOrders();
+        const products = await getProducts();
+        const orders   = await getOrders();
 
-        // 1. Admin Commands
+        // Admin Commands
         if (text.toUpperCase().startsWith('ADMIN')) {
             const parts = text.toUpperCase().split(' ');
-            const cmd = parts[1];
+            const cmd   = parts[1];
 
             if (cmd === 'ORDERS') {
                 const activeOrders = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').slice(-10);
@@ -840,37 +873,33 @@ async function handleMessage(msg) {
             }
 
             if (cmd === 'DELIVER' && parts[2]) {
-                const id = parts[2];
+                const id    = parts[2];
                 const order = orders.find(o => o.id === id || o.orderId === id);
                 if (order) {
-                    order.status = 'delivered';
-                    saveOrders(orders);
+                    // Update status directly in Supabase
+                    const { error } = await supabase.from('orders').update({ status: 'delivered' }).eq('id', id);
+                    if (error) console.error('❌ Error updating order status:', error.message);
                     return await sendText(from, `✅ Order ${id} marked as delivered!`);
                 }
                 return await sendText(from, `❌ Order ${id} not found.`);
             }
 
             if (cmd === 'CANCEL' && parts[2]) {
-                const id = parts[2];
+                const id    = parts[2];
                 const order = orders.find(o => o.id === id || o.orderId === id);
                 if (order && order.status !== 'cancelled') {
-                    order.status = 'cancelled';
-                    saveOrders(orders);
+                    const { error } = await supabase.from('orders').update({ status: 'cancelled' }).eq('id', id);
+                    if (error) console.error('❌ Error cancelling order:', error.message);
 
-                    if (order.items) {
-                        order.items.forEach(item => {
+                    // Restore stock for each item
+                    if (order.items && order.items.length > 0) {
+                        for (const item of order.items) {
                             const product = products.find(p => String(p.id) === String(item.productId) || p.code === item.productId);
                             if (product) {
-                                product.stock = Number(product.stock) + 1;
+                                await supabase.from('products').update({ stock: String(Number(product.stock) + 1) }).eq('id', product.id);
                             }
-                        });
-                    } else if (order.productId) {
-                        const product = products.find(p => String(p.id) === String(order.productId) || p.code === order.productId);
-                        if (product) {
-                            product.stock = Number(product.stock) + Number(order.quantity || 1);
                         }
                     }
-                    saveProducts(products);
                     return await sendText(from, `🚫 Order ${id} cancelled. Stock restored.`);
                 }
                 return await sendText(from, `❌ Order ${id} not found or already cancelled.`);
@@ -894,77 +923,59 @@ async function handleMessage(msg) {
             };
         }
 
-        const session = userSessions[from];
-
-        // Call the JS assistant to handle the dialogue (Gemini Removed)
+        const session    = userSessions[from];
         const aiResponse = handleSalesAssistantJS(from, text, products, session);
 
-        // Execute side effects
-        if (aiResponse.cart) {
-            session.cart = aiResponse.cart;
-        }
-        if (aiResponse.selectedColor !== undefined) {
-            session.selectedColor = aiResponse.selectedColor;
-        }
-        if (aiResponse.selectedSize !== undefined) {
-            session.selectedSize = aiResponse.selectedSize;
-        }
-        if (aiResponse.searchProducts !== undefined) {
-            session.searchProducts = aiResponse.searchProducts;
-        }
-        if (aiResponse.lastRecommendation !== undefined) {
-            session.lastRecommendation = aiResponse.lastRecommendation;
-        }
-        if (aiResponse.awaitingRecommendationResponse !== undefined) {
-            session.awaitingRecommendationResponse = aiResponse.awaitingRecommendationResponse;
-        }
-        if (aiResponse.awaitingCartAdditionConfirmation !== undefined) {
-            session.awaitingCartAdditionConfirmation = aiResponse.awaitingCartAdditionConfirmation;
-        }
-        if (aiResponse.pendingProduct !== undefined) {
-            session.pendingProduct = aiResponse.pendingProduct;
-        }
+        // Execute session side effects
+        if (aiResponse.cart)                                    session.cart                            = aiResponse.cart;
+        if (aiResponse.selectedColor   !== undefined)           session.selectedColor                   = aiResponse.selectedColor;
+        if (aiResponse.selectedSize    !== undefined)           session.selectedSize                    = aiResponse.selectedSize;
+        if (aiResponse.searchProducts  !== undefined)           session.searchProducts                  = aiResponse.searchProducts;
+        if (aiResponse.lastRecommendation !== undefined)        session.lastRecommendation              = aiResponse.lastRecommendation;
+        if (aiResponse.awaitingRecommendationResponse !== undefined) session.awaitingRecommendationResponse = aiResponse.awaitingRecommendationResponse;
+        if (aiResponse.awaitingCartAdditionConfirmation !== undefined) session.awaitingCartAdditionConfirmation = aiResponse.awaitingCartAdditionConfirmation;
+        if (aiResponse.pendingProduct  !== undefined)           session.pendingProduct                  = aiResponse.pendingProduct;
 
-        // If order is confirmed, save to DB and update stock
+        // Order Confirmed — save to Supabase + update stock
         if (aiResponse.isOrderConfirmed && aiResponse.orderDetails) {
-            const orderId = 'ORD-' + Date.now();
+            const orderId   = 'ORD-' + Date.now();
             const orderDate = new Date();
-            const dateStr = orderDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-            const timeStr = orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            const dateStr   = orderDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const timeStr   = orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-            const cartItems = session.cart;
+            const cartItems  = session.cart;
             const totalPrice = cartItems.reduce((sum, item) => sum + Number(item.price), 0);
 
             const newOrder = {
-                id: orderId,
-                customerPhone: from,
-                customerName: aiResponse.orderDetails.customerName || '',
-                customerAddress: aiResponse.orderDetails.customerAddress || '',
-                items: cartItems.map(item => ({
+                id:               orderId,
+                customer_phone:   from,
+                customer_name:    aiResponse.orderDetails.customerName  || '',
+                customer_address: aiResponse.orderDetails.customerAddress || '',
+                items:            cartItems.map(item => ({
                     productId: item.id || item.productId,
-                    product: item.name,
-                    color: item.color || '',
-                    size: item.size || 'N/A',
-                    price: item.price
+                    product:   item.name,
+                    color:     item.color || '',
+                    size:      item.size  || 'N/A',
+                    price:     item.price
                 })),
-                totalPrice,
-                status: 'confirmed',
-                date: orderDate.toISOString()
+                total_price: totalPrice,
+                status:      'confirmed',
+                date:        orderDate.toISOString()
             };
 
-            // Decrement stock for ordered items
-            cartItems.forEach(item => {
+            const { error: insertError } = await supabase.from('orders').insert([newOrder]);
+            if (insertError) console.error('❌ Error inserting order:', insertError.message);
+
+            // Decrement stock
+            for (const item of cartItems) {
                 const product = products.find(p => String(p.id) === String(item.id) || p.code === item.code);
                 if (product) {
-                    product.stock = Math.max(0, Number(product.stock) - 1);
+                    const newStock = Math.max(0, Number(product.stock) - 1);
+                    await supabase.from('products').update({ stock: String(newStock) }).eq('id', product.id);
                 }
-            });
+            }
 
-            orders.push(newOrder);
-            saveOrders(orders);
-            saveProducts(products);
-
-            // Build formatted bill
+            // Build & send bill
             const divider = '──────────────────────';
             let bill = `${divider}\n`;
             bill += `🏪 *SUPER COLLECTIONS*\n`;
@@ -995,12 +1006,9 @@ async function handleMessage(msg) {
             bill += `🙏 Thanks for shopping at\n`;
             bill += `*Super Collections!* ❤️`;
 
-            // Clear session
             delete userSessions[from];
-
-            // Send the bill directly and skip the generic send block
             await sendText(from, bill);
-            logChatMessage(from, 'bot', bill);
+            await logChatMessage(from, 'bot', bill);
             return;
         }
 
@@ -1009,23 +1017,21 @@ async function handleMessage(msg) {
             for (const img of aiResponse.sendImages) {
                 if (img.url && img.url.startsWith('http')) {
                     await sendImage(from, img.url, img.caption || '');
-                    logChatMessage(from, 'bot', img.caption || '', 'image', img.url);
+                    await logChatMessage(from, 'bot', img.caption || '', 'image', img.url);
                 }
             }
         }
-
         if (aiResponse.replyText) {
             await sendText(from, aiResponse.replyText);
-            logChatMessage(from, 'bot', aiResponse.replyText);
+            await logChatMessage(from, 'bot', aiResponse.replyText);
         }
-
         if (aiResponse.sendButtons) {
             await sendButtons(from, aiResponse.sendButtons.body, aiResponse.sendButtons.buttons);
             let buttonMsg = aiResponse.sendButtons.body;
             if (aiResponse.sendButtons.buttons) {
                 buttonMsg += '\n' + aiResponse.sendButtons.buttons.map(b => `[${b.title}]`).join(' ');
             }
-            logChatMessage(from, 'bot', buttonMsg);
+            await logChatMessage(from, 'bot', buttonMsg);
         }
 
     } catch (err) {
@@ -1039,8 +1045,8 @@ async function handleMessage(msg) {
 // =============================
 
 export const verifyWebhook = (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
+    const mode      = req.query['hub.mode'];
+    const token     = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
     console.log(`[WEBHOOK-VERIFY] mode="${mode}" | token="${token}" | expected="${VERIFY_TOKEN}"`);
@@ -1064,7 +1070,6 @@ export const receiveWebhook = async (req, res) => {
 
     try {
         const msg = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-
         if (!msg) return;
 
         console.log(`[USER -> BOT] Message ID: ${msg.id}, Text: "${msg.text?.body}"`);
@@ -1076,7 +1081,6 @@ export const receiveWebhook = async (req, res) => {
         processed.add(msg.id);
 
         await handleMessage(msg);
-
     } catch (err) {
         console.error('❌ Webhook Processing Error:', err.message);
     }
