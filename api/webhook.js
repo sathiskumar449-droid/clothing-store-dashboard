@@ -9,6 +9,13 @@ const VERIFY_TOKEN    = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN  = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_ID || process.env.PHONE_NUMBER_ID;
 
+// ✅ Startup diagnostic — visible in Vercel logs immediately on cold start
+console.log('[STARTUP] ENV CHECK:');
+console.log('  WHATSAPP_TOKEN  :', WHATSAPP_TOKEN  ? `SET (${WHATSAPP_TOKEN.slice(0,10)}...)` : '❌ MISSING');
+console.log('  PHONE_NUMBER_ID :', PHONE_NUMBER_ID ? `SET (${PHONE_NUMBER_ID})`               : '❌ MISSING');
+console.log('  VERIFY_TOKEN    :', VERIFY_TOKEN    ? `SET (${VERIFY_TOKEN})`                   : '❌ MISSING');
+console.log('  SUPABASE_URL    :', process.env.SUPABASE_URL ? 'SET' : '❌ MISSING');
+
 const processed = new Set();
 export const userSessions = {}; // In-memory per-user conversation state
 
@@ -232,12 +239,22 @@ export async function logChatMessage(customerPhone, sender, text, type = 'text',
 // =============================
 
 async function sendRequest(payload) {
-    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return;
+    // ── Guard: env vars missing ──────────────────────────────────────
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        console.error('❌ [sendRequest] BLOCKED — env vars missing!');
+        console.error('   WHATSAPP_TOKEN  :', WHATSAPP_TOKEN  ? 'SET' : '❌ MISSING');
+        console.error('   PHONE_NUMBER_ID :', PHONE_NUMBER_ID ? 'SET' : '❌ MISSING');
+        return;
+    }
 
     const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
-    console.log(`[BOT -> USER] Sending payload to ${payload.to}. Type: ${payload.type}`);
+
+    console.log(`[BOT -> USER] ▶ Sending to ${payload.to} | type=${payload.type}`);
+    console.log(`[BOT -> USER]   URL: ${url}`);
+    console.log(`[BOT -> USER]   Token starts: ${WHATSAPP_TOKEN.slice(0, 15)}...`);
+
     try {
-        await axios.post(url, {
+        const response = await axios.post(url, {
             messaging_product: 'whatsapp',
             ...payload
         }, {
@@ -246,8 +263,12 @@ async function sendRequest(payload) {
                 'Content-Type': 'application/json'
             }
         });
+        console.log(`[BOT -> USER] ✅ Success! message_id:`, response.data?.messages?.[0]?.id);
     } catch (error) {
-        console.error('❌ WhatsApp API Error:', error.response?.data || error.message);
+        console.error('❌ [sendRequest] WhatsApp API Error!');
+        console.error('   HTTP Status  :', error.response?.status);
+        console.error('   Error body   :', JSON.stringify(error.response?.data, null, 2));
+        console.error('   Raw message  :', error.message);
     }
 }
 
@@ -839,7 +860,12 @@ async function handleMessage(msg) {
     const text = msg.text?.body?.trim() || msg.interactive?.button_reply?.id?.trim() || '';
     const from  = msg.from;
 
-    if (!text) return;
+    console.log(`[handleMessage] from=${from} | text="${text}"`);
+
+    if (!text) {
+        console.log('[handleMessage] ⚠️ Empty text — ignoring.');
+        return;
+    }
 
     const logText = msg.text?.body?.trim() || msg.interactive?.button_reply?.title?.trim() || msg.interactive?.button_reply?.id?.trim() || '';
     await logChatMessage(from, 'customer', logText);
@@ -847,13 +873,16 @@ async function handleMessage(msg) {
     // Check if bot is paused
     const chats = await getChats();
     if (chats[from]?.botPaused) {
-        console.log(`[BOT -> USER] Bot is PAUSED for ${from}. Ignoring message for automated reply.`);
+        console.log(`[handleMessage] Bot is PAUSED for ${from}. Skipping auto-reply.`);
         return;
     }
+
+    console.log(`[handleMessage] Bot active for ${from} — processing...`);
 
     try {
         const products = await getProducts();
         const orders   = await getOrders();
+        console.log(`[handleMessage] Loaded ${products.length} products, ${orders.length} orders from Supabase.`);
 
         // Admin Commands
         if (text.toUpperCase().startsWith('ADMIN')) {
