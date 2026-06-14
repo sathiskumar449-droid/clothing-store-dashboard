@@ -1,7 +1,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 import fs from 'fs';
-
+import path from 'path';
 dotenv.config();
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
@@ -11,8 +11,8 @@ const PHONE_NUMBER_ID = process.env.PHONE_ID || process.env.PHONE_NUMBER_ID;
 const processed = new Set();
 export const userSessions = {}; // Store conversation state per user
 
-const ORDERS_FILE = './database/orders.json';
-const PRODUCTS_FILE = './database/products.json';
+const ORDERS_FILE = path.join(process.cwd(), 'database', 'orders.json');
+const PRODUCTS_FILE = path.join(process.cwd(), 'database', 'products.json');
 
 
 // =============================
@@ -51,7 +51,7 @@ function saveOrders(orders) {
 // =============================
 // Chats Database Helpers
 // =============================
-const CHATS_FILE = './database/chats.json';
+const CHATS_FILE = path.join(process.cwd(), 'database', 'chats.json');
 
 export function getChats() {
     try {
@@ -84,12 +84,12 @@ export function logChatMessage(customerPhone, sender, text, type = 'text', image
             messages: []
         };
     }
-    
+
     // Attempt to update customerName from active session
     if (userSessions[customerPhone]?.orderDetails?.customerName) {
         chats[customerPhone].customerName = userSessions[customerPhone].orderDetails.customerName;
     }
-    
+
     // Fallback search in orders if customerName is still generic 'Customer'
     if (chats[customerPhone].customerName === 'Customer') {
         const orders = getOrders();
@@ -1039,8 +1039,8 @@ async function handleMessage(msg) {
 // =============================
 
 export const verifyWebhook = (req, res) => {
-    const mode      = req.query['hub.mode'];
-    const token     = req.query['hub.verify_token'];
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
     console.log(`[WEBHOOK-VERIFY] mode="${mode}" | token="${token}" | expected="${VERIFY_TOKEN}"`);
