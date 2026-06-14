@@ -38,28 +38,27 @@ app.get('/api/matches', getOutfitMatches);
 // =============================
 // 📦 Products API
 // =============================
-app.post('/products', addProduct);
-
-app.get('/products', getProducts);
-app.put('/products/:id', updateProduct);
-app.delete('/products/:id', deleteProduct);
+app.post('/api/products', addProduct);
+app.get('/api/products', getProducts);
+app.put('/api/products/:id', updateProduct);
+app.delete('/api/products/:id', deleteProduct);
 
 // =============================
 // 📦 Orders API
 // =============================
-app.get('/orders', getOrders);
-app.put('/orders/:id/status', updateOrderStatus);
+app.get('/api/orders', getOrders);
+app.put('/api/orders/:id/status', updateOrderStatus);
 
 
 // =============================
 // 💬 Chats API
 // =============================
-app.get('/chats', getAllChats);
-app.get('/chats/:phone', getChatHistory);
-app.post('/chats/:phone/message', sendChatMessage);
-app.post('/chats/:phone/toggle-bot', toggleBot);
-app.delete('/chats/:phone', deleteChat);
-app.put('/chats/:phone/rename', renameChat);
+app.get('/api/chats', getAllChats);
+app.get('/api/chats/:phone', getChatHistory);
+app.post('/api/chats/:phone/message', sendChatMessage);
+app.post('/api/chats/:phone/toggle-bot', toggleBot);
+app.delete('/api/chats/:phone', deleteChat);
+app.put('/api/chats/:phone/rename', renameChat);
 
 
 // =============================
