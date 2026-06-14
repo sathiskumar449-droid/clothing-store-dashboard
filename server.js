@@ -7,6 +7,7 @@ import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook } from './api/webh
 import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts } from './api/products.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
 import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat } from './api/chats.js';
+import { getWooSettings, saveWooSettings } from './api/settings.js';
 
 dotenv.config();
 
@@ -60,6 +61,13 @@ app.post('/api/chats/:phone/message', sendChatMessage);
 app.post('/api/chats/:phone/toggle-bot', toggleBot);
 app.delete('/api/chats/:phone', deleteChat);
 app.put('/api/chats/:phone/rename', renameChat);
+
+
+// =============================
+// ⚙️ Settings API
+// =============================
+app.get('/api/settings/woo', getWooSettings);
+app.post('/api/settings/woo', saveWooSettings);
 
 
 // =============================

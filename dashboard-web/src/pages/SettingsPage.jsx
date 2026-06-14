@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Save, Store, Phone, MapPin, MessageSquare, Bot, Globe, Key, CheckCircle } from 'lucide-react';
+import api from '../api/axiosInstance';
 
 const STORE_KEY = 'store_settings';
 const WOO_KEY = 'woo_settings';
@@ -49,12 +50,32 @@ export default function SettingsPage() {
   const [savedWoo, setSavedWoo] = useState(false);
 
   useEffect(() => {
+    // 1. Load store settings from localStorage
     try {
       const s = localStorage.getItem(STORE_KEY);
       if (s) setStoreSettings({ ...defaultStore, ...JSON.parse(s) });
-      const w = localStorage.getItem(WOO_KEY);
-      if (w) setWooSettings({ ...defaultWoo, ...JSON.parse(w) });
     } catch {/* ignore */}
+
+    // 2. Load WooCommerce settings from database (fallback to local storage)
+    const loadWoo = async () => {
+      try {
+        const response = await api.get('/settings/woo');
+        if (response.data && response.data.siteUrl) {
+          setWooSettings(response.data);
+          localStorage.setItem(WOO_KEY, JSON.stringify(response.data));
+        } else {
+          // Fallback to local storage if not configured in DB yet
+          const w = localStorage.getItem(WOO_KEY);
+          if (w) setWooSettings({ ...defaultWoo, ...JSON.parse(w) });
+        }
+      } catch (err) {
+        console.error('Failed to load settings from database', err);
+        // Fallback to local storage
+        const w = localStorage.getItem(WOO_KEY);
+        if (w) setWooSettings({ ...defaultWoo, ...JSON.parse(w) });
+      }
+    };
+    loadWoo();
   }, []);
 
   const saveStore = () => {
@@ -63,10 +84,24 @@ export default function SettingsPage() {
     setTimeout(() => setSavedStore(false), 2000);
   };
 
-  const saveWoo = () => {
-    localStorage.setItem(WOO_KEY, JSON.stringify(wooSettings));
-    setSavedWoo(true);
-    setTimeout(() => setSavedWoo(false), 2000);
+  const saveWoo = async () => {
+    try {
+      // Save to localStorage
+      localStorage.setItem(WOO_KEY, JSON.stringify(wooSettings));
+      
+      // Save to database
+      const response = await api.post('/settings/woo', wooSettings);
+      if (response.data.success) {
+        setSavedWoo(true);
+        setTimeout(() => setSavedWoo(false), 2000);
+      } else {
+        alert(response.data.message || 'Failed to save settings to database');
+      }
+    } catch (err) {
+      console.error(err);
+      const msg = err.response?.data?.message || 'Failed to save WooCommerce settings to database';
+      alert(msg);
+    }
   };
 
   return (

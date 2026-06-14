@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Package, RefreshCw, AlertCircle, ExternalLink, CheckCircle } from 'lucide-react';
 import { getWooProducts, syncWooProductsToDb } from '../api/productsApi';
+import api from '../api/axiosInstance';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 
@@ -30,18 +31,44 @@ export default function ProductsPage() {
   }, []);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('woo_settings');
-      if (raw) {
-        const { siteUrl, consumerKey, consumerSecret } = JSON.parse(raw);
+    const loadSettingsAndFetch = async () => {
+      try {
+        let raw = localStorage.getItem('woo_settings');
+        let siteUrl, consumerKey, consumerSecret;
+        
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            siteUrl = parsed.siteUrl;
+            consumerKey = parsed.consumerKey;
+            consumerSecret = parsed.consumerSecret;
+          } catch (e) {
+            console.error('Error parsing local storage woo_settings:', e);
+          }
+        }
+
+        // If credentials are not in localStorage, load from database
+        if (!siteUrl || !consumerKey || !consumerSecret) {
+          const response = await api.get('/settings/woo');
+          if (response.data && response.data.siteUrl) {
+            siteUrl = response.data.siteUrl;
+            consumerKey = response.data.consumerKey;
+            consumerSecret = response.data.consumerSecret;
+            // Cache it locally so subsequent calls are fast
+            localStorage.setItem('woo_settings', JSON.stringify(response.data));
+          }
+        }
+
         if (siteUrl && consumerKey && consumerSecret) {
           fetchProducts();
         }
+      } catch (e) {
+        console.error('Failed to load settings or fetch products:', e);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    };
+    loadSettingsAndFetch();
   }, [fetchProducts]);
+
 
 
   const handleSync = async () => {
