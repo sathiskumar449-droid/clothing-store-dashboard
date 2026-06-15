@@ -391,8 +391,61 @@ export async function sendText(to, text) {
     }
 }
 
+export async function uploadMedia(imageUrl) {
+    try {
+        console.log(`[uploadMedia] Downloading image from WooCommerce: ${imageUrl}`);
+        const imageRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+        const contentType = imageRes.headers['content-type'] || 'image/jpeg';
+        
+        console.log(`[uploadMedia] Creating native Blob and FormData for upload`);
+        const formData = new FormData();
+        const blob = new Blob([imageRes.data], { type: contentType });
+        
+        let filename = 'image.jpg';
+        try {
+            const urlObj = new URL(imageUrl);
+            filename = urlObj.pathname.split('/').pop() || 'image.jpg';
+        } catch (_) {}
+
+        formData.append('file', blob, filename);
+        formData.append('messaging_product', 'whatsapp');
+        formData.append('type', contentType);
+
+        const uploadUrl = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/media`;
+        console.log(`[uploadMedia] Sending POST to Meta Media API: ${uploadUrl}`);
+        
+        const res = await axios.post(uploadUrl, formData, {
+            headers: {
+                Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+                'Content-Type': 'multipart/form-data'
+            }
+        });
+
+        console.log(`[uploadMedia] ✅ Media uploaded successfully! ID: ${res.data?.id}`);
+        return res.data?.id;
+    } catch (err) {
+        console.error('❌ [uploadMedia] Error uploading media:', err.message);
+        if (err.response) {
+            console.error('   Meta Upload Error response:', JSON.stringify(err.response.data, null, 2));
+        }
+        return null;
+    }
+}
+
 export async function sendImage(to, imageUrl, caption = '') {
-    await sendRequest({ to, type: 'image', image: { link: imageUrl, caption } });
+    console.log(`[sendImage] Processing image send request to ${to} for ${imageUrl}`);
+    
+    // First try uploading to Meta to obtain a media_id
+    const mediaId = await uploadMedia(imageUrl);
+    
+    if (mediaId) {
+        console.log(`[sendImage] Sending image via Meta media id: ${mediaId}`);
+        await sendRequest({ to, type: 'image', image: { id: mediaId, caption } });
+    } else {
+        // Fallback to link if upload failed
+        console.log(`[sendImage] Falling back to sending via direct link: ${imageUrl}`);
+        await sendRequest({ to, type: 'image', image: { link: imageUrl, caption } });
+    }
 }
 
 async function sendButtons(to, bodyText, buttons) {
