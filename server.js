@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 import { getOutfitMatches } from './api/matchOutfit.js';
 import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook } from './api/webhook.js';
-import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts } from './api/products.js';
+import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook } from './api/products.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
 import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat } from './api/chats.js';
 import { getWooSettings, saveWooSettings } from './api/settings.js';
@@ -44,6 +44,7 @@ app.get('/api/products', getProducts);
 app.put('/api/products/:id', updateProduct);
 app.delete('/api/products/:id', deleteProduct);
 app.post('/api/products/sync', syncProducts);
+app.post('/api/webhook/woocommerce', handleWooWebhook);
 
 // =============================
 // 📦 Orders API

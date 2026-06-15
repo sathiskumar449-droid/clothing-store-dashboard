@@ -223,3 +223,75 @@ export const syncProducts = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+// Helper to map a single WooCommerce product payload into database schema
+const mapWooProductToDb = (p) => {
+    const sizeAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'size');
+    const sizes = sizeAttr ? (Array.isArray(sizeAttr.options) ? sizeAttr.options : []) : [];
+
+    const colorAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'color');
+    const color = colorAttr ? (Array.isArray(colorAttr.options) ? colorAttr.options[0] : colorAttr.options) : null;
+
+    return {
+        id:          p.id,
+        name:        p.name,
+        code:        p.sku || String(p.id),
+        category:    p.categories?.[0]?.name || 'General',
+        pattern:     p.pattern || null,
+        color:       color || p.color || null,
+        price:       p.price !== undefined ? String(p.price) : '0',
+        stock:       p.stock_quantity !== null && p.stock_quantity !== undefined 
+                        ? String(p.stock_quantity) 
+                        : (p.stock_status === 'instock' ? '10' : '0'),
+        sizes:       sizes,
+        image_uri:   p.images?.[0]?.src || null
+    };
+};
+
+// ✅ WooCommerce Webhook Handler (Automatic Live Sync)
+export const handleWooWebhook = async (req, res) => {
+    try {
+        const topic = req.headers['x-wc-webhook-topic'] || '';
+        const payload = req.body;
+
+        console.log(`🔌 [WooCommerce Webhook] Topic: "${topic}"`);
+
+        // WooCommerce verification test
+        if (topic.includes('webhook.test') || topic.includes('should_deliver')) {
+            return res.json({ success: true, message: 'Webhook registered successfully!' });
+        }
+
+        if (topic === 'product.created' || topic === 'product.updated') {
+            if (!payload || !payload.id) {
+                return res.status(400).json({ success: false, message: 'Invalid payload' });
+            }
+
+            const dbProduct = mapWooProductToDb(payload);
+            const { error } = await supabase
+                .from('products')
+                .upsert([dbProduct], { onConflict: 'id' });
+
+            if (error) throw error;
+            console.log(`✅ [WooCommerce Webhook] Product ${payload.id} (${payload.name}) synced successfully.`);
+        } 
+        
+        else if (topic === 'product.deleted') {
+            if (!payload || !payload.id) {
+                return res.status(400).json({ success: false, message: 'Invalid payload' });
+            }
+
+            const { error } = await supabase
+                .from('products')
+                .delete()
+                .eq('id', payload.id);
+
+            if (error) throw error;
+            console.log(`🗑️ [WooCommerce Webhook] Product ${payload.id} deleted successfully.`);
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ WooCommerce Webhook Error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
