@@ -639,7 +639,7 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
         const img = getProductImageUri(p, allProducts);
         return img && img.startsWith('http') && img !== 'null' && img !== 'undefined';
     };
-    const hasValidPrice = (p) => p.price && String(p.price).trim() !== '' && !isNaN(parseFloat(String(p.price).replace(/[^\\d.]/g, '')));
+    const hasValidPrice = (p) => p.price && String(p.price).trim() !== '' && !isNaN(parseFloat(String(p.price).replace(/[^\d.]/g, '')));
 
     // 1. Try to find a matching product with the target tags AND a valid image
     for (const tag of targetTags) {
