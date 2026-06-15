@@ -2,7 +2,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { supabase } from '../lib/supabase.js';
-import { createProductCollage } from '../lib/collage.js';
+import { createProductCollage, createRecommendationCollage } from '../lib/collage.js';
 
 dotenv.config();
 
@@ -630,11 +630,78 @@ const getProductImageUri = (product, allProducts = []) => {
 };
 
 // Recommendation engine linking tags and categories
-const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => {
-    if (!addedProduct) return null;
-    const addedTag = getProductTag(addedProduct);
-    const targetTags = getTargetRecommendationTags(addedTag);
+const COLOR_MATCHES = {
+    'white': ['black', 'navy', 'blue', 'grey', 'gray', 'green', 'olive', 'red', 'maroon', 'wine', 'pink', 'purple', 'khaki', 'brown', 'sandal', 'beige', 'cream'],
+    'black': ['white', 'grey', 'gray', 'red', 'maroon', 'wine', 'yellow', 'blue', 'sky blue', 'khaki', 'sandal', 'beige', 'cream', 'olive', 'green'],
+    'navy': ['white', 'grey', 'gray', 'sandal', 'beige', 'cream', 'khaki', 'yellow', 'pink', 'light pink', 'sky blue', 'red'],
+    'blue': ['white', 'black', 'grey', 'gray', 'sandal', 'beige', 'cream', 'khaki'],
+    'sky blue': ['white', 'black', 'grey', 'gray', 'navy', 'khaki', 'sandal', 'beige', 'cream', 'dark green'],
+    'grey': ['black', 'white', 'navy', 'blue', 'red', 'maroon', 'wine', 'pink', 'olive', 'green', 'khaki', 'sandal', 'beige', 'cream'],
+    'gray': ['black', 'white', 'navy', 'blue', 'red', 'maroon', 'wine', 'pink', 'olive', 'green', 'khaki', 'sandal', 'beige', 'cream'],
+    'red': ['black', 'white', 'grey', 'gray', 'navy', 'sandal', 'beige', 'cream', 'khaki'],
+    'maroon': ['black', 'white', 'grey', 'gray', 'navy', 'sandal', 'beige', 'cream', 'khaki'],
+    'wine': ['black', 'white', 'grey', 'gray', 'navy', 'sandal', 'beige', 'cream', 'khaki'],
+    'green': ['white', 'black', 'grey', 'gray', 'sandal', 'beige', 'cream', 'khaki', 'navy'],
+    'olive': ['white', 'black', 'grey', 'gray', 'sandal', 'beige', 'cream', 'khaki', 'navy'],
+    'dark green': ['white', 'black', 'grey', 'gray', 'sandal', 'beige', 'cream', 'khaki'],
+    'sandal': ['navy', 'black', 'white', 'grey', 'gray', 'maroon', 'wine', 'red', 'olive', 'green', 'dark green', 'blue'],
+    'beige': ['navy', 'black', 'white', 'grey', 'gray', 'maroon', 'wine', 'red', 'olive', 'green', 'dark green', 'blue'],
+    'cream': ['navy', 'black', 'white', 'grey', 'gray', 'maroon', 'wine', 'red', 'olive', 'green', 'dark green', 'blue'],
+    'khaki': ['navy', 'black', 'white', 'grey', 'gray', 'maroon', 'wine', 'red', 'olive', 'green', 'dark green', 'blue'],
+    'yellow': ['black', 'white', 'grey', 'gray', 'navy'],
+    'pink': ['navy', 'grey', 'gray', 'black', 'white'],
+    'purple': ['black', 'white', 'grey', 'gray', 'navy'],
+    'lavender': ['black', 'white', 'grey', 'gray', 'navy'],
+    'violet': ['black', 'white', 'grey', 'gray', 'navy'],
+    'brown': ['white', 'black', 'grey', 'gray', 'navy', 'sandal', 'beige', 'cream']
+};
 
+const getRecommendationScore = (addedProduct, candidate, products) => {
+    let score = 0;
+    
+    const addedTag = getProductTag(addedProduct);
+    const candidateTag = getProductTag(candidate);
+    const targetTags = getTargetRecommendationTags(addedTag);
+    
+    // Style compatibility score
+    const targetIdx = targetTags.indexOf(candidateTag);
+    if (targetIdx === 0) {
+        score += 15;
+    } else if (targetIdx > 0) {
+        score += 10;
+    } else {
+        const addedParent = getParentCategory(addedProduct.category);
+        const candidateParent = getParentCategory(candidate.category);
+        if (
+            (addedParent.toLowerCase().includes('shirt') && (candidateParent.toLowerCase().includes('pant') || candidateParent.toLowerCase().includes('jeans') || candidateParent.toLowerCase().includes('shorts'))) ||
+            ((addedParent.toLowerCase().includes('pant') || addedParent.toLowerCase().includes('jeans') || addedParent.toLowerCase().includes('shorts')) && candidateParent.toLowerCase().includes('shirt'))
+        ) {
+            score += 5;
+        }
+    }
+    
+    // Color compatibility score
+    const c1 = (addedProduct.color || '').toLowerCase().trim();
+    const c2 = (candidate.color || '').toLowerCase().trim();
+    
+    if (c1 && c2) {
+        if (COLOR_MATCHES[c1] && COLOR_MATCHES[c1].some(c => c2.includes(c) || c.includes(c2))) {
+            score += 10;
+        } else if (COLOR_MATCHES[c2] && COLOR_MATCHES[c2].some(c => c1.includes(c) || c.includes(c1))) {
+            score += 10;
+        } else if (['white', 'black', 'grey', 'gray', 'sandal', 'beige', 'cream', 'khaki'].some(c => c1.includes(c) || c2.includes(c))) {
+            score += 5;
+        } else if (c1 === c2) {
+            score += 2;
+        }
+    }
+    
+    return score;
+};
+
+const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => {
+    if (!addedProduct) return [];
+    
     const isExcluded = (id) => excludedIds.some(eid => String(eid) === String(id));
     const hasValidImage = (p) => {
         const img = getProductImageUri(p, allProducts);
@@ -642,66 +709,101 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
     };
     const hasValidPrice = (p) => p.price && String(p.price).trim() !== '' && !isNaN(parseFloat(String(p.price).replace(/[^\d.]/g, '')));
 
-    // 1. Try to find a matching product with the target tags AND a valid image
-    for (const tag of targetTags) {
-        const matched = allProducts.find(p => 
-            p.id !== addedProduct.id && 
-            !isExcluded(p.id) &&
-            Number(p.stock) > 0 && 
-            hasValidPrice(p) &&
-            getProductTag(p) === tag &&
-            hasValidImage(p)
-        );
-        if (matched) return matched;
-    }
+    const addedParent = getParentCategory(addedProduct.category).toLowerCase();
+    const isAddedTop = addedParent.includes('shirt') || addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedParent.includes('jersey') || addedParent.includes('polo');
+    const isAddedBottom = addedParent.includes('pant') || addedParent.includes('phant') || addedParent.includes('jeans') || addedParent.includes('shorts') || addedParent.includes('track') || addedParent.includes('cargo');
 
-    // 2. Fallback to matching product with target tags (even without image)
-    for (const tag of targetTags) {
-        const matched = allProducts.find(p => 
-            p.id !== addedProduct.id && 
-            !isExcluded(p.id) &&
-            Number(p.stock) > 0 && 
-            hasValidPrice(p) &&
-            getProductTag(p) === tag
-        );
-        if (matched) return matched;
-    }
+    const candidates = allProducts.filter(p => {
+        if (p.id === addedProduct.id) return false;
+        if (isExcluded(p.id)) return false;
+        if (Number(p.stock) <= 0) return false;
+        if (!hasValidPrice(p)) return false;
+        if (!hasValidImage(p)) return false;
 
-    // 3. Generic cross-category fallback if no specific smart tag match found (prefer valid image)
-    const currentParent = getParentCategory(addedProduct.category);
-    const otherParents = Array.from(new Set(
-        allProducts
-            .filter(p => Number(p.stock) > 0 && hasValidPrice(p) && p.id !== addedProduct.id && !isExcluded(p.id))
-            .map(p => getParentCategory(p.category))
-    )).filter(p => p !== currentParent);
+        const candParent = getParentCategory(p.category).toLowerCase();
+        const isCandTop = candParent.includes('shirt') || candParent.includes('tshirt') || candParent.includes('t-day') || candParent.includes('t-shirt') || candParent.includes('jersey') || candParent.includes('polo');
+        const isCandBottom = candParent.includes('pant') || candParent.includes('phant') || candParent.includes('jeans') || candParent.includes('shorts') || candParent.includes('track') || candParent.includes('cargo');
 
-    if (otherParents.length > 0) {
-        let targetParent = null;
-        if (currentParent.toLowerCase().includes('shirt')) {
-            targetParent = otherParents.find(p => p.toLowerCase().includes('pant') || p.toLowerCase().includes('jeans'));
-        } else {
-            targetParent = otherParents.find(p => p.toLowerCase().includes('shirt'));
-        }
-        if (!targetParent) {
-            targetParent = otherParents[0];
-        }
-        // First try finding match with image
-        const matchWithImg = allProducts.find(p => 
-            getParentCategory(p.category) === targetParent && 
-            Number(p.stock) > 0 && 
-            hasValidPrice(p) &&
-            p.id !== addedProduct.id && 
-            !isExcluded(p.id) &&
-            hasValidImage(p)
-        );
-        if (matchWithImg) return matchWithImg;
+        // Swap tops with bottoms, bottoms with tops
+        if (isAddedTop && isCandBottom) return true;
+        if (isAddedBottom && isCandTop) return true;
+        
+        return false;
+    });
 
-        // Fallback without image
-        return allProducts.find(p => getParentCategory(p.category) === targetParent && Number(p.stock) > 0 && hasValidPrice(p) && p.id !== addedProduct.id && !isExcluded(p.id));
-    }
-
-    return null;
+    // Score and sort candidates
+    return candidates
+        .map(p => ({ product: p, score: getRecommendationScore(addedProduct, p, allProducts) }))
+        .sort((a, b) => b.score - a.score)
+        .map(item => item.product);
 };
+
+async function prepareRecommendationResponse(session, productsPool) {
+    const idx = session.recommendationIndex || 0;
+    const pool = session.recommendationPool || [];
+    
+    if (idx + 1 >= pool.length) {
+        session.state = "AWAITING_MORE_ITEMS";
+        return {
+            sendButtons: {
+                body: "Ok bro! 😊 Vera ethachu collections parkkalaama?",
+                buttons: [
+                    { id: 'yes', title: '🛍️ YES' },
+                    { id: 'no_checkout', title: '🛒 NO - Checkout' }
+                ]
+            },
+            sendImages: []
+        };
+    }
+    
+    const id1 = pool[idx];
+    const id2 = pool[idx + 1];
+    
+    const p1 = productsPool.find(p => p.id === id1);
+    const p2 = productsPool.find(p => p.id === id2);
+    
+    if (!p1 || !p2) {
+        session.state = "AWAITING_MORE_ITEMS";
+        return { replyText: "Vera collections parkkalaama bro? 😊", sendImages: [] };
+    }
+    
+    const startNum = idx + 1;
+    const collageUrl = await createRecommendationCollage(p1, p2, startNum, productsPool);
+    
+    const addedProduct = productsPool.find(p => p.id === session.originalProductId) || { name: 'selected product' };
+    const addedName = `${addedProduct.color ? addedProduct.color + ' ' : ''}${addedProduct.name}`;
+    
+    let replyText = `🔥 *Best Matches For Your Selected Product: ${addedName}*\n\n`;
+    replyText += `${startNum}. ${getShortProductName(p1)} - ₹${p1.price}\n`;
+    replyText += `${startNum + 1}. ${getShortProductName(p2)} - ₹${p2.price}\n\n`;
+    replyText += `Reply *${startNum}* or *${startNum + 1}*\n`;
+    
+    const buttons = [];
+    if (idx + 3 <= pool.length) {
+        replyText += `Or type *SHOW MORE* for other options.`;
+        buttons.push({ id: 'show_more_recs', title: '👉 SHOW MORE' });
+    }
+    
+    const response = {
+        replyText,
+        sendImages: collageUrl ? [{ url: collageUrl, caption: `Matches for ${addedName}` }] : [],
+        listContext: {
+            type: 'recommendations',
+            pool: pool,
+            currentPage: Math.floor(idx / 2),
+            originalProductId: session.originalProductId
+        }
+    };
+    
+    if (buttons.length > 0) {
+        response.sendButtons = {
+            body: `Options:`,
+            buttons
+        };
+    }
+    
+    return response;
+}
 
 // Formats a recommendation message with interactive choice options
 const getRecommendationMessage = (addedProduct, recommendedProduct, currentParent) => {
@@ -982,7 +1084,7 @@ function matchParentCategory(text, parentCategories) {
     return parentCategories.find(cat => t.includes(cat.toLowerCase()));
 }
 
-function getStatePrompt(session, products) {
+async function getStatePrompt(session, products) {
     switch (session.state) {
         case "AWAITING_CATEGORY": {
             const categoryCounts = getCategoryCounts(products);
@@ -1059,25 +1161,7 @@ function getStatePrompt(session, products) {
             };
         }
         case "AWAITING_RECOMMENDATION_CHOICE": {
-            const product = session.pendingProduct;
-            if (!product) return { replyText: "Enna shopping panriga bro? Category select pannunga.", sendImages: [] };
-            const originalProduct = products.find(p => p.id === session.originalProductId) || 
-                                    (session.cart.length > 0 ? products.find(p => p.id === session.cart[session.cart.length - 1].id) : null);
-            const currentParent = originalProduct ? getParentCategory(originalProduct.category) : "General";
-            const recName = `${product.color ? product.color + ' ' : ''}${product.name}`;
-            const replyText = getRecommendationMessage(originalProduct || { name: 'product', color: '' }, product, currentParent);
-
-             return {
-                replyText,
-                sendImages: [{ url: getProductImageUri(product, products), caption: recName }],
-                pendingProduct: product,
-                listContext: {
-                    type: 'recommendation_choice',
-                    pendingProduct: product,
-                    originalProductId: originalProduct ? originalProduct.id : null,
-                    recommendedIds: session.recommendedIds ? [...session.recommendedIds] : [product.id]
-                }
-            };
+            return await prepareRecommendationResponse(session, products);
         }
         case "AWAITING_CART_CONFIRM": {
             const product = session.pendingProduct;
@@ -1252,7 +1336,7 @@ async function handleIntent(intentResult, session, products) {
             if (!session.cart || session.cart.length === 0) {
                 let replyText = "Cart empty bro 😊 Mudhalla products-a cart la add pannunga.";
                 if (session.state !== "AWAITING_CATEGORY") {
-                    const statePrompt = getStatePrompt(session, products);
+                    const statePrompt = await getStatePrompt(session, products);
                     replyText += `\n\nContinue shopping bro 😊\n\n${statePrompt.replyText}`;
                     return {
                         replyText,
@@ -1268,7 +1352,7 @@ async function handleIntent(intentResult, session, products) {
         case 'FAQ': {
             let replyText = intentResult.reply;
             if (session.state !== "AWAITING_CATEGORY") {
-                const statePrompt = getStatePrompt(session, products);
+                const statePrompt = await getStatePrompt(session, products);
                 if (statePrompt.replyText) {
                     replyText += `\n\nContinue shopping bro 😊\n\n${statePrompt.replyText}`;
                 } else {
@@ -1286,7 +1370,7 @@ async function handleIntent(intentResult, session, products) {
         case 'GREETING': {
             if (session.cart && session.cart.length > 0) {
                 session.state = "AWAITING_PENDING_CART_DECISION";
-                return getStatePrompt(session, products);
+                return await getStatePrompt(session, products);
             }
             session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
@@ -1392,7 +1476,7 @@ async function handleIntent(intentResult, session, products) {
             } else {
                 let replyText = "Sorry bro, search matching products ippo stock illa. 😔";
                 if (session.state !== "AWAITING_CATEGORY") {
-                    const statePrompt = getStatePrompt(session, products);
+                    const statePrompt = await getStatePrompt(session, products);
                     replyText += `\n\nContinue shopping bro 😊\n\n${statePrompt.replyText}`;
                     return {
                         replyText,
@@ -1655,72 +1739,61 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
     }
 
     // STATE: AWAITING_RECOMMENDATION_CHOICE
-    if (session.state === "AWAITING_RECOMMENDATION_CHOICE" && session.pendingProduct) {
-        const product = session.pendingProduct;
+    if (session.state === "AWAITING_RECOMMENDATION_CHOICE") {
         const choiceText = textLower.trim();
-
-        const isChoice1 = choiceText === "1" || choiceText === "1️⃣" || choiceText.includes("select size") || choiceText === "select" || choiceText === "size";
-        const isChoice2 = choiceText === "2" || choiceText === "2️⃣" || choiceText.includes("show another") || choiceText.includes("another match") || choiceText === "another" || choiceText === "show match" || choiceText === "match";
-        const isChoice3 = choiceText === "3" || choiceText === "3️⃣" || choiceText === "skip" || choiceText.includes("skip recommendation") || choiceText === "no" || choiceText === "n" || choiceText === "illa" || choiceText === "vendam";
-
-        if (isChoice1) {
-            session.state = "AWAITING_SIZE_SELECTION";
-            const sizeList = (Array.isArray(product.sizes)
-                ? product.sizes
-                : String(product.sizes).split(',').map(s => s.trim())
-            ).filter(Boolean);
-            const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
-
-            return {
-                replyText: `Entha size venum bro? 😊\n\nAvailable Sizes:\n${sizesText}`,
-                sendImages: []
-            };
-        } else if (isChoice2) {
-            const originalProduct = products.find(p => p.id === session.originalProductId) || 
-                                    (session.cart.length > 0 ? products.find(p => p.id === session.cart[session.cart.length - 1].id) : null);
-
-            if (!session.recommendedIds) {
-                session.recommendedIds = [product.id];
+        const isShowMore = choiceText === 'show_more_recs' || choiceText.includes('show more') || choiceText === 'showmore';
+        
+        if (isShowMore) {
+            session.recommendationIndex = (session.recommendationIndex || 0) + 2;
+            return await prepareRecommendationResponse(session, products);
+        }
+        
+        const isNum = /^[1-9][0-9]?$/.test(choiceText);
+        if (isNum) {
+            const selectedNum = parseInt(choiceText, 10);
+            const idx = session.recommendationIndex || 0;
+            const pool = session.recommendationPool || [];
+            
+            let selectedProductId = null;
+            if (selectedNum === idx + 1) {
+                selectedProductId = pool[idx];
+            } else if (selectedNum === idx + 2) {
+                selectedProductId = pool[idx + 1];
             }
-
-            const nextRecommended = getSmartRecommendation(originalProduct, products, session.recommendedIds);
-
-            if (nextRecommended) {
-                session.recommendedIds.push(nextRecommended.id);
-                session.pendingProduct = nextRecommended;
-
-                const recName = `${nextRecommended.color ? nextRecommended.color + ' ' : ''}${nextRecommended.name}`;
-                const currentParent = originalProduct ? getParentCategory(originalProduct.category) : "General";
-                const replyText = getRecommendationMessage(originalProduct || { name: 'product', color: '' }, nextRecommended, currentParent);
-
-                return {
-                    replyText,
-                    sendImages: [{ url: getProductImageUri(nextRecommended, products), caption: recName }],
-                    pendingProduct: nextRecommended,
-                    listContext: {
-                        type: 'recommendation_choice',
-                        pendingProduct: nextRecommended,
-                        originalProductId: originalProduct ? originalProduct.id : null,
-                        recommendedIds: [...session.recommendedIds]
-                    }
-                };
-            } else {
-                const recName = `${product.color ? product.color + ' ' : ''}${product.name}`;
-                return {
-                    replyText: `⚠️ No other matches found in stock for this combo, bro! 😊\n\nChoose:\n1️⃣ Select Size (for ${recName})\n3️⃣ Skip`,
-                    sendImages: []
-                };
+            
+            if (selectedProductId) {
+                const product = products.find(p => p.id === selectedProductId);
+                if (product) {
+                    session.pendingProduct = product;
+                    session.state = "AWAITING_SIZE_SELECTION";
+                    session.isRecommendation = true;
+                    
+                    const sizeList = (Array.isArray(product.sizes)
+                        ? product.sizes
+                        : String(product.sizes).split(',').map(s => s.trim())
+                    ).filter(Boolean);
+                    const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
+                    
+                    const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nEntha size venum bro? 😊`;
+                    
+                    return {
+                        replyText,
+                        sendImages: [{ url: getProductImageUri(product, products), caption: product.name }],
+                        pendingProduct: product
+                    };
+                }
             }
-        } else if (isChoice3) {
+        }
+        
+        const isSkip = ['skip', 'no', 'n', 'illa', 'vendam', 'cancel', 'exit'].some(w => choiceText.includes(w));
+        if (isSkip) {
             session.pendingProduct = null;
             session.selectedSize = null;
             session.isRecommendation = false;
-            session.recommendedIds = null;
-            session.originalProductId = null;
             session.state = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
-                    body: `Ok bro! 😊\n\nVera ethachu pakkiriya bro?`,
+                    body: `Ok bro! 😊 Vera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
                         { id: 'no_checkout', title: '🛒 NO - Checkout' }
@@ -1728,13 +1801,19 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
                 },
                 sendImages: []
             };
-        } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
-            const recName = `${product.color ? product.color + ' ' : ''}${product.name}`;
-            return {
-                replyText: `⚠️ Wrong choice bro! Match pannugala illa skip panringalanu crt ah choose pannuga. 😊\n\nChoose:\n1️⃣ Select Size (for ${recName})\n2️⃣ Show Another Match\n3️⃣ Skip`,
-                sendImages: []
-            };
         }
+        
+        const idx = session.recommendationIndex || 0;
+        const pool = session.recommendationPool || [];
+        const validOptions = `${idx + 1}, ${idx + 2}`;
+        let errorMsg = `⚠️ Wrong choice bro! Match number-a choose pannunga (${validOptions}).`;
+        if (idx + 3 <= pool.length) {
+            errorMsg += ` Or type *SHOW MORE* for other options.`;
+        }
+        return {
+            replyText: errorMsg,
+            sendImages: []
+        };
     }
 
     // STATE: AWAITING_SIZE_SELECTION
@@ -1847,31 +1926,14 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
             }
 
             // Standard product added -> Check for recommendation combo
-            const currentParent = getParentCategory(product.category);
-            const recommended = getSmartRecommendation(product, products);
-
-            if (recommended) {
-                session.pendingProduct = recommended;
+            const recs = getRecommendationsList(product, products);
+            if (recs.length >= 2) {
+                session.recommendationPool = recs.map(r => r.id);
+                session.recommendationIndex = 0;
                 session.isRecommendation = true;
                 session.state = "AWAITING_RECOMMENDATION_CHOICE";
-                session.recommendedIds = [recommended.id];
                 session.originalProductId = product.id;
-
-                const recName = `${recommended.color ? recommended.color + ' ' : ''}${recommended.name}`;
-                const replyText = getRecommendationMessage(product, recommended, currentParent);
-
-                return {
-                    replyText,
-                    sendImages: [{ url: getProductImageUri(recommended, products), caption: recName }],
-                    cart: session.cart,
-                    pendingProduct: recommended,
-                    listContext: {
-                        type: 'recommendation_choice',
-                        pendingProduct: recommended,
-                        originalProductId: product.id,
-                        recommendedIds: [recommended.id]
-                    }
-                };
+                return await prepareRecommendationResponse(session, products);
             } else {
                 session.state = "AWAITING_MORE_ITEMS";
                 return {
