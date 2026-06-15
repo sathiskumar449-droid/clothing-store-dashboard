@@ -2,7 +2,7 @@
   "919942305574": {
     "customerPhone": "919942305574",
     "customerName": "Customer",
-    "lastMessage": "Welcome to Super Collections bro 😊\n\nEnna category venum?\n\n1️⃣ Cotton Shirt\n2️⃣ Linen Shirt\n3️⃣ Jeans\n4️⃣ Cargo Pant\n5️⃣ T-Shirt\n\nNumber mattum reply pannunga bro 😊",
+    "lastMessage": "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n1️⃣ Cotton Shirt\n2️⃣ Linen Shirt\n3️⃣ Jeans\n4️⃣ Cargo Pant\n5️⃣ T-Shirt\n\nPlease reply with the product number.",
     "lastUpdated": "2026-06-13T02:16:07.037Z",
     "botPaused": false,
     "messages": [
@@ -16,7 +16,7 @@
       {
         "sender": "bot",
         "type": "text",
-        "text": "Welcome to Super Collections bro 😊\n\nEnna category venum?\n\n1️⃣ Cotton Shirt\n2️⃣ Linen Shirt\n3️⃣ Jeans\n4️⃣ Cargo Pant\n5️⃣ T-Shirt\n\nNumber mattum reply pannunga bro 😊",
+        "text": "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n1️⃣ Cotton Shirt\n2️⃣ Linen Shirt\n3️⃣ Jeans\n4️⃣ Cargo Pant\n5️⃣ T-Shirt\n\nPlease reply with the product number.",
         "imageUrl": null,
         "timestamp": "2026-06-13T02:16:07.037Z"
       }

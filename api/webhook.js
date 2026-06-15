@@ -793,7 +793,7 @@ async function prepareRecommendationResponse(session, productsPool) {
         session.state = "AWAITING_MORE_ITEMS";
         return {
             sendButtons: {
-                body: "Ok bro! 😊 Vera ethachu collections parkkalaama?",
+                body: "Would you like to continue shopping?",
                 buttons: [
                     { id: 'yes', title: '🛍️ YES' },
                     { id: 'no_checkout', title: '🛒 NO - Checkout' }
@@ -811,7 +811,7 @@ async function prepareRecommendationResponse(session, productsPool) {
     
     if (!p1 || !p2) {
         session.state = "AWAITING_MORE_ITEMS";
-        return { replyText: "Vera collections parkkalaama bro? 😊", sendImages: [] };
+        return { replyText: "Would you like to continue shopping? 😊", sendImages: [] };
     }
     
     const startNum = idx + 1;
@@ -858,8 +858,8 @@ const getRecommendationMessage = (addedProduct, recommendedProduct, currentParen
     const recName = `${recommendedProduct.color ? recommendedProduct.color + ' ' : ''}${recommendedProduct.name}`;
     const isShirtAdded = currentParent.toLowerCase().includes('shirt');
     const matchMsg = isShirtAdded
-        ? `Bro 🔥 Intha *${addedName}*-ku *${recName}* super best match aagum!`
-        : `Bro 🔥 Intha *${addedName}* potu *${recName}* potaa perfect combo aagum!`;
+        ? `Complete the look! *${addedName}* pairs perfectly with *${recName}*. 🔥`
+        : `Complete the look! *${addedName}* pairs perfectly with *${recName}*. 🔥`;
 
     const sizeList = (Array.isArray(recommendedProduct.sizes)
         ? recommendedProduct.sizes
@@ -1008,14 +1008,14 @@ const getSortedParents = (categoryCounts) => {
 const startCheckout = (session) => {
     if (!session.cart || session.cart.length === 0) {
         session.state = "AWAITING_CATEGORY";
-        return { replyText: "Cart empty bro 😊 Mudhalla category search pannunga.", sendImages: [] };
+        return { replyText: "Your cart is empty. 😊 Please select a category to start shopping.", sendImages: [] };
     }
     let cartSummary = `🛒 *Your Cart:*\n\n`;
     session.cart.forEach((item, i) => {
         cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.name} (${item.size}) - ₹${item.price}\n`;
     });
     const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
-    cartSummary += `\n💰 Total: ₹${cartTotal}\n\n📝 Order confirm panna details fill pannuga:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`;
+    cartSummary += `\n💰 Total: ₹${cartTotal}\n\nPlease provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`;
     session.state = "AWAITING_CHECKOUT_DETAILS";
     session.orderDetails = { customerName: '', customerPhone: '', customerAddress: '', paymentMethod: 'UPI' };
     return { replyText: cartSummary, sendImages: [] };
@@ -1073,7 +1073,7 @@ function detectIntent(text, products = [], session = null) {
                            t.includes('delivery duration') || t.includes('how long') || t.includes('how many days');
 
     if (isDeliveryTime) {
-        return { type: 'FAQ', reply: '🚚 Delivery usually 2-5 working days bro.' };
+        return { type: 'FAQ', reply: '🚚 Delivery usually takes 2-5 working days.' };
     }
 
     // ─── SHIPPING CHARGES Combination Match ───
@@ -1083,7 +1083,7 @@ function detectIntent(text, products = [], session = null) {
                              t.includes('shipping fee') || t.includes('delivery amount') || t.includes('shipping amount');
 
     if (isShippingCharge) {
-        return { type: 'FAQ', reply: '🚚 Delivery charge ₹80 bro.' };
+        return { type: 'FAQ', reply: '🚚 Delivery charge is ₹80.' };
     }
 
     // ─── COD Combination Match ───
@@ -1093,40 +1093,40 @@ function detectIntent(text, products = [], session = null) {
                   (matchesGroup(words, codGroupA) && matchesGroup(words, codGroupB));
 
     if (isCOD) {
-        return { type: 'FAQ', reply: 'Sorry bro 😊 COD available illa.\nGPay / UPI mattum available.' };
+        return { type: 'FAQ', reply: 'We apologize, but Cash on Delivery (COD) is not available. We accept GPay / UPI payments only. 😊' };
     }
 
     // ─── RETURN / EXCHANGE / REFUND Match ───
     const returnKeywords = ['return', 'exchange', 'refund', 'replace', 'maatunga', 'maatuga', 'size match', 'wrong size', 'size wrong', 'size issue', 'size change', 'change size', 'damage', 'torn', 'defect', 'stain', 'hole', 'quality', 'bad quality'];
     if (returnKeywords.some(k => t.includes(k))) {
         if (t.includes('size match') || t.includes('size wrong') || t.includes('wrong size') || t.includes('size poda')) {
-            return { type: 'FAQ', reply: '📌 Size issue bro?\n\n7 days exchange available.\nOrder ID + product photo anuppunga.' };
+            return { type: 'FAQ', reply: '📌 Having size issues?\n\nWe offer a 7-day exchange. Please share your Order ID and a photo of the product.' };
         }
         if (t.includes('refund')) {
-            return { type: 'FAQ', reply: '💰 Refund process:\n\nOrder ID anuppunga bro.\nCheck pannitu 3-5 days la refund arrange panrom.' };
+            return { type: 'FAQ', reply: '💰 For refunds, please share your Order ID. We will verify and process your refund within 3-5 working days.' };
         }
         if (t.includes('damage') || t.includes('torn') || t.includes('defect') || t.includes('hole') || t.includes('stain')) {
-            return { type: 'FAQ', reply: '📸 Product photo + Order ID anuppunga bro.\n\nCheck pannitu exchange arrange panrom. 😊' };
+            return { type: 'FAQ', reply: '📸 Please send your Order ID and a photo of the product. We will verify and arrange an exchange for you. 😊' };
         }
-        return { type: 'FAQ', reply: '✅ 7 days Return / Exchange available bro.\n\nOrder ID + product photo anuppunga.' };
+        return { type: 'FAQ', reply: '✅ 7-day return and exchange is available. Please share your Order ID and a photo of the product.' };
     }
 
     // ─── PAYMENT METHODS Match ───
     const paymentKeywords = ['payment', 'pay', 'gpay', 'upi', 'google pay', 'googlepay', 'phonepe', 'phone pay', 'bank transfer', 'account number', 'upi id', 'gpay number', 'screenshot', 'pay panna', 'gpay details'];
     if (paymentKeywords.some(k => t.includes(k))) {
-        return { type: 'FAQ', reply: '💳 Payment details bro:\n\nGPay / UPI: yourupi@okaxis\n\nPayment pannitu screenshot anuppunga 😊' };
+        return { type: 'FAQ', reply: '💳 Payment Details:\n\nGPay / UPI: yourupi@okaxis\n\nPlease share a screenshot once the payment is completed. 😊' };
     }
 
     // ─── DISCOUNT / OFFERS Match ───
     const discountKeywords = ['discount', 'offer', 'sale', 'coupon', 'rate kam', 'cheap', 'kammiya', 'kammi', 'price drop', 'less price', 'best price'];
     if (discountKeywords.some(k => t.includes(k))) {
-        return { type: 'FAQ', reply: 'Sorry bro 😊 Fixed price taan. Already best price la iruku! 🔥' };
+        return { type: 'FAQ', reply: 'We offer fixed pricing as our products are already at the best possible price. Thank you for understanding! 😊🔥' };
     }
 
     // ─── STORE INFO Match ───
     const storeKeywords = ['address', 'location', 'shop', 'store', 'enga', 'where', 'phone number', 'contact number', 'kodu'];
     if (storeKeywords.some(k => t.includes(k))) {
-        return { type: 'FAQ', reply: '🏪 Super Collections\n\nOnline orders mattum bro. WhatsApp la order pannunga! 😊' };
+        return { type: 'FAQ', reply: '🏪 Super Collections\n\nWe accept online orders only. Please place your order via WhatsApp! 😊' };
     }
 
 
@@ -1205,12 +1205,12 @@ async function getStatePrompt(session, products) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Welcome to Super Collections bro 😊\n\nEnna category venum?\n\n";
+            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
             });
-            replyText += "\nNumber mattum reply pannunga bro 😊";
+            replyText += "\nPlease reply with the product number.";
 
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         }
@@ -1232,7 +1232,7 @@ async function getStatePrompt(session, products) {
                 const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
                 replyText += `${sIdx + 1}️⃣ ${capSub} (${subcategoryCounts[sub]})\n`;
             });
-            replyText += "\nNumber mattum reply pannunga bro! 😊";
+            replyText += "\nPlease reply with the product number.";
 
             return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
         }
@@ -1250,7 +1250,7 @@ async function getStatePrompt(session, products) {
                 replyText += `*${pIdx + 1}.* ${displayName}\n`;
                 replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
             });
-            replyText += `👆 number mattum reply pannunga bro! 😊`;
+            replyText += `Please reply with the product number.`;
 
             return {
                 replyText,
@@ -1260,13 +1260,13 @@ async function getStatePrompt(session, products) {
         }
         case "AWAITING_SIZE_SELECTION": {
             const product = session.pendingProduct;
-            if (!product) return { replyText: "Enna shopping panriga bro? Category select pannunga.", sendImages: [] };
+            if (!product) return { replyText: "Please select a category to start shopping.", sendImages: [] };
             const sizeList = (Array.isArray(product.sizes)
                 ? product.sizes
                 : String(product.sizes).split(',').map(s => s.trim())
             ).filter(Boolean);
             const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
-            const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nEntha size venum bro? 😊`;
+            const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nPlease select your preferred size.`;
 
             return {
                 replyText,
@@ -1279,10 +1279,10 @@ async function getStatePrompt(session, products) {
         }
         case "AWAITING_CART_CONFIRM": {
             const product = session.pendingProduct;
-            if (!product) return { replyText: "Enna shopping panriga bro? Category select pannunga.", sendImages: [] };
+            if (!product) return { replyText: "Please select a category to start shopping.", sendImages: [] };
             return {
                 sendButtons: {
-                    body: `✅ ${product.name} - ${session.selectedSize}\n\nCart la add pannalama bro?`,
+                    body: `✅ ${product.name} - ${session.selectedSize}\n\nWould you like to add this item to your cart?`,
                     buttons: [
                         { id: 'yes', title: '✅ YES' },
                         { id: 'no', title: '❌ NO' }
@@ -1294,7 +1294,7 @@ async function getStatePrompt(session, products) {
         case "AWAITING_MORE_ITEMS": {
             return {
                 sendButtons: {
-                    body: `Vera ethachu pakkiriya bro?`,
+                    body: `Would you like to continue shopping?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
                         { id: 'no_checkout', title: '🛒 NO - Checkout' }
@@ -1309,7 +1309,7 @@ async function getStatePrompt(session, products) {
                 cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.name} (${item.size}) - ₹${item.price}\n`;
             });
             const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
-            cartSummary += `\n💰 Total: ₹${cartTotal}\n\nUnga order cart-la pending iruku, bro! Complete panrigla illai cancel panrigla? 😊`;
+            cartSummary += `\n💰 Total: ₹${cartTotal}\n\n🛒 You have an unfinished order in your cart.\n\nPlease choose an option below:\n\n• Continue Checkout\n• Cancel Order`;
             return {
                 sendButtons: {
                     body: cartSummary,
@@ -1328,13 +1328,13 @@ async function getStatePrompt(session, products) {
                 cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.name} (${item.size}) - ₹${item.price}\n`;
             });
             const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
-            cartSummary += `\n💰 Total: ₹${cartTotal}\n\n📝 Order confirm panna details fill pannuga:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`;
+            cartSummary += `\n💰 Total: ₹${cartTotal}\n\nPlease provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`;
             return { replyText: cartSummary, sendImages: [] };
         }
         default: {
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
-            let replyText = "Enna Shopping Panriga?\n\n";
+            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue:\n\n";
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
@@ -1364,7 +1364,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
 
     if (pageProducts.length === 0) {
         return {
-            replyText: "No products found on this page bro! 😔",
+            replyText: "No products were found on this page. 😔",
             sendImages: []
         };
     }
@@ -1382,7 +1382,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
         const shortName = getShortProductName(p);
         replyText += `${globalIdx}. ${shortName} - ₹${p.price}\n`;
     });
-    replyText += `\n👆 number/action reply pannunga bro! 😊`;
+    replyText += `\nPlease select an option from the available choices.`;
 
     const buttons = [];
     if (currentPage > 0) {
@@ -1431,28 +1431,28 @@ async function handleIntent(intentResult, session, products) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Cart cleared bro! 😊 Category list-la irundhu select pannunga.\n\nEnna Shopping Panriga?\n\n";
+            let replyText = "Your cart has been cleared. 😊\n\nPlease select a category to continue:\n\n";
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
             });
-            replyText += "\nNumber mattum reply pannunga bro 😊";
+            replyText += "\nPlease reply with the product number.";
 
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         }
         case 'HUMAN': {
             return {
-                replyText: "Sure bro! 🙋‍♂️ Chat paused. Owner shortly connect pannuvanga.",
+                replyText: "Sure! 🙋‍♂️ We have paused the chat assistant. Our representative will connect with you shortly.",
                 sendImages: [],
                 isHumanHandoff: true
             };
         }
         case 'CHECKOUT': {
             if (!session.cart || session.cart.length === 0) {
-                let replyText = "Cart empty bro 😊 Mudhalla products-a cart la add pannunga.";
+                let replyText = "Your cart is empty. 😊 Please add products to your cart first.";
                 if (session.state !== "AWAITING_CATEGORY") {
                     const statePrompt = await getStatePrompt(session, products);
-                    replyText += `\n\nContinue shopping bro 😊\n\n${statePrompt.replyText}`;
+                    replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
                     return {
                         replyText,
                         sendImages: statePrompt.sendImages || [],
@@ -1469,9 +1469,9 @@ async function handleIntent(intentResult, session, products) {
             if (session.state !== "AWAITING_CATEGORY") {
                 const statePrompt = await getStatePrompt(session, products);
                 if (statePrompt.replyText) {
-                    replyText += `\n\nContinue shopping bro 😊\n\n${statePrompt.replyText}`;
+                    replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
                 } else {
-                    replyText += `\n\nContinue shopping bro 😊`;
+                    replyText += `\n\nFeel free to continue shopping: 😊`;
                 }
                 return {
                     replyText,
@@ -1500,12 +1500,12 @@ async function handleIntent(intentResult, session, products) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Welcome to Super Collections bro 😊\n\nEnna category venum?\n\n";
+            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
             });
-            replyText += "\nNumber mattum reply pannunga bro 😊";
+            replyText += "\nPlease reply with the product number.";
 
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         }
@@ -1540,7 +1540,7 @@ async function handleIntent(intentResult, session, products) {
                     const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
                     replyText += `${sIdx + 1}️⃣ ${capSub} (${subcategoryCounts[sub]})\n`;
                 });
-                replyText += "\nNumber mattum reply pannunga bro! 😊";
+                replyText += "\nPlease reply with the product number.";
 
                 return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
             }
@@ -1589,10 +1589,10 @@ async function handleIntent(intentResult, session, products) {
 
                 return await prepareProductsPageResponse(session, products, `Search: ${query}`);
             } else {
-                let replyText = "Sorry bro, search matching products ippo stock illa. 😔";
+                let replyText = "We are sorry, but those products are currently out of stock. 😔";
                 if (session.state !== "AWAITING_CATEGORY") {
                     const statePrompt = await getStatePrompt(session, products);
-                    replyText += `\n\nContinue shopping bro 😊\n\n${statePrompt.replyText}`;
+                    replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
                     return {
                         replyText,
                         sendImages: statePrompt.sendImages || [],
@@ -1672,12 +1672,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Ok bro! 😊 Category list-la irundhu select pannunga.\n\nEnna Shopping Panriga?\n\n";
+            let replyText = "Sure! 😊 Please select a category to continue:\n\n";
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
             });
-            replyText += "\nNumber mattum reply pannunga bro 😊";
+            replyText += "\nPlease reply with the product number.";
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         } else if (isClear) {
             session.cart = [];
@@ -1692,17 +1692,17 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Cart cleared bro! 😊 Category list-la irundhu select pannunga.\n\nEnna Shopping Panriga?\n\n";
+            let replyText = "Your cart has been cleared. 😊\n\nPlease select a category to continue:\n\n";
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
             });
-            replyText += "\nNumber mattum reply pannunga bro 😊";
+            replyText += "\nPlease reply with the product number.";
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
             return {
                 sendButtons: {
-                    body: `⚠️ Wrong choice bro!\n\nUnga cart la items pending iruku. complete panrigla cancel panriglanu choose pannunga:`,
+                    body: `⚠️ Invalid option. You have an unfinished order in your cart. Please select whether to complete or cancel your order:`,
                     buttons: [
                         { id: 'checkout', title: '🛒 CHECKOUT' },
                         { id: 'continue', title: '🛍️ CONTINUE' },
@@ -1725,19 +1725,19 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Welcome to Super Collections 😊\n\nEnna Shopping Panriga?\n\n";
+            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue:\n\n";
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
             });
-            replyText += "\nNumber mattum reply pannunga 😊";
+            replyText += "\nPlease reply with the product number.";
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         } else if (noKeywords.includes(textLower) || textLower.includes('no') || textLower.includes('illa') || textLower.includes('vendam')) {
             session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
             return {
-                replyText: "🙏 Thanks bro! Super Collections support pannathuku nandri ❤️ Anytime message pannunga 😊",
+                replyText: "🙏 Thank you for supporting Super Collections! ❤️ Feel free to message us anytime. 😊",
                 sendImages: []
             };
         } else {
@@ -1760,7 +1760,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else {
             return {
-                replyText: `⚠️ Format correct ah anuppunga bro:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`,
+                replyText: `⚠️ Please provide your details in the correct format:\n\n*Full Name, Mobile Number, Delivery Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`,
                 sendImages: []
             };
         }
@@ -1785,12 +1785,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 return await prepareProductsPageResponse(session, products, `${emoji} ${capSub} - Available Stock`);
             } else {
                 session.state = "AWAITING_CATEGORY";
-                return { replyText: "Sorry bro, intha subcategory la stock illa. 😔", sendImages: [] };
+                return { replyText: "We are sorry, but this subcategory is currently out of stock. 😔", sendImages: [] };
             }
         } else {
             const max = session.subCategories?.length || 1;
             return {
-                replyText: `⚠️ Wrong choice bro! 1-larunthu ${max} varaikum iruka subcategory number-a mattum choose pannunga. 😊`,
+                replyText: `⚠️ Invalid selection. Please choose a subcategory number from 1 to ${max}. 😊`,
                 sendImages: []
             };
         }
@@ -1811,13 +1811,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 if ((page + 1) * pageSize < totalProducts) {
                     session.currentPage = page + 1;
                 } else {
-                    return { replyText: `⚠️ Search end-a reach aytom bro! Last page-la thaan irukeenga. (Page ${page + 1}/${totalPages})`, sendImages: [] };
+                    return { replyText: `⚠️ You have reached the end of the search results. This is the last page (Page ${page + 1}/${totalPages}).`, sendImages: [] };
                 }
             } else if (isPrev) {
                 if (page > 0) {
                     session.currentPage = page - 1;
                 } else {
-                    return { replyText: `⚠️ Mudhal page-la thaan irukeenga bro! 😊`, sendImages: [] };
+                    return { replyText: `⚠️ You are already on the first page. 😊`, sendImages: [] };
                 }
             }
             
@@ -1840,7 +1840,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             ).filter(Boolean);
             const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
 
-            const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nEntha size venum bro? 😊`;
+            const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nPlease select your preferred size.`;
 
             return {
                 replyText,
@@ -1850,7 +1850,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         } else {
             const max = session.searchProducts?.length || 1;
             return {
-                replyText: `⚠️ Wrong choice bro! 1-larunthu ${max} varaikum iruka product number-a mattum choose pannunga. 😊`,
+                replyText: `⚠️ Invalid selection. Please choose a product number from 1 to ${max}. 😊`,
                 sendImages: []
             };
         }
@@ -1892,7 +1892,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     ).filter(Boolean);
                     const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
                     
-                    const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nEntha size venum bro? 😊`;
+                    const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nPlease select your preferred size.`;
                     
                     return {
                         replyText,
@@ -1911,7 +1911,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.state = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
-                    body: `Ok bro! 😊 Vera ethachu pakkiriya bro?`,
+                    body: `Would you like to continue shopping?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
                         { id: 'no_checkout', title: '🛒 NO - Checkout' }
@@ -1924,7 +1924,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const idx = session.recommendationIndex || 0;
         const pool = session.recommendationPool || [];
         const validOptions = `${idx + 1}, ${idx + 2}`;
-        let errorMsg = `⚠️ Wrong choice bro! Match number-a choose pannunga (${validOptions}).`;
+        let errorMsg = `⚠️ Invalid selection. Please choose a valid match number (${validOptions}).`;
         if (idx + 3 <= pool.length) {
             errorMsg += ` Or type *SHOW MORE* for other options.`;
         }
@@ -1946,7 +1946,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.state = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
-                    body: `Ok bro! 😊\n\nVera ethachu pakkiriya bro?`,
+                    body: `Would you like to continue shopping?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
                         { id: 'no_checkout', title: '🛒 NO - Checkout' }
@@ -1968,7 +1968,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.state = "AWAITING_CART_CONFIRM";
             return {
                 sendButtons: {
-                    body: `✅ ${product.name} - ${session.selectedSize}\n\nCart la add pannalama bro?`,
+                    body: `✅ ${product.name} - ${session.selectedSize}\n\nWould you like to add this item to your cart?`,
                     buttons: [
                         { id: 'yes', title: '✅ YES' },
                         { id: 'no', title: '❌ NO' }
@@ -1978,7 +1978,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else {
             const sizeList = Array.isArray(product.sizes) ? product.sizes.join(', ') : product.sizes;
-            let errorText = `❌ Intha size stock illa bro.\n\nAvailable sizes:\n${sizeList}`;
+            let errorText = `❌ This size is currently out of stock.\n\nAvailable sizes:\n${sizeList}`;
             if (session.isRecommendation) {
                 errorText += `\n\nReply with a size or type "skip" to skip.`;
             }
@@ -2004,7 +2004,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.selectedSize = matchedSize.toUpperCase();
             return {
                 sendButtons: {
-                    body: `✅ ${product.name} - ${session.selectedSize}\n\nCart la add pannalama bro?`,
+                    body: `✅ ${product.name} - ${session.selectedSize}\n\nWould you like to add this item to your cart?`,
                     buttons: [
                         { id: 'yes', title: '✅ YES' },
                         { id: 'no', title: '❌ NO' }
@@ -2032,7 +2032,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 session.state = "AWAITING_MORE_ITEMS";
                 return {
                     sendButtons: {
-                        body: `✅ Recommended item add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
+                        body: `✅ Item added to cart successfully.\n\nWould you like to continue shopping?`,
                         buttons: [
                             { id: 'yes', title: '🛍️ YES' },
                             { id: 'no_checkout', title: '🛒 NO - Checkout' }
@@ -2048,7 +2048,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 session.state = "AWAITING_MORE_ITEMS";
                 return {
                     sendButtons: {
-                        body: `✅ Cart la add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
+                        body: `✅ Item added to cart successfully.\n\nWould you like to continue shopping?`,
                         buttons: [
                             { id: 'yes', title: '🛍️ YES' },
                             { id: 'no_checkout', title: '🛒 NO - Checkout' }
@@ -2127,7 +2127,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 session.state = "AWAITING_MORE_ITEMS";
                 return {
                     sendButtons: {
-                        body: `✅ Cart la add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
+                        body: `✅ Item added to cart successfully.\n\nWould you like to continue shopping?`,
                         buttons: [
                             { id: 'yes', title: '🛍️ YES' },
                             { id: 'no_checkout', title: '🛒 NO - Checkout' }
@@ -2211,7 +2211,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.state = "AWAITING_MORE_ITEMS";
             return {
                 sendButtons: {
-                    body: `Ok bro! 😊 Cart la add pannala.\n\nVera ethachu pakkiriya bro?`,
+                    body: `Item was not added to your cart.\n\nWould you like to continue shopping?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
                         { id: 'no_checkout', title: '🛒 NO - Checkout' }
@@ -2221,7 +2221,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
             return {
-                replyText: `⚠️ Invalid response bro! YES or NO reply pannunga. 😊`,
+                replyText: `⚠️ Invalid response. Please reply with YES or NO. 😊`,
                 sendImages: []
             };
         }
@@ -2238,19 +2238,19 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = `Super bro! 😊 Cart la ${cartCount} item(s) iruku (₹${cartTotal})\n\nVera category search pannunga:\n\n`;
+            let replyText = `Great! 😊 You have ${cartCount} item(s) in your cart (Total: ₹${cartTotal}).\n\nPlease select a category to continue shopping:\n\n`;
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
             });
-            replyText += "\nNumber mattum reply pannunga bro 😊";
+            replyText += "\nPlease reply with the product number.";
 
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai" || textLower === "checkout" || textLower === "no_checkout") {
             return startCheckout(session);
         } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
             return {
-                replyText: `⚠️ Invalid response bro! YES or NO reply pannunga. 😊`,
+                replyText: `⚠️ Invalid response. Please reply with YES or NO. 😊`,
                 sendImages: []
             };
         }
@@ -2280,7 +2280,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         session.state = "AWAITING_HELP_CONFIRM";
         return {
             sendButtons: {
-                body: "Vera edhavadhu help venuma bro? 😊",
+                body: "Would you like any further assistance? 😊",
                 buttons: [
                     { id: 'help_yes', title: '✅ YES' },
                     { id: 'help_no', title: '❌ NO' }
@@ -2294,30 +2294,30 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (intent === 'COMPLAINT' || (session.complaintMode && intent !== 'GREETING')) {
         session.complaintMode = true;
         if (textLower.includes('wrong') || textLower.includes('vera colour') || textLower.includes('vera color') || textLower.includes('wrong colour') || textLower.includes('wrong color') || textLower.includes('wrong item') || textLower.includes('wrong product') || textLower.includes('colour wrong') || textLower.includes('color wrong')) {
-            return { replyText: '📸 Sorry bro 😔\n\nProduct photo + Order ID anuppunga bro.\nCheck pannitu udan sort out panrom.', sendImages: [] };
+            return { replyText: '📸 We apologize for the issue. 😔\n\nPlease share your Order ID and a photo of the product. We will verify and resolve this quickly.', sendImages: [] };
         }
         if (textLower.includes('damage') || textLower.includes('defect') || textLower.includes('torn') || textLower.includes('dirty') || textLower.includes('stain') || textLower.includes('hole') || textLower.includes('bad quality') || textLower.includes('quality illa') || textLower.includes('used item') || textLower.includes('packaging')) {
-            return { replyText: '😔 Really sorry bro!\n\nPhoto / video anuppunga + Order ID.\nTeam check pannitu replacement arrange panrom.', sendImages: [] };
+            return { replyText: '😔 We are very sorry. Please share your Order ID along with a photo or video of the product. Our team will verify and arrange a replacement.', sendImages: [] };
         }
         if (textLower.includes('not received') || textLower.includes('kedaikala') || textLower.includes('varala') || textLower.includes('receive pannala') || textLower.includes('delivery delay') || textLower.includes('still not') || textLower.includes('not yet') || textLower.includes('late achu') || textLower.includes('late aguthu') || textLower.includes('parcel varala') || textLower.includes('pakketla')) {
-            return { replyText: '😔 Sorry for the delay bro.\n\nOrder ID anuppunga - tracking details check pannitu update sollrom. 📦', sendImages: [] };
+            return { replyText: '😔 We apologize for the delay. Please share your Order ID. We will check the tracking details and provide an update. 📦', sendImages: [] };
         }
         if (textLower.includes('missing') || textLower.includes('item missing') || textLower.includes('parcel missing')) {
-            return { replyText: '😔 Sorry bro! Order ID + unboxing photo irundha anuppunga.\nCheck pannitu sort out panrom.', sendImages: [] };
+            return { replyText: '😔 We apologize. Please share your Order ID along with the unboxing photo. We will verify and resolve this for you.', sendImages: [] };
         }
-        return { replyText: '😔 Sorry for the inconvenience bro.\n\nOrder ID anuppunga - udan check pannitu help panrom. 🙏', sendImages: [] };
+        return { replyText: '😔 We apologize for the inconvenience. Please share your Order ID, and we will check and assist you immediately. 🙏', sendImages: [] };
     }
 
     // RETURN / EXCHANGE HANDLER
     if (intent === 'RETURN_EXCHANGE') {
         session.complaintMode = true;
         if (textLower.includes('size match agala') || textLower.includes('size match agulana') || textLower.includes('size wrong') || textLower.includes('size poda')) {
-            return { replyText: '📌 Size issue bro?\n\n7 days exchange available.\nOrder ID + product photo anuppunga.', sendImages: [] };
+            return { replyText: '📌 Having size issues?\n\nWe offer a 7-day exchange. Please share your Order ID and a photo of the product.', sendImages: [] };
         }
         if (textLower.includes('refund')) {
-            return { replyText: '💰 Refund process:\n\nOrder ID anuppunga bro.\nCheck pannitu 3-5 days la refund arrange panrom.', sendImages: [] };
+            return { replyText: '💰 For refunds, please share your Order ID. We will verify and process your refund within 3-5 working days.', sendImages: [] };
         }
-        return { replyText: '✅ 7 days Return / Exchange available bro.\n\nOrder ID + product photo anuppunga. 🙏', sendImages: [] };
+        return { replyText: '✅ 7-day return and exchange is available. Please share your Order ID and a photo of the product. 🙏', sendImages: [] };
     }
 
     // Clear complaint mode if customer shifts to shopping
@@ -2327,52 +2327,52 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
     // FAQ MATCHES
     if (textLower.includes("delivery eppo") || textLower.includes("delivery time") || textLower.includes("evlo naal") || textLower.includes("evvalavu naal") || textLower.includes("kku evlo naal") || textLower.includes("vanthudum")) {
-        return { replyText: "🚚 Delivery usually 2-5 working days bro.", sendImages: [] };
+        return { replyText: "🚚 Delivery usually takes 2-5 working days.", sendImages: [] };
     }
     if (textLower.includes("delivery charge") || textLower.includes("delivery rate") || textLower.includes("delivery fee") || textLower.includes("shipping charge") || textLower.includes("courier charge")) {
-        return { replyText: "🚚 Delivery charge ₹80 bro.", sendImages: [] };
+        return { replyText: "🚚 Delivery charge is ₹80.", sendImages: [] };
     }
     if (textLower.includes("delivery area") || textLower.includes("deliver panringa") || textLower.includes("tamilnadu") || textLower.includes("india delivery") || textLower.includes("all india")) {
-        return { replyText: "✅ All India delivery available bro! 🚚", sendImages: [] };
+        return { replyText: "✅ We deliver all across India! 🚚", sendImages: [] };
     }
     if (textLower.includes("tracking") || textLower.includes("where is my order") || textLower.includes("order enga") || textLower.includes("track order") || textLower.includes("order status")) {
-        return { replyText: "Order ID anuppunga bro. Tracking details check pannitu sollrom. 📦", sendImages: [] };
+        return { replyText: "Please share your Order ID. We will check the tracking details and update you. 📦", sendImages: [] };
     }
     if (textLower.includes("size match agala") || textLower.includes("size match agulana") || textLower.includes("size chart") || textLower.includes("shirt small") || textLower.includes("shirt big") || textLower.includes("wrong size") || textLower.includes("size poda") || textLower.includes("size guide")) {
-        return { replyText: "📌 Size Guide bro:\n\nS - 38 chest\nM - 40 chest\nL - 42 chest\nXL - 44 chest\n\nDoubt irundha order ID anuppunga, exchange arrange panrom! 😊", sendImages: [] };
+        return { replyText: "📌 Size Guide:\n\nS - 38\" chest\nM - 40\" chest\nL - 42\" chest\nXL - 44\" chest\n\nIf you have any questions or need to arrange an exchange, please provide your Order ID! 😊", sendImages: [] };
     }
     if (textLower.includes("return") || textLower.includes("exchange") || textLower.includes("refund") || textLower.includes("replace") || textLower.includes("maatunga")) {
-        return { replyText: "✅ 7 days Return / Exchange available bro.\n\nOrder ID + product photo anuppunga.", sendImages: [] };
+        return { replyText: "✅ 7-day return and exchange is available. Please share your Order ID and a photo of the product.", sendImages: [] };
     }
     if (textLower.includes("damage") || textLower.includes("torn") || textLower.includes("wrong colour") || textLower.includes("vera colour") || textLower.includes("wrong color") || textLower.includes("wrong product") || textLower.includes("defect")) {
-        return { replyText: "📸 Product photo + Order ID anuppunga bro.\n\nCheck pannitu exchange arrange panrom. 😊", sendImages: [] };
+        return { replyText: "📸 Please send your Order ID and a photo of the product. We will verify and arrange an exchange for you. 😊", sendImages: [] };
     }
     if (textLower.includes("cod iruka") || textLower.includes("cash on delivery") || textLower.includes("cod available") || textLower === "cod") {
-        return { replyText: "Sorry bro 😊 COD available illa.\nGPay / UPI mattum available.", sendImages: [] };
+        return { replyText: "We apologize, but Cash on Delivery (COD) is not available. We accept GPay / UPI payments only. 😊", sendImages: [] };
     }
     if (textLower === "gpay" || textLower.includes("gpay pannalama") || textLower.includes("upi address") || textLower.includes("google pay") || textLower.includes("payment details") || textLower.includes("pay panna") || textLower.includes("payment eppo") || textLower.includes("upi id") || textLower.includes("gpay number")) {
         return {
-            replyText: "💳 Payment details bro:\n\nGPay / UPI: yourupi@okaxis\n\nPayment pannitu screenshot anuppunga 😊",
+            replyText: "💳 Payment Details:\n\nGPay / UPI: yourupi@okaxis\n\nPlease share a screenshot once the payment is completed. 😊",
             sendImages: []
         };
     }
     if (textLower.includes("online pay") || textLower.includes("prepaid") || textLower.includes("netbanking") || textLower.includes("card")) {
-        return { replyText: "💳 GPay / PhonePe / UPI available bro!\n\nUPI: yourupi@okaxis", sendImages: [] };
+        return { replyText: "💳 GPay, PhonePe, and UPI payments are accepted.\n\nUPI ID: yourupi@okaxis", sendImages: [] };
     }
     if (textLower.includes("discount") || textLower.includes("offer") || textLower.includes("sale") || textLower.includes("coupon") || textLower.includes("rate kam") || textLower.includes("cheap") || textLower.includes("kammiya")) {
-        return { replyText: "Sorry bro 😊 Fixed price taan. Already best price la iruku! 🔥", sendImages: [] };
+        return { replyText: "We offer fixed pricing as our products are already at the best possible price. Thank you for understanding! 😊🔥", sendImages: [] };
     }
     if (textLower.includes("bulk") || textLower.includes("wholesale") || textLower.includes("minimum order") || textLower.includes("lots")) {
-        return { replyText: "Bulk order venumna directly call pannunga bro! 📞 Owner contact pannuvanga.", sendImages: [] };
+        return { replyText: "For bulk orders, please contact us directly. Our team will get in touch with you. 📞", sendImages: [] };
     }
     if (textLower.includes("vere color") || textLower.includes("vera colour") || textLower.includes("other color") || textLower.includes("different color") || textLower.includes("color available") || textLower.includes("colour iruka")) {
-        return { replyText: "Enna category venumnu sollunga bro 😊 Available colors list kaaturen!", sendImages: [] };
+        return { replyText: "Please select a category, and we will share the list of available colors! 😊", sendImages: [] };
     }
     if (textLower.includes("quality") || textLower.includes("fabric") || textLower.includes("material") || textLower.includes("genuine") || textLower.includes("original")) {
-        return { replyText: "💪 100% quality product bro! Super Collections - premium quality guaranteed 😊", sendImages: [] };
+        return { replyText: "💪 100% premium quality products. Super Collections guarantees premium quality! 😊", sendImages: [] };
     }
     if (textLower.includes("shop address") || textLower.includes("store address") || textLower.includes("shop enga") || textLower.includes("location") || textLower.includes("contact number") || textLower.includes("phone number kodu")) {
-        return { replyText: "🏪 Super Collections\n\nOnline orders mattum bro. WhatsApp la order pannunga! 😊", sendImages: [] };
+        return { replyText: "🏪 Super Collections\n\nWe accept online orders only. Please place your order via WhatsApp! 😊", sendImages: [] };
     }
 
     // NOT INTERESTED
@@ -2384,7 +2384,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         session.selectedSize = null;
         session.crossSellShown = false;
         return {
-            replyText: "🙏 Thanks bro.\n\nFuture la dress venumna anytime message pannunga.\n\nSuper Collections support pannathuku thanks 😊",
+            replyText: "Feel free to message us anytime for your future shopping needs. Thank you for choosing Super Collections! 😊",
             sendImages: []
         };
     }
@@ -2396,12 +2396,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const parents = getSortedParents(categoryCounts);
         session.parentCategories = parents;
 
-        let replyText = "Welcome to Super Collections bro 😊\n\nEnna category venum?\n\n";
+        let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
         parents.forEach((cat, idx) => {
             const emoji = getCategoryEmoji(cat);
             replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
         });
-        replyText += "\nNumber mattum reply pannunga bro 😊";
+        replyText += "\nPlease reply with the product number.";
 
         return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
     }
@@ -2457,14 +2457,14 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 replyText += `*${idx + 1}.* ${displayName}\n`;
                 replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
             });
-            replyText += `👆 number mattum reply pannunga bro! 😊`;
+            replyText += `Please reply with the product number.`;
             
             session.searchProducts = displayProducts;
             session.state = "AWAITING_MODEL_SELECTION";
             
             return { replyText, sendImages: [], searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
         } else {
-            return { replyText: "Sorry bro, search matching products ippo stock illa. 😔", sendImages: [] };
+            return { replyText: "We are sorry, but those products are currently out of stock. 😔", sendImages: [] };
         }
     }
 
@@ -2494,13 +2494,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
                 replyText += `${sIdx + 1}️⃣ ${capSub} (${subcategoryCounts[sub]})\n`;
             });
-            replyText += "\nNumber mattum reply pannunga bro! 😊";
+            replyText += "\nPlease reply with the product number.";
 
             return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
         } else {
             const max = session.parentCategories.length;
             return {
-                replyText: `⚠️ Wrong choice bro! 1-larunthu ${max} varaikum iruka category number-a mattum choose pannunga. 😊`,
+                replyText: `⚠️ Invalid selection. Please choose a category number from 1 to ${max}. 😊`,
                 sendImages: []
             };
         }
@@ -2509,19 +2509,19 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // SMART FALLBACKS & GENERAL FALLBACKS
     if (session.state === "AWAITING_CHECKOUT_DETAILS") {
         return {
-            replyText: `📝 Order details anuppunga bro:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`,
+            replyText: `Please provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`,
             sendImages: []
         };
     }
     if (session.state === "AWAITING_MODEL_SELECTION") {
         return {
-            replyText: `⚠️ Format correct ah choose pannunga bro! List-la iruka number (1, 2, 3...) mattum reply pannunga. 😊`,
+            replyText: `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
             sendImages: []
         };
     }
     if (session.state === "AWAITING_SUBCATEGORY_SELECTION") {
         return {
-            replyText: `⚠️ Format correct ah choose pannunga bro! List-la iruka number (1, 2, 3...) mattum reply pannunga. 😊`,
+            replyText: `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
             sendImages: []
         };
     }
@@ -2530,25 +2530,25 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             ? (Array.isArray(session.pendingProduct.sizes) ? session.pendingProduct.sizes.join(', ') : session.pendingProduct.sizes)
             : 'S, M, L, XL';
         return {
-            replyText: `Size sollunga bro 😊 Available: ${sizeList}`,
+            replyText: `Please select a size. 😊 Available sizes: ${sizeList}`,
             sendImages: []
         };
     }
     if (session.state === "AWAITING_CART_CONFIRM") {
         return {
-            replyText: `⚠️ Invalid response bro! YES or NO reply pannunga. 😊`,
+            replyText: `⚠️ Invalid response. Please reply with YES or NO. 😊`,
             sendImages: []
         };
     }
     if (session.state === "AWAITING_MORE_ITEMS") {
         return {
-            replyText: `⚠️ Invalid response bro! YES or NO reply pannunga. 😊`,
+            replyText: `⚠️ Invalid response. Please reply with YES or NO. 😊`,
             sendImages: []
         };
     }
     if (session.state === "AWAITING_CATEGORY") {
         return {
-            replyText: `⚠️ Format correct ah choose pannunga bro! List-la iruka category number (1, 2, 3...) mattum reply pannunga. 😊`,
+            replyText: `⚠️ Invalid format. Please reply with a category number from the list (1, 2, 3...). 😊`,
             sendImages: []
         };
     }
@@ -2566,7 +2566,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     });
 
     return {
-        replyText: `😊 Enna help venumnu sollunga bro!\n\nDress thedureenga?\n\n${menuList}\nOr delivery / payment / return pathi kelvi irundha kelunga!`,
+        replyText: `😊 How can we help you today?\n\nLooking for clothing?\n\n${menuList}\nOr feel free to ask about delivery, payments, or returns!`,
         sendImages: [],
         listContext: { type: 'categories', data: parents }
     };
@@ -2785,8 +2785,8 @@ async function handleMessage(msg) {
             bill += `${divider}\n`;
             bill += `💳 *Payment:* GPay / UPI\n`;
             bill += `📲 yourupi@okaxis\n\n`;
-            bill += `📨 Payment screenshot anuppunga bro\n`;
-            bill += `Owner shortly contact pannuvanga! 😊\n`;
+            bill += `📨 Please share a screenshot of the payment receipt.\n`;
+            bill += `Our representative will contact you shortly! 😊\n`;
             bill += `${divider}\n`;
             bill += `🙏 Thanks for shopping at\n`;
             bill += `*Super Collections!* ❤️`;
@@ -2836,7 +2836,7 @@ async function handleMessage(msg) {
 
     } catch (err) {
         console.error('❌ Error handling message:', err);
-        await sendText(from, "⚠️ Sorry, chinna error. Aprama try pannunga.");
+        await sendText(from, "⚠️ We apologize, but a small error occurred. Please try again later.");
     }
 }
 
