@@ -794,7 +794,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     const hasCommas = userMessage.split(',').length >= 3;
 
     // Determine if this is a checkout request
-    const isCheckoutTrigger = textLower === "buy" || textLower === "checkout" || textLower.includes("buy pannalama") || textLower.includes("order confirm") || textLower.includes("place order") || textLower.includes("confirm order") || intent === 'ORDER_CONFIRMATION';
+    const isCheckoutTrigger = textLower === "buy" || textLower === "checkout" || textLower === "no_checkout" || textLower.includes("buy pannalama") || textLower.includes("order confirm") || textLower.includes("place order") || textLower.includes("confirm order") || intent === 'ORDER_CONFIRMATION';
 
     // Determine if this is a product search/browse request
     const categoryKeywords = ["shirt", "pant", "jeans", "cargo", "tshirt", "t-shirt", "shorts", "phant", "linen", "cotton", "plain", "printed", "arrival", "chava", "lenin", "coton", "shit", "shrit", "under", "below"];
@@ -1017,7 +1017,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                     body: `Ok bro! 😊\n\nVera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no', title: '🛒 NO - Checkout' }
+                        { id: 'no_checkout', title: '🛒 NO - Checkout' }
                     ]
                 },
                 sendImages: []
@@ -1046,7 +1046,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                     body: `Ok bro! 😊\n\nVera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no', title: '🛒 NO - Checkout' }
+                        { id: 'no_checkout', title: '🛒 NO - Checkout' }
                     ]
                 },
                 sendImages: []
@@ -1132,7 +1132,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                         body: `✅ Recommended item add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
                         buttons: [
                             { id: 'yes', title: '🛍️ YES' },
-                            { id: 'no', title: '🛒 NO - Checkout' }
+                            { id: 'no_checkout', title: '🛒 NO - Checkout' }
                         ]
                     },
                     sendImages: [],
@@ -1173,7 +1173,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                         body: `✅ Cart la add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
                         buttons: [
                             { id: 'yes', title: '🛍️ YES' },
-                            { id: 'no', title: '🛒 NO - Checkout' }
+                            { id: 'no_checkout', title: '🛒 NO - Checkout' }
                         ]
                     },
                     sendImages: [],
@@ -1190,7 +1190,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                     body: `Ok bro! 😊 Cart la add pannala.\n\nVera ethachu pakkiriya bro?`,
                     buttons: [
                         { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no', title: '🛒 NO - Checkout' }
+                        { id: 'no_checkout', title: '🛒 NO - Checkout' }
                     ]
                 },
                 sendImages: []
@@ -1222,7 +1222,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             replyText += "\nNumber mattum reply pannunga bro 😊";
 
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
-        } else if (textLower === "no" || textLower === "n" || textLower === "illai" || textLower === "checkout") {
+        } else if (textLower === "no" || textLower === "n" || textLower === "illai" || textLower === "checkout" || textLower === "no_checkout") {
             return startCheckout(session);
         } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
             return {
