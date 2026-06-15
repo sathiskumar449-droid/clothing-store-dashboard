@@ -710,8 +710,10 @@ const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => 
     const hasValidPrice = (p) => p.price && String(p.price).trim() !== '' && !isNaN(parseFloat(String(p.price).replace(/[^\d.]/g, '')));
 
     const addedParent = getParentCategory(addedProduct.category).toLowerCase();
+    const addedName = (addedProduct.name || '').toLowerCase();
     const isAddedTop = addedParent.includes('shirt') || addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedParent.includes('jersey') || addedParent.includes('polo');
     const isAddedBottom = addedParent.includes('pant') || addedParent.includes('phant') || addedParent.includes('jeans') || addedParent.includes('shorts') || addedParent.includes('track') || addedParent.includes('cargo');
+    const isAddedTShirt = addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedName.includes('t-shirt') || addedName.includes('tshirt') || addedName.includes('polo');
 
     const candidates = allProducts.filter(p => {
         if (p.id === addedProduct.id) return false;
@@ -723,7 +725,18 @@ const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => 
         const candParent = getParentCategory(p.category).toLowerCase();
         const candNameLower = (p.name || '').toLowerCase();
         const isCandTop = candParent.includes('shirt') || candParent.includes('tshirt') || candParent.includes('t-day') || candParent.includes('t-shirt') || candParent.includes('jersey') || candParent.includes('polo');
-        const isCandBottom = (candParent.includes('pant') || candParent.includes('phant') || candParent.includes('jeans') || candParent.includes('track') || candParent.includes('cargo')) && !candParent.includes('shorts') && !candNameLower.includes('shorts') && !candParent.includes('trouser') && !candNameLower.includes('trouser');
+        
+        const isTrackPant = candParent.includes('track') || candNameLower.includes('track');
+        let isCandBottom = false;
+        if (isAddedTShirt) {
+            isCandBottom = isTrackPant;
+        } else {
+            if (isTrackPant) {
+                isCandBottom = false;
+            } else {
+                isCandBottom = (candParent.includes('pant') || candParent.includes('phant') || candParent.includes('jeans') || candParent.includes('cargo')) && !candParent.includes('shorts') && !candNameLower.includes('shorts') && !candParent.includes('trouser') && !candNameLower.includes('trouser');
+            }
+        }
 
         // Swap tops with bottoms, bottoms with tops
         if (isAddedTop && isCandBottom) return true;
@@ -1928,7 +1941,9 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
 
             // Cross-sell teaser flow: Suggest other category as visual banner
             const addedParent = getParentCategory(product.category).toLowerCase();
+            const addedNameLower = (product.name || '').toLowerCase();
             const isAddedTop = addedParent.includes('shirt') || addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedParent.includes('jersey') || addedParent.includes('polo');
+            const isAddedTShirt = addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedNameLower.includes('t-shirt') || addedNameLower.includes('tshirt') || addedNameLower.includes('polo');
 
             const promoCategory = isAddedTop ? 'Pants' : 'Shirts';
             const promoKeyword = isAddedTop ? 'PANTS' : 'SHIRTS';
@@ -1948,7 +1963,14 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
                     if (parent.includes('shorts') || parent.includes('trouser') || nameLower.includes('shorts') || nameLower.includes('trouser')) {
                         return false;
                     }
-                    return parent.includes('pant') || parent.includes('phant') || parent.includes('jeans') || parent.includes('track') || parent.includes('cargo');
+                    
+                    const isTrackPant = parent.includes('track') || nameLower.includes('track');
+                    if (isAddedTShirt) {
+                        return isTrackPant;
+                    } else {
+                        if (isTrackPant) return false;
+                        return parent.includes('pant') || parent.includes('phant') || parent.includes('jeans') || parent.includes('cargo');
+                    }
                 } else {
                     return parent.includes('shirt') || parent.includes('tshirt') || parent.includes('t-day') || parent.includes('t-shirt') || parent.includes('jersey') || parent.includes('polo');
                 }
