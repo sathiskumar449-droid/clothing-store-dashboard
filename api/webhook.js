@@ -2085,11 +2085,14 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             session.promoCategory = promoCategory;
 
-            const candidates = products.filter(p => {
+            // Create unique product list using productId
+            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
+
+            const candidates = uniqueProducts.filter(p => {
                 if (p.id === product.id) return false;
                 if (Number(p.stock) <= 0) return false;
                 
-                const img = getProductImageUri(p, products);
+                const img = getProductImageUri(p, uniqueProducts);
                 if (!img || img === 'null' || img === 'undefined') return false;
 
                 const parent = getParentCategory(p.category);
@@ -2137,25 +2140,33 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             // Score and sort candidates by color and style compatibility
             const sortedCandidates = candidates
-                .map(p => ({ product: p, score: getRecommendationScore(product, p, products) }))
+                .map(p => ({ product: p, score: getRecommendationScore(product, p, uniqueProducts) }))
                 .sort((a, b) => b.score - a.score)
                 .map(item => item.product);
 
-            // Slice top 2 recommendations
-            const promoCandidates = sortedCandidates.slice(0, 2);
+            // Slice top 4 recommendations
+            let promoCandidates = sortedCandidates.slice(0, 4);
+
+            // Validation: Ensure unique product IDs inside collage
+            if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
+                const uniquePromoCandidates = [];
+                const seenIds = new Set();
+                for (const p of promoCandidates) {
+                    if (!seenIds.has(p.id)) {
+                        seenIds.add(p.id);
+                        uniquePromoCandidates.push(p);
+                    }
+                }
+                promoCandidates = uniquePromoCandidates;
+            }
 
             let collageUrl = null;
-            if (promoCandidates.length > 0) {
-                // Generate a 2x2 collage using recommended products (up to 2). We fill all 4 slots by repeating them.
-                const collageCandidates = [];
-                if (promoCandidates.length === 2) {
-                    collageCandidates.push(promoCandidates[0], promoCandidates[1], promoCandidates[0], promoCandidates[1]);
-                } else if (promoCandidates.length === 1) {
-                    collageCandidates.push(promoCandidates[0], promoCandidates[0], promoCandidates[0], promoCandidates[0]);
-                } else {
-                    collageCandidates.push(...promoCandidates);
-                }
-                collageUrl = await createPromoCollage(collageCandidates, products);
+            if (promoCandidates.length > 1) {
+                // Generate collage with unique products (2, 3, or 4 products). Do not duplicate slots.
+                collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
+            } else if (promoCandidates.length === 1) {
+                // Show single product image only. Do NOT create collage.
+                collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
             }
 
             const categoryCounts = getCategoryCounts(products);
