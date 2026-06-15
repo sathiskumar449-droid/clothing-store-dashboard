@@ -1146,6 +1146,18 @@ function getStatePrompt(session, products) {
     }
 }
 
+function getShortProductName(p) {
+    let name = p.name || '';
+    const parenMatch = name.match(/\(([^)]+)\)/);
+    if (parenMatch) {
+        return parenMatch[1].trim();
+    }
+    if (p.color && p.color !== 'null' && p.color !== 'undefined') {
+        return p.color.trim();
+    }
+    return name.trim();
+}
+
 async function prepareProductsPageResponse(session, productsPool, queryLabel) {
     const pageSize = 16;
     const currentPage = session.currentPage || 0;
@@ -1169,14 +1181,10 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
     let replyText = `👔 *${queryLabel}* (Page ${pageNum}/${totalPages})\n\n`;
     pageProducts.forEach((p, idx) => {
         const globalIdx = startIndex + idx + 1;
-        let displayName = p.name;
-        if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
-            displayName = `${p.color} ${displayName}`;
-        }
-        replyText += `*${globalIdx}.* ${displayName}\n`;
-        replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
+        const shortName = getShortProductName(p);
+        replyText += `${globalIdx}. ${shortName} - ₹${p.price}\n`;
     });
-    replyText += `👆 number/action reply pannunga bro! 😊`;
+    replyText += `\n👆 number/action reply pannunga bro! 😊`;
 
     const buttons = [];
     if (currentPage > 0) {
