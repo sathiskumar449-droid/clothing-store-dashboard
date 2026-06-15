@@ -639,6 +639,7 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
         const img = getProductImageUri(p, allProducts);
         return img && img.startsWith('http') && img !== 'null' && img !== 'undefined';
     };
+    const hasValidPrice = (p) => p.price && String(p.price).trim() !== '' && !isNaN(parseFloat(String(p.price).replace(/[^\\d.]/g, '')));
 
     // 1. Try to find a matching product with the target tags AND a valid image
     for (const tag of targetTags) {
@@ -646,6 +647,7 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
             p.id !== addedProduct.id && 
             !isExcluded(p.id) &&
             Number(p.stock) > 0 && 
+            hasValidPrice(p) &&
             getProductTag(p) === tag &&
             hasValidImage(p)
         );
@@ -658,6 +660,7 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
             p.id !== addedProduct.id && 
             !isExcluded(p.id) &&
             Number(p.stock) > 0 && 
+            hasValidPrice(p) &&
             getProductTag(p) === tag
         );
         if (matched) return matched;
@@ -667,7 +670,7 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
     const currentParent = getParentCategory(addedProduct.category);
     const otherParents = Array.from(new Set(
         allProducts
-            .filter(p => Number(p.stock) > 0 && p.id !== addedProduct.id && !isExcluded(p.id))
+            .filter(p => Number(p.stock) > 0 && hasValidPrice(p) && p.id !== addedProduct.id && !isExcluded(p.id))
             .map(p => getParentCategory(p.category))
     )).filter(p => p !== currentParent);
 
@@ -685,6 +688,7 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
         const matchWithImg = allProducts.find(p => 
             getParentCategory(p.category) === targetParent && 
             Number(p.stock) > 0 && 
+            hasValidPrice(p) &&
             p.id !== addedProduct.id && 
             !isExcluded(p.id) &&
             hasValidImage(p)
@@ -692,7 +696,7 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
         if (matchWithImg) return matchWithImg;
 
         // Fallback without image
-        return allProducts.find(p => getParentCategory(p.category) === targetParent && Number(p.stock) > 0 && p.id !== addedProduct.id && !isExcluded(p.id));
+        return allProducts.find(p => getParentCategory(p.category) === targetParent && Number(p.stock) > 0 && hasValidPrice(p) && p.id !== addedProduct.id && !isExcluded(p.id));
     }
 
     return null;
