@@ -612,14 +612,18 @@ const getTargetRecommendationTags = (tag) => {
 };
 
 // Recommendation engine linking tags and categories
-const getSmartRecommendation = (addedProduct, allProducts) => {
+const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => {
+    if (!addedProduct) return null;
     const addedTag = getProductTag(addedProduct);
     const targetTags = getTargetRecommendationTags(addedTag);
+
+    const isExcluded = (id) => excludedIds.some(eid => String(eid) === String(id));
 
     // 1. Try to find a matching product with the target tags
     for (const tag of targetTags) {
         const matched = allProducts.find(p => 
             p.id !== addedProduct.id && 
+            !isExcluded(p.id) &&
             Number(p.stock) > 0 && 
             getProductTag(p) === tag
         );
@@ -630,7 +634,7 @@ const getSmartRecommendation = (addedProduct, allProducts) => {
     const currentParent = getParentCategory(addedProduct.category);
     const otherParents = Array.from(new Set(
         allProducts
-            .filter(p => Number(p.stock) > 0)
+            .filter(p => Number(p.stock) > 0 && p.id !== addedProduct.id && !isExcluded(p.id))
             .map(p => getParentCategory(p.category))
     )).filter(p => p !== currentParent);
 
@@ -644,10 +648,36 @@ const getSmartRecommendation = (addedProduct, allProducts) => {
         if (!targetParent) {
             targetParent = otherParents[0];
         }
-        return allProducts.find(p => getParentCategory(p.category) === targetParent && Number(p.stock) > 0);
+        return allProducts.find(p => getParentCategory(p.category) === targetParent && Number(p.stock) > 0 && p.id !== addedProduct.id && !isExcluded(p.id));
     }
 
     return null;
+};
+
+// Formats a recommendation message with interactive choice options
+const getRecommendationMessage = (addedProduct, recommendedProduct, currentParent) => {
+    const addedName = `${addedProduct.color ? addedProduct.color + ' ' : ''}${addedProduct.name}`;
+    const recName = `${recommendedProduct.color ? recommendedProduct.color + ' ' : ''}${recommendedProduct.name}`;
+    const isShirtAdded = currentParent.toLowerCase().includes('shirt');
+    const matchMsg = isShirtAdded
+        ? `Bro 🔥 Intha *${addedName}*-ku *${recName}* super best match aagum!`
+        : `Bro 🔥 Intha *${addedName}* potu *${recName}* potaa perfect combo aagum!`;
+
+    const sizeList = (Array.isArray(recommendedProduct.sizes)
+        ? recommendedProduct.sizes
+        : String(recommendedProduct.sizes).split(',').map(s => s.trim())
+    ).filter(Boolean);
+    const sizesText = sizeList.map(s => s.toUpperCase()).join(' ');
+
+    return `${matchMsg}\n\n` +
+           `💰 ₹${recommendedProduct.price}\n` +
+           `📦 Stock: ${recommendedProduct.stock} pcs\n\n` +
+           `📐 Available Sizes:\n` +
+           `${sizesText}\n\n` +
+           `Choose:\n\n` +
+           `1️⃣ Select Size\n` +
+           `2️⃣ Show Another Match\n` +
+           `3️⃣ Skip`;
 };
 
 // Dynamically group subcategories into top-level parent categories based on noun rules
@@ -918,6 +948,89 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         }
     }
 
+    // STATE: AWAITING_RECOMMENDATION_CHOICE
+    if (session.state === "AWAITING_RECOMMENDATION_CHOICE" && session.pendingProduct) {
+        const product = session.pendingProduct;
+        const choiceText = textLower.trim();
+
+        const isChoice1 = choiceText === "1" || choiceText === "1️⃣" || choiceText.includes("select size") || choiceText === "select" || choiceText === "size";
+        const isChoice2 = choiceText === "2" || choiceText === "2️⃣" || choiceText.includes("show another") || choiceText.includes("another match") || choiceText === "another" || choiceText === "show match" || choiceText === "match";
+        const isChoice3 = choiceText === "3" || choiceText === "3️⃣" || choiceText === "skip" || choiceText.includes("skip recommendation") || choiceText === "no" || choiceText === "n" || choiceText === "illa" || choiceText === "vendam";
+
+        if (isChoice1) {
+            session.state = "AWAITING_SIZE_SELECTION";
+            const sizeList = (Array.isArray(product.sizes)
+                ? product.sizes
+                : String(product.sizes).split(',').map(s => s.trim())
+            ).filter(Boolean);
+            const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
+
+            return {
+                replyText: `Entha size venum bro? 😊\n\nAvailable Sizes:\n${sizesText}`,
+                sendImages: []
+            };
+        } else if (isChoice2) {
+            const originalProduct = products.find(p => p.id === session.originalProductId) || 
+                                    (session.cart.length > 0 ? products.find(p => p.id === session.cart[session.cart.length - 1].id) : null);
+
+            if (!session.recommendedIds) {
+                session.recommendedIds = [product.id];
+            }
+
+            const nextRecommended = getSmartRecommendation(originalProduct, products, session.recommendedIds);
+
+            if (nextRecommended) {
+                session.recommendedIds.push(nextRecommended.id);
+                session.pendingProduct = nextRecommended;
+
+                const recName = `${nextRecommended.color ? nextRecommended.color + ' ' : ''}${nextRecommended.name}`;
+                const currentParent = originalProduct ? getParentCategory(originalProduct.category) : "General";
+                const replyText = getRecommendationMessage(originalProduct || { name: 'product', color: '' }, nextRecommended, currentParent);
+
+                return {
+                    replyText,
+                    sendImages: [{ url: nextRecommended.imageUri, caption: recName }],
+                    pendingProduct: nextRecommended,
+                    listContext: {
+                        type: 'recommendation_choice',
+                        pendingProduct: nextRecommended,
+                        originalProductId: originalProduct ? originalProduct.id : null,
+                        recommendedIds: [...session.recommendedIds]
+                    }
+                };
+            } else {
+                const recName = `${product.color ? product.color + ' ' : ''}${product.name}`;
+                return {
+                    replyText: `⚠️ No other matches found in stock for this combo, bro! 😊\n\nChoose:\n1️⃣ Select Size (for ${recName})\n3️⃣ Skip`,
+                    sendImages: []
+                };
+            }
+        } else if (isChoice3) {
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.isRecommendation = false;
+            session.recommendedIds = null;
+            session.originalProductId = null;
+            session.state = "AWAITING_MORE_ITEMS";
+            return {
+                sendButtons: {
+                    body: `Ok bro! 😊\n\nVera ethachu pakkiriya bro?`,
+                    buttons: [
+                        { id: 'yes', title: '🛍️ YES' },
+                        { id: 'no', title: '🛒 NO - Checkout' }
+                    ]
+                },
+                sendImages: []
+            };
+        } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
+            const recName = `${product.color ? product.color + ' ' : ''}${product.name}`;
+            return {
+                replyText: `⚠️ Wrong choice bro! Match pannugala illa skip panringalanu crt ah choose pannuga. 😊\n\nChoose:\n1️⃣ Select Size (for ${recName})\n2️⃣ Show Another Match\n3️⃣ Skip`,
+                sendImages: []
+            };
+        }
+    }
+
     // STATE: AWAITING_SIZE_SELECTION
     if (session.state === "AWAITING_SIZE_SELECTION" && session.pendingProduct) {
         const product = session.pendingProduct;
@@ -1034,28 +1147,24 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             if (recommended) {
                 session.pendingProduct = recommended;
                 session.isRecommendation = true;
-                session.state = "AWAITING_SIZE_SELECTION";
+                session.state = "AWAITING_RECOMMENDATION_CHOICE";
+                session.recommendedIds = [recommended.id];
+                session.originalProductId = product.id;
 
-                const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
                 const recName = `${recommended.color ? recommended.color + ' ' : ''}${recommended.name}`;
-                const isShirtAdded = currentParent.toLowerCase().includes('shirt');
-                const matchMsg = isShirtAdded
-                    ? `Bro 🔥 Intha *${addedName}*-ku *${recName}* super best match aagum!\n\n💰 ₹${recommended.price}\n📦 Stock: ${recommended.stock} pcs\n\nRomba nalla combo bro 😎 Look-u super-a varum, sure try pannunga!`
-                    : `Bro 🔥 Intha *${addedName}* potu *${recName}* potaa perfect combo aagum!\n\n💰 ₹${recommended.price}\n📦 Stock: ${recommended.stock} pcs\n\nFriends ellam wow solluvaanga bro 😎 Try pannunga!`;
-
-                const sizeList = (Array.isArray(recommended.sizes)
-                    ? recommended.sizes
-                    : String(recommended.sizes).split(',').map(s => s.trim())
-                ).filter(Boolean);
-                const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
-
-                const replyText = `${matchMsg}\n\n📐 Available Sizes:\n${sizesText}\n\nEntha size venum bro? (Or reply "skip" to skip) 😊`;
+                const replyText = getRecommendationMessage(product, recommended, currentParent);
 
                 return {
                     replyText,
                     sendImages: [{ url: recommended.imageUri, caption: recName }],
                     cart: session.cart,
-                    pendingProduct: recommended
+                    pendingProduct: recommended,
+                    listContext: {
+                        type: 'recommendation_choice',
+                        pendingProduct: recommended,
+                        originalProductId: product.id,
+                        recommendedIds: [recommended.id]
+                    }
                 };
             } else {
                 session.state = "AWAITING_MORE_ITEMS";
@@ -1541,6 +1650,12 @@ async function handleMessage(msg) {
                 session.searchProducts = context.data;
                 session.selectedSubCategory = context.selectedSubCategory;
                 session.selectedParentCategory = context.selectedParentCategory;
+            } else if (context.type === 'recommendation_choice') {
+                session.state = "AWAITING_RECOMMENDATION_CHOICE";
+                session.pendingProduct = context.pendingProduct;
+                session.originalProductId = context.originalProductId;
+                session.recommendedIds = context.recommendedIds;
+                session.isRecommendation = true;
             }
         }
 
