@@ -582,22 +582,48 @@ const getTargetRecommendationTags = (tag) => {
 // Helper to retrieve fallback/self-healing image URI if the database row has 'null' or missing image
 const getProductImageUri = (product, allProducts = []) => {
     if (product.imageUri && product.imageUri.startsWith('http') && product.imageUri !== 'null' && product.imageUri !== 'undefined') {
+        const isWhitePant = (product.name || '').toLowerCase().includes('white') && 
+                            (product.name || '').toLowerCase().includes('pant');
+        if (isWhitePant && product.imageUri.includes('6082459309833916828')) {
+            return 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?q=80&w=600&auto=format&fit=crop';
+        }
         return product.imageUri;
     }
+
+    const prodTag = getProductTag(product);
+
     // Try to find a duplicate entry with the same name that has a valid WooCommerce image URL
     const backup = allProducts.find(p => 
         p.name === product.name && 
+        getProductTag(p) === prodTag &&
         p.imageUri && p.imageUri.startsWith('http') && p.imageUri !== 'null' && p.imageUri !== 'undefined'
     );
-    if (backup) return backup.imageUri;
+    if (backup) return getProductImageUri(backup, allProducts);
 
     // Fuzzier match: same category and color
     const backup2 = allProducts.find(p => 
         p.category === product.category && 
         p.color === product.color && 
+        getProductTag(p) === prodTag &&
         p.imageUri && p.imageUri.startsWith('http') && p.imageUri !== 'null' && p.imageUri !== 'undefined'
     );
-    if (backup2) return backup2.imageUri;
+    if (backup2) return getProductImageUri(backup2, allProducts);
+
+    // Fuzzier match 2: same tag, shares color keyword
+    const hasColor = product.color || (product.name || '').toLowerCase().match(/(?:white|black|red|blue|green|grey|gray|navy|sandal|yellow|pink|orange|purple|violet|cream|lavender|brown|khaki|olive)/)?.[0];
+    if (hasColor) {
+        const backup3 = allProducts.find(p => {
+            if (p.id === product.id) return false;
+            if (getProductTag(p) !== prodTag) return false;
+            if (!p.imageUri || !p.imageUri.startsWith('http') || p.imageUri === 'null' || p.imageUri === 'undefined') return false;
+            
+            const pColor = p.color || (p.name || '').toLowerCase().match(/(?:white|black|red|blue|green|grey|gray|navy|sandal|yellow|pink|orange|purple|violet|cream|lavender|brown|khaki|olive)/)?.[0];
+            return pColor === hasColor;
+        });
+        if (backup3) {
+            return getProductImageUri(backup3, allProducts);
+        }
+    }
 
     return null;
 };
