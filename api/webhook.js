@@ -241,7 +241,7 @@ export async function deleteSession(phone) {
     }
 }
 
-export async function logChatMessage(customerPhone, sender, text, type = 'text', imageUrl = null) {
+export async function logChatMessage(customerPhone, sender, text, type = 'text', imageUrl = null, messageId = null) {
     try {
         // Fetch current row (or create default)
         const { data: rows, error: fetchError } = await supabase
@@ -275,6 +275,7 @@ export async function logChatMessage(customerPhone, sender, text, type = 'text',
             type,
             text,
             imageUrl,
+            messageId,
             timestamp: new Date().toISOString()
         });
         if (messages.length > 100) messages.shift();
@@ -526,6 +527,16 @@ const normalizeQuery = (queryText) => {
     return words.join(' ');
 };
 
+// Normalize size strings to a standardized format (strip spaces, dashes, underscores, and the word "size")
+const normalizeSize = (s) => {
+    if (!s) return '';
+    return s.toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/size/g, '')
+        .replace(/[-_]/g, '')
+        .trim();
+};
+
 // Dynamically group subcategories into top-level parent categories based on noun rules
 const getParentCategory = (categoryName) => {
     if (!categoryName) return 'General';
@@ -632,9 +643,8 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         const availableSizes = Array.isArray(product.sizes)
             ? product.sizes.map(s => s.toLowerCase().trim())
             : String(product.sizes).toLowerCase().split(',').map(s => s.trim());
-        if (availableSizes.includes(textLower)) {
-            isValidSize = true;
-        }
+        const normalizedInput = normalizeSize(textLower);
+        isValidSize = availableSizes.some(s => normalizeSize(s) === normalizedInput);
     }
 
     const isYesNo = ['yes', 'no', 'y', 'n', 'aama', 'illa', 'vendam', 'ok', 'okay', 'help_yes', 'help_no', 'skip'].includes(textLower);
@@ -683,7 +693,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
             });
             replyText += "\nNumber mattum reply pannunga 😊";
-            return { replyText, sendImages: [] };
+            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         } else if (noKeywords.includes(textLower) || textLower.includes('no') || textLower.includes('illa') || textLower.includes('vendam')) {
             session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
@@ -749,7 +759,8 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 return {
                     replyText,
                     sendImages: [],
-                    searchProducts: displayProducts
+                    searchProducts: displayProducts,
+                    listContext: { type: 'products', data: displayProducts, selectedSubCategory: selectedSub, selectedParentCategory: session.selectedParentCategory }
                 };
             } else {
                 session.state = "AWAITING_CATEGORY";
@@ -808,8 +819,11 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             ? product.sizes.map(s => s.toLowerCase().trim())
             : String(product.sizes).toLowerCase().split(',').map(s => s.trim());
 
-        if (availableSizes.includes(textLower)) {
-            session.selectedSize = userMessage.toUpperCase();
+        const normalizedInput = normalizeSize(textLower);
+        const matchedSize = availableSizes.find(s => normalizeSize(s) === normalizedInput);
+
+        if (matchedSize) {
+            session.selectedSize = matchedSize.toUpperCase();
             session.state = "AWAITING_CART_CONFIRM";
             return {
                 sendButtons: {
@@ -964,7 +978,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             });
             replyText += "\nNumber mattum reply pannunga bro 😊";
 
-            return { replyText, sendImages: [] };
+            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai" || textLower === "checkout") {
             return startCheckout(session);
         }
@@ -1116,7 +1130,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         });
         replyText += "\nNumber mattum reply pannunga bro 😊";
 
-        return { replyText, sendImages: [] };
+        return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
     }
 
     // CHECKOUT INITIATION
@@ -1175,7 +1189,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             session.searchProducts = displayProducts;
             session.state = "AWAITING_MODEL_SELECTION";
             
-            return { replyText, sendImages: [], searchProducts: displayProducts };
+            return { replyText, sendImages: [], searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
         } else {
             return { replyText: "Sorry bro, search matching products ippo stock illa. 😔", sendImages: [] };
         }
@@ -1209,7 +1223,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             });
             replyText += "\nNumber mattum reply pannunga bro! 😊";
 
-            return { replyText, sendImages: [] };
+            return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
         }
     }
 
@@ -1250,7 +1264,8 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
     return {
         replyText: `😊 Enna help venumnu sollunga bro!\n\nDress thedureenga?\n\n${menuList}\nOr delivery / payment / return pathi kelvi irundha kelunga!`,
-        sendImages: []
+        sendImages: [],
+        listContext: { type: 'categories', data: parents }
     };
 }
 
@@ -1270,7 +1285,7 @@ async function handleMessage(msg) {
     }
 
     const logText = msg.text?.body?.trim() || msg.interactive?.button_reply?.title?.trim() || msg.interactive?.button_reply?.id?.trim() || '';
-    await logChatMessage(from, 'customer', logText);
+    await logChatMessage(from, 'customer', logText, 'text', null, msg.id);
 
     // Check if bot is paused
     const chats = await getChats();
@@ -1339,6 +1354,27 @@ async function handleMessage(msg) {
         }
 
         const session = await getSession(from);
+
+        // Recover state context if replying to a listed menu message
+        const quotedMsgId = msg.context?.id;
+        if (quotedMsgId && session.msgContext?.[quotedMsgId]) {
+            const context = session.msgContext[quotedMsgId];
+            console.log(`[handleMessage] Recovered context from quoted message ${quotedMsgId}:`, context);
+            if (context.type === 'categories') {
+                session.state = "AWAITING_CATEGORY";
+                session.parentCategories = context.data;
+            } else if (context.type === 'subcategories') {
+                session.state = "AWAITING_SUBCATEGORY_SELECTION";
+                session.subCategories = context.data;
+                session.selectedParentCategory = context.selectedParentCategory;
+            } else if (context.type === 'products') {
+                session.state = "AWAITING_MODEL_SELECTION";
+                session.searchProducts = context.data;
+                session.selectedSubCategory = context.selectedSubCategory;
+                session.selectedParentCategory = context.selectedParentCategory;
+            }
+        }
+
         const aiResponse = handleSalesAssistantJS(from, text, products, session);
 
         // Execute session side effects
@@ -1439,9 +1475,24 @@ async function handleMessage(msg) {
                 }
             }
         }
+        let sentMsgId = null;
         if (aiResponse.replyText) {
-            await sendText(from, aiResponse.replyText);
-            await logChatMessage(from, 'bot', aiResponse.replyText);
+            const apiRes = await sendText(from, aiResponse.replyText);
+            sentMsgId = apiRes?.messages?.[0]?.id;
+            await logChatMessage(from, 'bot', aiResponse.replyText, 'text', null, sentMsgId);
+        }
+
+        // Store the context for this message
+        if (sentMsgId && aiResponse.listContext) {
+            session.msgContext = session.msgContext || {};
+            session.msgContext[sentMsgId] = aiResponse.listContext;
+            
+            // Limit mapping size
+            const keys = Object.keys(session.msgContext);
+            if (keys.length > 20) {
+                delete session.msgContext[keys[0]];
+            }
+            await saveSession(from, session);
         }
         if (aiResponse.sendButtons) {
             await sendButtons(from, aiResponse.sendButtons.body, aiResponse.sendButtons.buttons);
