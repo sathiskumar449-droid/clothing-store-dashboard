@@ -1991,16 +1991,36 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 };
             }
 
-            // Cross-sell teaser flow: Suggest other category as visual banner
-            const addedParent = getParentCategory(product.category).toLowerCase();
-            const addedNameLower = (product.name || '').toLowerCase();
-            const isAddedTop = addedParent.includes('shirt') || addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedParent.includes('jersey') || addedParent.includes('polo');
-            const isAddedTShirt = addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedNameLower.includes('t-shirt') || addedNameLower.includes('tshirt') || addedNameLower.includes('polo');
+            // Cross-sell teaser flow: Suggest other category based on cross-sell mapping rules
+            const addedParent = getParentCategory(product.category);
+            let promoCategory = '';
 
-            const promoCategory = isAddedTop ? 'Pants' : 'Shirts';
-            const promoKeyword = isAddedTop ? 'PANTS' : 'SHIRTS';
-            const promoEmoji = isAddedTop ? '👖' : '👕';
-            const promoCollectionName = isAddedTop ? 'Pants collection is currently trending' : 'Matching Shirt Collection Available';
+            if (addedParent === 'Shirts') {
+                promoCategory = 'Pants';
+            } else if (addedParent === 'Pants' || addedParent === 'Jeans') {
+                promoCategory = 'Shirts';
+            } else if (addedParent === 'T-Shirts') {
+                promoCategory = 'Pants';
+            } else if (addedParent === 'Shorts') {
+                promoCategory = 'T-Shirts';
+            } else {
+                // General fallback
+                const addedParentLower = addedParent.toLowerCase();
+                if (addedParentLower.includes('shirt')) {
+                    promoCategory = 'Pants';
+                } else if (addedParentLower.includes('pant') || addedParentLower.includes('jean') || addedParentLower.includes('short')) {
+                    promoCategory = 'Shirts';
+                } else {
+                    promoCategory = 'Pants';
+                }
+            }
+
+            const promoKeyword = promoCategory.toUpperCase();
+            let promoEmoji = '🛍️';
+            if (promoCategory === 'Shirts') promoEmoji = '👕';
+            if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
+            if (promoCategory === 'T-Shirts') promoEmoji = '👕';
+            if (promoCategory === 'Shorts') promoEmoji = '🩳';
 
             const candidates = products.filter(p => {
                 if (p.id === product.id) return false;
@@ -2009,24 +2029,24 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 const img = getProductImageUri(p, products);
                 if (!img || img === 'null' || img === 'undefined') return false;
 
-                const parent = getParentCategory(p.category).toLowerCase();
-                const nameLower = (p.name || '').toLowerCase();
-                if (isAddedTop) {
-                    if (parent.includes('shorts') || parent.includes('trouser') || nameLower.includes('shorts') || nameLower.includes('trouser')) {
-                        return false;
-                    }
-                    
-                    const isTrackPant = parent.includes('track') || nameLower.includes('track');
-                    if (isAddedTShirt) {
-                        return isTrackPant;
-                    } else {
-                        if (isTrackPant) return false;
-                        return parent.includes('pant') || parent.includes('phant') || parent.includes('jeans') || parent.includes('cargo');
-                    }
-                } else {
-                    return parent.includes('shirt') || parent.includes('tshirt') || parent.includes('t-day') || parent.includes('t-shirt') || parent.includes('jersey') || parent.includes('polo');
-                }
+                const parent = getParentCategory(p.category);
+                return parent === promoCategory;
             });
+
+            if (candidates.length === 0) {
+                session.state = "AWAITING_MORE_ITEMS";
+                return {
+                    sendButtons: {
+                        body: `✅ Cart la add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
+                        buttons: [
+                            { id: 'yes', title: '🛍️ YES' },
+                            { id: 'no_checkout', title: '🛒 NO - Checkout' }
+                        ]
+                    },
+                    sendImages: [],
+                    cart: session.cart
+                };
+            }
 
             const promoCandidates = candidates.slice(0, 4);
             let collageUrl = null;
@@ -2046,10 +2066,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
             let replyText = `✅ *${addedName}* added to cart.\n\n`;
-            replyText += `🔥 *Special Offer*\n`;
-            replyText += `${promoCollectionName}.\n\n`;
-            replyText += `${promoEmoji} Want to browse ${promoCategory.toLowerCase()}?\nType: *${promoKeyword}*\n\n`;
-            replyText += `🛒 Ready to order?\nType: *CHECKOUT*`;
+            replyText += `🔥 Special Offer! Matching ${promoCategory} Collection Available\n\n`;
+            replyText += `${promoEmoji} Type *${promoKeyword}*\n`;
+            replyText += `🛒 Type *CHECKOUT*`;
 
             return {
                 replyText,
