@@ -33,19 +33,52 @@ export async function getProducts() {
 
         if (error) throw error;
 
-        // Return in the same shape as the original JSON array
-        return (data || []).map(row => ({
-            id: row.id,
-            name: row.name,
-            code: row.code,
-            category: row.category,
-            pattern: row.pattern,
-            color: row.color,
-            price: row.price,
-            stock: row.stock,
-            sizes: row.sizes || [],
-            imageUri: row.image_uri
-        }));
+        // Return in the same shape as the original JSON array and apply self-healing category classification rules
+        return (data || []).map(row => {
+            const nameLower = (row.name || '').toLowerCase();
+            let cat = row.category || 'General';
+
+            // Self-healing rules based on name keywords:
+            if (nameLower.includes('t-shirt') || nameLower.includes('tshirt') || nameLower.includes('polo t-shirt') || nameLower.includes('five sleeve t shirt') || nameLower.includes('round neck t shirt')) {
+                if (nameLower.includes('polo')) {
+                    cat = 'Polo T-Shirts';
+                } else {
+                    cat = 'T-Shirts';
+                }
+            } else if (nameLower.includes('shirt')) {
+                // If it's a shirt but has wrong category like 'Casual Pant'
+                if (cat.toLowerCase().includes('pant') || cat.toLowerCase().includes('phant') || cat === 'Men' || cat === 'New Arrival' || cat === 'General') {
+                    cat = 'Casual Shirt';
+                }
+            } else if (nameLower.includes('polofit') || nameLower.includes('polo fit pant') || nameLower.includes('polo fit pants')) {
+                cat = 'Polo Fit Pant';
+            } else if (nameLower.includes('cargo') && (nameLower.includes('pant') || nameLower.includes('track'))) {
+                cat = 'Cargo Pant';
+            } else if (nameLower.includes('track') || nameLower.includes('trach')) {
+                cat = 'Track Pant';
+            } else if (nameLower.includes('jeans') || nameLower.includes('jean')) {
+                cat = 'Jeans';
+            } else if (nameLower.includes('shorts')) {
+                cat = 'imported shorts';
+            } else if (nameLower.includes('formal pant') || nameLower.includes('cotton pant')) {
+                cat = 'Formal Pant';
+            } else if (nameLower.includes('pant') || nameLower.includes('phant')) {
+                cat = 'Formal Pant';
+            }
+
+            return {
+                id: row.id,
+                name: row.name,
+                code: row.code,
+                category: cat,
+                pattern: row.pattern,
+                color: row.color,
+                price: row.price,
+                stock: row.stock,
+                sizes: row.sizes || [],
+                imageUri: row.image_uri
+            };
+        });
     } catch (error) {
         console.error('❌ Error reading products:', error.message);
         return [];
