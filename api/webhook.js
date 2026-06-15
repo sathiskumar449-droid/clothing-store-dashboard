@@ -333,6 +333,23 @@ async function sendRequest(payload) {
         console.error('   HTTP Status  :', error.response?.status);
         console.error('   Error body   :', JSON.stringify(error.response?.data, null, 2));
         console.error('   Raw message  :', error.message);
+        
+        try {
+            await supabase.from('chats').upsert({
+                customer_phone: `error_${payload.to}`,
+                customer_name: 'WhatsApp API Error',
+                last_message: JSON.stringify({
+                    status: error.response?.status,
+                    data: error.response?.data,
+                    message: error.message
+                }),
+                last_updated: new Date().toISOString(),
+                bot_paused: false,
+                messages: []
+            }, { onConflict: 'customer_phone' });
+        } catch (dbErr) {
+            console.error('❌ Failed to save error to Supabase:', dbErr.message);
+        }
     }
 }
 
