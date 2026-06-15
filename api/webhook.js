@@ -721,8 +721,9 @@ const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => 
         if (!hasValidImage(p)) return false;
 
         const candParent = getParentCategory(p.category).toLowerCase();
+        const candNameLower = (p.name || '').toLowerCase();
         const isCandTop = candParent.includes('shirt') || candParent.includes('tshirt') || candParent.includes('t-day') || candParent.includes('t-shirt') || candParent.includes('jersey') || candParent.includes('polo');
-        const isCandBottom = candParent.includes('pant') || candParent.includes('phant') || candParent.includes('jeans') || candParent.includes('shorts') || candParent.includes('track') || candParent.includes('cargo');
+        const isCandBottom = (candParent.includes('pant') || candParent.includes('phant') || candParent.includes('jeans') || candParent.includes('track') || candParent.includes('cargo')) && !candParent.includes('shorts') && !candNameLower.includes('shorts') && !candParent.includes('trouser') && !candNameLower.includes('trouser');
 
         // Swap tops with bottoms, bottoms with tops
         if (isAddedTop && isCandBottom) return true;
@@ -1942,8 +1943,12 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
                 if (!img || img === 'null' || img === 'undefined') return false;
 
                 const parent = getParentCategory(p.category).toLowerCase();
+                const nameLower = (p.name || '').toLowerCase();
                 if (isAddedTop) {
-                    return parent.includes('pant') || parent.includes('phant') || parent.includes('jeans') || parent.includes('shorts') || parent.includes('track') || parent.includes('cargo');
+                    if (parent.includes('shorts') || parent.includes('trouser') || nameLower.includes('shorts') || nameLower.includes('trouser')) {
+                        return false;
+                    }
+                    return parent.includes('pant') || parent.includes('phant') || parent.includes('jeans') || parent.includes('track') || parent.includes('cargo');
                 } else {
                     return parent.includes('shirt') || parent.includes('tshirt') || parent.includes('t-day') || parent.includes('t-shirt') || parent.includes('jersey') || parent.includes('polo');
                 }
