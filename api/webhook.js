@@ -467,39 +467,7 @@ async function sendButtons(to, bodyText, buttons) {
 }
 
 // =============================
-// Intent Detection
-// =============================
-
-function detectIntent(text) {
-    const t = text.toLowerCase();
-
-    const complaintKeywords = [
-        'wrong', 'mistake', 'damage', 'defect', 'torn', 'dirty', 'complaint',
-        'problem', 'issue', 'not received', 'kedaikala', 'varala', 'receive pannala',
-        'colour wrong', 'color wrong', 'vera colour', 'vera color', 'wrong item',
-        'wrong product', 'wrong colour', 'thappu', 'delivery delay', 'still not',
-        'not yet', 'pakketla', 'late achu', 'late aguthu', 'parcel varala',
-        'quality illa', 'bad quality', 'torn', 'hole', 'stain', 'used item',
-        'packaging damage', 'box damage', 'missing item', 'item missing'
-    ];
-    if (complaintKeywords.some(k => t.includes(k))) return 'COMPLAINT';
-
-    const returnKeywords = ['return', 'exchange', 'refund', 'replace', 'maatunga', 'size match agala', 'size match agulana', 'size wrong', 'size poda'];
-    if (returnKeywords.some(k => t.includes(k))) return 'RETURN_EXCHANGE';
-
-    const greetKeywords = ['hi', 'hello', 'hey', 'vanakkam', 'hai', 'hii'];
-    if (greetKeywords.some(k => t === k || t === k + ' bro' || t === k + ' anna')) return 'GREETING';
-
-    if (t === 'buy' || t === 'checkout' || t.includes('buy pannalama') || t.includes('order confirm') || t.includes('place order') || t.includes('confirm order')) return 'ORDER_CONFIRMATION';
-
-    const orderKeywords = ['cart', 'order', 'size', 'quantity', 'buy'];
-    if (orderKeywords.some(k => t.includes(k))) return 'ORDER_PLACEMENT';
-
-    const productKeywords = ['shirt', 'pant', 'jeans', 'cargo', 'tshirt', 't-shirt', 'shorts', 'phant', 'linen', 'cotton', 'price', 'stock', 'available', 'colour iruka', 'color iruka'];
-    if (productKeywords.some(k => t.includes(k))) return 'PRODUCT_ENQUIRY';
-
-    return 'UNKNOWN';
-}
+// Intent Detection (moved below helpers to support routing)
 
 // =============================
 // Pure JS Sales Flow (Gemini Removed)
@@ -611,6 +579,29 @@ const getTargetRecommendationTags = (tag) => {
     }
 };
 
+// Helper to retrieve fallback/self-healing image URI if the database row has 'null' or missing image
+const getProductImageUri = (product, allProducts = []) => {
+    if (product.imageUri && product.imageUri.startsWith('http') && product.imageUri !== 'null' && product.imageUri !== 'undefined') {
+        return product.imageUri;
+    }
+    // Try to find a duplicate entry with the same name that has a valid WooCommerce image URL
+    const backup = allProducts.find(p => 
+        p.name === product.name && 
+        p.imageUri && p.imageUri.startsWith('http') && p.imageUri !== 'null' && p.imageUri !== 'undefined'
+    );
+    if (backup) return backup.imageUri;
+
+    // Fuzzier match: same category and color
+    const backup2 = allProducts.find(p => 
+        p.category === product.category && 
+        p.color === product.color && 
+        p.imageUri && p.imageUri.startsWith('http') && p.imageUri !== 'null' && p.imageUri !== 'undefined'
+    );
+    if (backup2) return backup2.imageUri;
+
+    return null;
+};
+
 // Recommendation engine linking tags and categories
 const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => {
     if (!addedProduct) return null;
@@ -618,8 +609,24 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
     const targetTags = getTargetRecommendationTags(addedTag);
 
     const isExcluded = (id) => excludedIds.some(eid => String(eid) === String(id));
+    const hasValidImage = (p) => {
+        const img = getProductImageUri(p, allProducts);
+        return img && img.startsWith('http') && img !== 'null' && img !== 'undefined';
+    };
 
-    // 1. Try to find a matching product with the target tags
+    // 1. Try to find a matching product with the target tags AND a valid image
+    for (const tag of targetTags) {
+        const matched = allProducts.find(p => 
+            p.id !== addedProduct.id && 
+            !isExcluded(p.id) &&
+            Number(p.stock) > 0 && 
+            getProductTag(p) === tag &&
+            hasValidImage(p)
+        );
+        if (matched) return matched;
+    }
+
+    // 2. Fallback to matching product with target tags (even without image)
     for (const tag of targetTags) {
         const matched = allProducts.find(p => 
             p.id !== addedProduct.id && 
@@ -630,7 +637,7 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
         if (matched) return matched;
     }
 
-    // 2. Generic cross-category fallback if no specific smart tag match found
+    // 3. Generic cross-category fallback if no specific smart tag match found (prefer valid image)
     const currentParent = getParentCategory(addedProduct.category);
     const otherParents = Array.from(new Set(
         allProducts
@@ -648,6 +655,17 @@ const getSmartRecommendation = (addedProduct, allProducts, excludedIds = []) => 
         if (!targetParent) {
             targetParent = otherParents[0];
         }
+        // First try finding match with image
+        const matchWithImg = allProducts.find(p => 
+            getParentCategory(p.category) === targetParent && 
+            Number(p.stock) > 0 && 
+            p.id !== addedProduct.id && 
+            !isExcluded(p.id) &&
+            hasValidImage(p)
+        );
+        if (matchWithImg) return matchWithImg;
+
+        // Fallback without image
         return allProducts.find(p => getParentCategory(p.category) === targetParent && Number(p.stock) > 0 && p.id !== addedProduct.id && !isExcluded(p.id));
     }
 
@@ -761,6 +779,544 @@ const startCheckout = (session) => {
     return { replyText: cartSummary, sendImages: [] };
 };
 
+// =============================
+// Intent Detection & Routing Layer
+// =============================
+
+function detectIntent(text, products = []) {
+    const t = text.toLowerCase().trim();
+
+    // 1. HUMAN Intent
+    const humanKeywords = ['owner', 'human', 'customer support', 'call me', 'agent', 'support', 'talk to owner', 'contact owner', 'connect to human', 'chat with owner', 'human mode'];
+    if (humanKeywords.some(k => t.includes(k))) {
+        return { type: 'HUMAN' };
+    }
+
+    // 2. CHECKOUT Intent
+    const checkoutKeywords = ['checkout', 'place order', 'confirm order', 'buy now', 'buy', 'order confirm'];
+    if (checkoutKeywords.some(k => t === k || t.includes('checkout') || t.includes('place order') || t.includes('confirm order') || t.includes('buy now'))) {
+        return { type: 'CHECKOUT' };
+    }
+
+    // 3. CLEAR CART Intent
+    const clearCartKeywords = ['clear cart', 'empty cart', 'reset cart', 'remove all', 'delete cart', 'cart clear'];
+    if (clearCartKeywords.some(k => t.includes(k))) {
+        return { type: 'CLEAR_CART' };
+    }
+
+    // Helper helper for checking word existence with fuzzy support
+    const words = t.split(/\s+/).map(w => w.replace(/[?,.!:;()]/g, '').trim()).filter(Boolean);
+    const matchesGroup = (wordsArr, group) => {
+        return wordsArr.some(w => {
+            return group.some(g => {
+                if (w === g) return true;
+                if (g.length > 3 && w.includes(g)) return true;
+                if (w.length > 3 && g.includes(w)) return true;
+                return false;
+            });
+        });
+    };
+
+    // 4. FAQ Intent
+
+    // ─── DELIVERY TIME Combination Match ───
+    const delivTimeGroupA = ['when', 'time', 'day', 'days', 'date', 'eppo', 'epo', 'naal', 'naalu', 'agum', 'varum', 'received', 'receive', 'get', 'arrive', 'reach', 'varala', 'varuga'];
+    const delivTimeGroupB = ['deliv', 'delei', 'delci', 'delve', 'delvi', 'dlvr', 'order', 'parcel', 'package', 'dress', 'shirt', 'pant', 'item', 'product'];
+    const isDeliveryTime = (matchesGroup(words, delivTimeGroupA) && matchesGroup(words, delivTimeGroupB)) ||
+                           t.includes('delivery duration') || t.includes('how long') || t.includes('how many days');
+
+    if (isDeliveryTime) {
+        return { type: 'FAQ', reply: '🚚 Delivery usually 2-5 working days bro.' };
+    }
+
+    // ─── SHIPPING CHARGES Combination Match ───
+    const shipChargeGroupA = ['charge', 'charges', 'rate', 'fee', 'fees', 'amount', 'cost', 'price', 'evlo', 'evvalavu', 'how much', 'cash', 'kasu', 'kaasu', 'rupees', 'rs'];
+    const shipChargeGroupB = ['ship', 'delivery', 'delei', 'delci', 'delve', 'delvi', 'dlvr', 'courier', 'post', 'parcel'];
+    const isShippingCharge = (matchesGroup(words, shipChargeGroupA) && matchesGroup(words, shipChargeGroupB)) ||
+                             t.includes('shipping fee') || t.includes('delivery amount') || t.includes('shipping amount');
+
+    if (isShippingCharge) {
+        return { type: 'FAQ', reply: '🚚 Delivery charge ₹80 bro.' };
+    }
+
+    // ─── COD Combination Match ───
+    const codGroupA = ['cod', 'cash', 'pay on delivery', 'payment on delivery', 'pod', 'delivery cash'];
+    const codGroupB = ['available', 'iruka', 'irukka', 'delivery', 'deliv', 'delei', 'delci'];
+    const isCOD = matchesGroup(words, ['cod', 'cashondelivery']) ||
+                  (matchesGroup(words, codGroupA) && matchesGroup(words, codGroupB));
+
+    if (isCOD) {
+        return { type: 'FAQ', reply: 'Sorry bro 😊 COD available illa.\nGPay / UPI mattum available.' };
+    }
+
+    // ─── RETURN / EXCHANGE / REFUND Match ───
+    const returnKeywords = ['return', 'exchange', 'refund', 'replace', 'maatunga', 'maatuga', 'size match', 'wrong size', 'size wrong', 'size issue', 'size change', 'change size', 'damage', 'torn', 'defect', 'stain', 'hole', 'quality', 'bad quality'];
+    if (returnKeywords.some(k => t.includes(k))) {
+        if (t.includes('size match') || t.includes('size wrong') || t.includes('wrong size') || t.includes('size poda')) {
+            return { type: 'FAQ', reply: '📌 Size issue bro?\n\n7 days exchange available.\nOrder ID + product photo anuppunga.' };
+        }
+        if (t.includes('refund')) {
+            return { type: 'FAQ', reply: '💰 Refund process:\n\nOrder ID anuppunga bro.\nCheck pannitu 3-5 days la refund arrange panrom.' };
+        }
+        if (t.includes('damage') || t.includes('torn') || t.includes('defect') || t.includes('hole') || t.includes('stain')) {
+            return { type: 'FAQ', reply: '📸 Product photo + Order ID anuppunga bro.\n\nCheck pannitu exchange arrange panrom. 😊' };
+        }
+        return { type: 'FAQ', reply: '✅ 7 days Return / Exchange available bro.\n\nOrder ID + product photo anuppunga.' };
+    }
+
+    // ─── PAYMENT METHODS Match ───
+    const paymentKeywords = ['payment', 'pay', 'gpay', 'upi', 'google pay', 'googlepay', 'phonepe', 'phone pay', 'bank transfer', 'account number', 'upi id', 'gpay number', 'screenshot', 'pay panna', 'gpay details'];
+    if (paymentKeywords.some(k => t.includes(k))) {
+        return { type: 'FAQ', reply: '💳 Payment details bro:\n\nGPay / UPI: yourupi@okaxis\n\nPayment pannitu screenshot anuppunga 😊' };
+    }
+
+    // ─── DISCOUNT / OFFERS Match ───
+    const discountKeywords = ['discount', 'offer', 'sale', 'coupon', 'rate kam', 'cheap', 'kammiya', 'kammi', 'price drop', 'less price', 'best price'];
+    if (discountKeywords.some(k => t.includes(k))) {
+        return { type: 'FAQ', reply: 'Sorry bro 😊 Fixed price taan. Already best price la iruku! 🔥' };
+    }
+
+    // ─── STORE INFO Match ───
+    const storeKeywords = ['address', 'location', 'shop', 'store', 'enga', 'where', 'phone number', 'contact number', 'kodu'];
+    if (storeKeywords.some(k => t.includes(k))) {
+        return { type: 'FAQ', reply: '🏪 Super Collections\n\nOnline orders mattum bro. WhatsApp la order pannunga! 😊' };
+    }
+
+
+    // 4. GREETING Intent
+    const greetKeywords = ['hi', 'hello', 'hey', 'vanakkam', 'hai', 'hii', 'yo', 'sup'];
+    if (greetKeywords.some(k => t === k || t === k + ' bro' || t === k + ' anna')) {
+        return { type: 'GREETING' };
+    }
+
+    // 5. Category vs Search Intent
+    const parentCategories = ['Shirts', 'Pants', 'T-Shirts', 'Jeans', 'Shorts'];
+    const foundCategory = parentCategories.find(cat => {
+        const catSingular = cat.endsWith('s') ? cat.slice(0, -1) : cat;
+        const regex = new RegExp(`\\b${catSingular}(s)?\\b`, 'i');
+        return regex.test(t);
+    });
+
+    if (foundCategory) {
+        const descriptors = [
+            'black', 'white', 'red', 'blue', 'green', 'yellow', 'grey', 'gray', 'navy', 'pink',
+            'printed', 'check', 'checked', 'stripes', 'striped', 'pattern', 'linen', 'cotton', 'denim',
+            'under', 'below', 'less than', 'above', 'price', 'budget', '500', '600', '1000'
+        ];
+        const hasDescriptor = descriptors.some(desc => t.includes(desc));
+        const words = t.split(/\s+/).filter(w => w !== 'show' && w !== 'me' && w !== 'want' && w !== 'bro' && w !== 'anna');
+        
+        if (hasDescriptor || words.length > 2) {
+            return { type: 'SEARCH', query: t };
+        } else {
+            return { type: 'CATEGORY', category: foundCategory };
+        }
+    }
+
+    const searchKeywords = ['printed', 'linen', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
+    if (searchKeywords.some(kw => t.includes(kw))) {
+        return { type: 'SEARCH', query: t };
+    }
+
+    return { type: 'UNKNOWN' };
+}
+
+function matchParentCategory(text, parentCategories) {
+    const t = text.toLowerCase().trim();
+    const mappings = {
+        'shirt': 'Shirts',
+        'shirts': 'Shirts',
+        'pant': 'Pants',
+        'pants': 'Pants',
+        'phant': 'Pants',
+        'phants': 'Pants',
+        'jeans': 'Jeans',
+        'jean': 'Jeans',
+        'tshirt': 'T-Shirts',
+        'tshirts': 'T-Shirts',
+        't-shirt': 'T-Shirts',
+        't-shirts': 'T-Shirts',
+        'shorts': 'Shorts',
+        'short': 'Shorts'
+    };
+
+    for (const key of Object.keys(mappings)) {
+        if (t.includes(key)) {
+            const matchedName = mappings[key];
+            if (parentCategories.includes(matchedName)) {
+                return matchedName;
+            }
+        }
+    }
+    return parentCategories.find(cat => t.includes(cat.toLowerCase()));
+}
+
+function getStatePrompt(session, products) {
+    switch (session.state) {
+        case "AWAITING_CATEGORY": {
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            let replyText = "Welcome to Super Collections bro 😊\n\nEnna category venum?\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            replyText += "\nNumber mattum reply pannunga bro 😊";
+
+            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+        }
+        case "AWAITING_SUBCATEGORY_SELECTION": {
+            const selectedParent = session.selectedParentCategory;
+            const subcategoryCounts = {};
+            products.forEach(p => {
+                if (Number(p.stock) > 0 && getParentCategory(p.category) === selectedParent) {
+                    const sub = p.category || 'General';
+                    subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
+                }
+            });
+            const subs = Object.keys(subcategoryCounts).filter(sub => subcategoryCounts[sub] > 0);
+            subs.sort((a, b) => a.localeCompare(b));
+            session.subCategories = subs;
+
+            let replyText = `*${selectedParent}:*\n\n`;
+            subs.forEach((sub, sIdx) => {
+                const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                replyText += `${sIdx + 1}️⃣ ${capSub} (${subcategoryCounts[sub]})\n`;
+            });
+            replyText += "\nNumber mattum reply pannunga bro! 😊";
+
+            return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
+        }
+        case "AWAITING_MODEL_SELECTION": {
+            const selectedSub = session.selectedSubCategory;
+            const emoji = getCategoryEmoji(session.selectedParentCategory || '');
+            const capSub = selectedSub ? selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : 'Products';
+            
+            let replyText = `${emoji} *${capSub} - Available Stock:*\n\n`;
+            session.searchProducts.forEach((p, pIdx) => {
+                let displayName = p.name;
+                if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
+                    displayName = `${p.color} ${displayName}`;
+                }
+                replyText += `*${pIdx + 1}.* ${displayName}\n`;
+                replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
+            });
+            replyText += `👆 number mattum reply pannunga bro! 😊`;
+
+            return {
+                replyText,
+                sendImages: [],
+                listContext: { type: 'products', data: session.searchProducts, selectedSubCategory: selectedSub, selectedParentCategory: session.selectedParentCategory }
+            };
+        }
+        case "AWAITING_SIZE_SELECTION": {
+            const product = session.pendingProduct;
+            if (!product) return { replyText: "Enna shopping panriga bro? Category select pannunga.", sendImages: [] };
+            const sizeList = (Array.isArray(product.sizes)
+                ? product.sizes
+                : String(product.sizes).split(',').map(s => s.trim())
+            ).filter(Boolean);
+            const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
+            const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nEntha size venum bro? 😊`;
+
+            return {
+                replyText,
+                sendImages: [{ url: getProductImageUri(product, products), caption: product.name }],
+                pendingProduct: product
+            };
+        }
+        case "AWAITING_RECOMMENDATION_CHOICE": {
+            const product = session.pendingProduct;
+            if (!product) return { replyText: "Enna shopping panriga bro? Category select pannunga.", sendImages: [] };
+            const originalProduct = products.find(p => p.id === session.originalProductId) || 
+                                    (session.cart.length > 0 ? products.find(p => p.id === session.cart[session.cart.length - 1].id) : null);
+            const currentParent = originalProduct ? getParentCategory(originalProduct.category) : "General";
+            const recName = `${product.color ? product.color + ' ' : ''}${product.name}`;
+            const replyText = getRecommendationMessage(originalProduct || { name: 'product', color: '' }, product, currentParent);
+
+             return {
+                replyText,
+                sendImages: [{ url: getProductImageUri(product, products), caption: recName }],
+                pendingProduct: product,
+                listContext: {
+                    type: 'recommendation_choice',
+                    pendingProduct: product,
+                    originalProductId: originalProduct ? originalProduct.id : null,
+                    recommendedIds: session.recommendedIds ? [...session.recommendedIds] : [product.id]
+                }
+            };
+        }
+        case "AWAITING_CART_CONFIRM": {
+            const product = session.pendingProduct;
+            if (!product) return { replyText: "Enna shopping panriga bro? Category select pannunga.", sendImages: [] };
+            return {
+                sendButtons: {
+                    body: `✅ ${product.name} - ${session.selectedSize}\n\nCart la add pannalama bro?`,
+                    buttons: [
+                        { id: 'yes', title: '✅ YES' },
+                        { id: 'no', title: '❌ NO' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+        case "AWAITING_MORE_ITEMS": {
+            return {
+                sendButtons: {
+                    body: `Vera ethachu pakkiriya bro?`,
+                    buttons: [
+                        { id: 'yes', title: '🛍️ YES' },
+                        { id: 'no_checkout', title: '🛒 NO - Checkout' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+        case "AWAITING_PENDING_CART_DECISION": {
+            let cartSummary = `🛒 *Pending Items in Cart:*\n\n`;
+            session.cart.forEach((item, i) => {
+                cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.name} (${item.size}) - ₹${item.price}\n`;
+            });
+            const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
+            cartSummary += `\n💰 Total: ₹${cartTotal}\n\nUnga order cart-la pending iruku, bro! Complete panrigla illai cancel panrigla? 😊`;
+            return {
+                sendButtons: {
+                    body: cartSummary,
+                    buttons: [
+                        { id: 'checkout', title: '🛒 CHECKOUT' },
+                        { id: 'continue', title: '🛍️ CONTINUE' },
+                        { id: 'clear', title: '❌ CLEAR' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+        case "AWAITING_CHECKOUT_DETAILS": {
+            let cartSummary = `🛒 *Your Cart:*\n\n`;
+            session.cart.forEach((item, i) => {
+                cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.name} (${item.size}) - ₹${item.price}\n`;
+            });
+            const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
+            cartSummary += `\n💰 Total: ₹${cartTotal}\n\n📝 Order confirm panna details fill pannuga:\n\n*Name, Phone, Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar Chennai`;
+            return { replyText: cartSummary, sendImages: [] };
+        }
+        default: {
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            let replyText = "Enna Shopping Panriga?\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            return { replyText, sendImages: [] };
+        }
+    }
+}
+
+function handleIntent(intentResult, session, products) {
+    switch (intentResult.type) {
+        case 'CLEAR_CART': {
+            session.cart = [];
+            session.state = "AWAITING_CATEGORY";
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.searchProducts = [];
+            session.isRecommendation = false;
+            
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            let replyText = "Cart cleared bro! 😊 Category list-la irundhu select pannunga.\n\nEnna Shopping Panriga?\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            replyText += "\nNumber mattum reply pannunga bro 😊";
+
+            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+        }
+        case 'HUMAN': {
+            return {
+                replyText: "Sure bro! 🙋‍♂️ Chat paused. Owner shortly connect pannuvanga.",
+                sendImages: [],
+                isHumanHandoff: true
+            };
+        }
+        case 'CHECKOUT': {
+            if (!session.cart || session.cart.length === 0) {
+                let replyText = "Cart empty bro 😊 Mudhalla products-a cart la add pannunga.";
+                if (session.state !== "AWAITING_CATEGORY") {
+                    const statePrompt = getStatePrompt(session, products);
+                    replyText += `\n\nContinue shopping bro 😊\n\n${statePrompt.replyText}`;
+                    return {
+                        replyText,
+                        sendImages: statePrompt.sendImages || [],
+                        sendButtons: statePrompt.sendButtons || null,
+                        listContext: statePrompt.listContext || null
+                    };
+                }
+                return { replyText, sendImages: [] };
+            }
+            return startCheckout(session);
+        }
+        case 'FAQ': {
+            let replyText = intentResult.reply;
+            if (session.state !== "AWAITING_CATEGORY") {
+                const statePrompt = getStatePrompt(session, products);
+                if (statePrompt.replyText) {
+                    replyText += `\n\nContinue shopping bro 😊\n\n${statePrompt.replyText}`;
+                } else {
+                    replyText += `\n\nContinue shopping bro 😊`;
+                }
+                return {
+                    replyText,
+                    sendImages: statePrompt.sendImages || [],
+                    sendButtons: statePrompt.sendButtons || null,
+                    listContext: statePrompt.listContext || null
+                };
+            }
+            return { replyText, sendImages: [] };
+        }
+        case 'GREETING': {
+            if (session.cart && session.cart.length > 0) {
+                session.state = "AWAITING_PENDING_CART_DECISION";
+                return getStatePrompt(session, products);
+            }
+            session.state = "AWAITING_CATEGORY";
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.lastRecommendation = null;
+            session.subCategories = null;
+            session.selectedParentCategory = null;
+            session.selectedSubCategory = null;
+            session.isRecommendation = false;
+
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            let replyText = "Welcome to Super Collections bro 😊\n\nEnna category venum?\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            replyText += "\nNumber mattum reply pannunga bro 😊";
+
+            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+        }
+        case 'CATEGORY': {
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            const selectedParent = matchParentCategory(intentResult.category, parents);
+            
+            if (selectedParent) {
+                session.selectedParentCategory = selectedParent;
+                session.state = "AWAITING_SUBCATEGORY_SELECTION";
+                session.pendingProduct = null;
+                session.selectedSize = null;
+                session.searchProducts = [];
+                session.lastRecommendation = null;
+                session.isRecommendation = false;
+
+                const subcategoryCounts = {};
+                products.forEach(p => {
+                    if (Number(p.stock) > 0 && getParentCategory(p.category) === selectedParent) {
+                        const sub = p.category || 'General';
+                        subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
+                    }
+                });
+
+                const subs = Object.keys(subcategoryCounts).filter(sub => subcategoryCounts[sub] > 0);
+                subs.sort((a, b) => a.localeCompare(b));
+                session.subCategories = subs;
+
+                let replyText = `*${selectedParent}:*\n\n`;
+                subs.forEach((sub, sIdx) => {
+                    const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                    replyText += `${sIdx + 1}️⃣ ${capSub} (${subcategoryCounts[sub]})\n`;
+                });
+                replyText += "\nNumber mattum reply pannunga bro! 😊";
+
+                return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
+            }
+            // If match fails, fall through to SEARCH
+        }
+        case 'SEARCH': {
+            const query = intentResult.query || intentResult.category || '';
+            const queryClean = query.toLowerCase().replace(/(?:under|below|less than)\s*₹?\s*\d+/, '').trim();
+            const fillerWords = ['show', 'me', 'look', 'for', 'please', 'want', 'need', 'find', 'get', 'display', 'search', 'any', 'some', 'can', 'you', 'give', 'kudu', 'kammi', 'kattunga', 'kaatunga', 'katu', 'iruka', 'irukka'];
+            const keywords = queryClean.split(/\s+/)
+                .filter(word => word.length > 0 && word !== "bro" && word !== "anna" && !fillerWords.includes(word))
+                .map(kw => (kw.endsWith('s') && kw.length > 3) ? kw.slice(0, -1) : kw);
+
+            let maxPrice = null;
+            const underMatch = query.toLowerCase().match(/(?:under|below|less than)\s*₹?\s*(\d+)/);
+            if (underMatch) {
+                maxPrice = parseInt(underMatch[1], 10);
+            }
+
+            let matched = products.filter(p => Number(p.stock) > 0);
+            matched = matched.filter(p => {
+                if (maxPrice && p.price) {
+                    const parsedPrice = parseFloat(p.price.replace(/[^\d.]/g, ''));
+                    if (isNaN(parsedPrice) || parsedPrice > maxPrice) return false;
+                }
+                if (keywords.length > 0) {
+                    return keywords.every(kw => {
+                        return (
+                            p.name?.toLowerCase().includes(kw) ||
+                            p.category?.toLowerCase().includes(kw) ||
+                            (p.color && p.color.toLowerCase().includes(kw)) ||
+                            (p.pattern && p.pattern.toLowerCase().includes(kw))
+                        );
+                    });
+                }
+                return true;
+            });
+
+            if (matched.length > 0) {
+                let replyText = `🔍 *Search Results:* (Stock available)\n\n`;
+                const displayProducts = matched.slice(0, 10);
+                displayProducts.forEach((p, idx) => {
+                    let displayName = p.name;
+                    if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
+                        displayName = `${p.color} ${displayName}`;
+                    }
+                    replyText += `*${idx + 1}.* ${displayName}\n`;
+                    replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
+                });
+                replyText += `👆 number mattum reply pannunga bro! 😊`;
+
+                session.searchProducts = displayProducts;
+                session.state = "AWAITING_MODEL_SELECTION";
+                session.pendingProduct = null;
+                session.selectedSize = null;
+                session.isRecommendation = false;
+
+                return { replyText, sendImages: [], searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
+            } else {
+                let replyText = "Sorry bro, search matching products ippo stock illa. 😔";
+                if (session.state !== "AWAITING_CATEGORY") {
+                    const statePrompt = getStatePrompt(session, products);
+                    replyText += `\n\nContinue shopping bro 😊\n\n${statePrompt.replyText}`;
+                    return {
+                        replyText,
+                        sendImages: statePrompt.sendImages || [],
+                        sendButtons: statePrompt.sendButtons || null,
+                        listContext: statePrompt.listContext || null
+                    };
+                }
+                return { replyText, sendImages: [] };
+            }
+        }
+        default:
+            return null;
+    }
+}
+
 export function handleSalesAssistantJS(from, userMessage, products, session) {
     const normalizedMessage = normalizeQuery(userMessage);
     const textLower = normalizedMessage.toLowerCase();
@@ -775,9 +1331,17 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         session.state = "AWAITING_MORE_ITEMS";
     }
 
-    const intent = detectIntent(textLower);
+    // ─── Intent Detection & Routing Layer ───
+    const intentResult = detectIntent(textLower, products);
+    if (intentResult.type !== 'UNKNOWN') {
+        const intentResponse = handleIntent(intentResult, session, products);
+        if (intentResponse) {
+            return intentResponse;
+        }
+    }
 
-    // 1. GLOBAL STATE PREEMPTION (OVERRIDE)
+    // Backward compatibility variables for existing state handler below
+    const intent = intentResult.type;
     const isNumber = /^[1-9][0-9]?$/.test(textLower);
 
     let isValidSize = false;
@@ -793,31 +1357,68 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     const isYesNo = ['yes', 'no', 'y', 'n', 'aama', 'illa', 'vendam', 'ok', 'okay', 'help_yes', 'help_no', 'skip'].includes(textLower);
     const hasCommas = userMessage.split(',').length >= 3;
 
-    // Determine if this is a checkout request
-    const isCheckoutTrigger = textLower === "buy" || textLower === "checkout" || textLower === "no_checkout" || textLower.includes("buy pannalama") || textLower.includes("order confirm") || textLower.includes("place order") || textLower.includes("confirm order") || intent === 'ORDER_CONFIRMATION';
-
-    // Determine if this is a product search/browse request
-    const categoryKeywords = ["shirt", "pant", "jeans", "cargo", "tshirt", "t-shirt", "shorts", "phant", "linen", "cotton", "plain", "printed", "arrival", "chava", "lenin", "coton", "shit", "shrit", "under", "below"];
-    const isCategorySearch = categoryKeywords.some(keyword => textLower.includes(keyword)) || intent === 'PRODUCT_ENQUIRY';
-    const isGreeting = intent === 'GREETING';
-
-    const shouldSearchOverride = isCategorySearch && !isNumber && !isValidSize && !isYesNo;
-    const shouldGreetingOverride = isGreeting && !isNumber && !isYesNo;
-    const shouldCheckoutOverride = isCheckoutTrigger && !isNumber && !isYesNo && !hasCommas;
-
-    if (shouldSearchOverride || shouldGreetingOverride || shouldCheckoutOverride) {
-        console.log(`[handleSalesAssistantJS] Preempting state "${session.state}" -> AWAITING_CATEGORY. Search=${shouldSearchOverride}, Greeting=${shouldGreetingOverride}, Checkout=${shouldCheckoutOverride}`);
-        session.state = "AWAITING_CATEGORY";
-        session.pendingProduct = null;
-        session.selectedSize = null;
-        session.lastRecommendation = null;
-        session.subCategories = null;
-        session.selectedParentCategory = null;
-        session.selectedSubCategory = null;
-        session.isRecommendation = false;
-    }
+    // Set triggers to false since explicit intents are handled by the router
+    const isCheckoutTrigger = false;
+    const isCategorySearch = false;
+    const isGreeting = false;
 
     // 2. STATE-SPECIFIC HANDLERS
+
+    // STATE: AWAITING_PENDING_CART_DECISION
+    if (session.state === "AWAITING_PENDING_CART_DECISION") {
+        const lowerInput = textLower.trim();
+        const isCheckout = lowerInput === "checkout" || lowerInput === "complete" || lowerInput === "1" || lowerInput === "1️⃣" || lowerInput.includes("checkout") || lowerInput.includes("complete") || lowerInput.includes("order");
+        const isContinue = lowerInput === "continue" || lowerInput === "shop" || lowerInput === "2" || lowerInput === "2️⃣" || lowerInput.includes("continue") || lowerInput.includes("shop");
+        const isClear = lowerInput === "clear" || lowerInput === "cancel" || lowerInput === "delete" || lowerInput === "3" || lowerInput === "3️⃣" || lowerInput.includes("clear") || lowerInput.includes("cancel") || lowerInput.includes("delete");
+
+        if (isCheckout) {
+            return startCheckout(session);
+        } else if (isContinue) {
+            session.state = "AWAITING_CATEGORY";
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            let replyText = "Ok bro! 😊 Category list-la irundhu select pannunga.\n\nEnna Shopping Panriga?\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            replyText += "\nNumber mattum reply pannunga bro 😊";
+            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+        } else if (isClear) {
+            session.cart = [];
+            session.state = "AWAITING_CATEGORY";
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.searchProducts = [];
+            session.isRecommendation = false;
+
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            let replyText = "Cart cleared bro! 😊 Category list-la irundhu select pannunga.\n\nEnna Shopping Panriga?\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            replyText += "\nNumber mattum reply pannunga bro 😊";
+            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+        } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
+            return {
+                sendButtons: {
+                    body: `⚠️ Wrong choice bro!\n\nUnga cart la items pending iruku. complete panrigla cancel panriglanu choose pannunga:`,
+                    buttons: [
+                        { id: 'checkout', title: '🛒 CHECKOUT' },
+                        { id: 'continue', title: '🛍️ CONTINUE' },
+                        { id: 'clear', title: '❌ CLEAR' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+    }
 
     // STATE: AWAITING_HELP_CONFIRM
     if (session.state === "AWAITING_HELP_CONFIRM") {
@@ -936,7 +1537,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
             return {
                 replyText,
-                sendImages: [{ url: product.imageUri, caption: product.name }],
+                sendImages: [{ url: getProductImageUri(product, products), caption: product.name }],
                 pendingProduct: product
             };
         } else {
@@ -989,7 +1590,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
                 return {
                     replyText,
-                    sendImages: [{ url: nextRecommended.imageUri, caption: recName }],
+                    sendImages: [{ url: getProductImageUri(nextRecommended, products), caption: recName }],
                     pendingProduct: nextRecommended,
                     listContext: {
                         type: 'recommendation_choice',
@@ -1156,7 +1757,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
                 return {
                     replyText,
-                    sendImages: [{ url: recommended.imageUri, caption: recName }],
+                    sendImages: [{ url: getProductImageUri(recommended, products), caption: recName }],
                     cart: session.cart,
                     pendingProduct: recommended,
                     listContext: {
@@ -1661,6 +2262,17 @@ async function handleMessage(msg) {
 
         const aiResponse = handleSalesAssistantJS(from, text, products, session);
 
+        // Handle human handoff if requested
+        if (aiResponse.isHumanHandoff) {
+            const { error: pauseError } = await supabase
+                .from('chats')
+                .update({ bot_paused: true })
+                .eq('customer_phone', from);
+            if (pauseError) {
+                console.log(`❌ Error pausing bot for human handoff: ${pauseError.message}`);
+            }
+        }
+
         // Execute session side effects
         if (aiResponse.cart) session.cart = aiResponse.cart;
         if (aiResponse.selectedColor !== undefined) session.selectedColor = aiResponse.selectedColor;
@@ -1827,10 +2439,28 @@ export const receiveWebhook = async (req, res) => {
         console.log(`[USER -> BOT] Message ID: ${msg.id}, Text: "${msg.text?.body}"`);
 
         if (processed.has(msg.id)) {
-            console.log(`[USER -> BOT] Duplicate message ID ignored: ${msg.id}`);
+            console.log(`[USER -> BOT] Duplicate message ID ignored (in-memory): ${msg.id}`);
             return res.sendStatus(200);
         }
         processed.add(msg.id);
+
+        // Database-backed deduplication (for multi-instance serverless concurrency)
+        try {
+            const { data: chatRow, error: dbErr } = await supabase
+                .from('chats')
+                .select('messages')
+                .eq('customer_phone', msg.from)
+                .maybeSingle();
+
+            if (!dbErr && chatRow && Array.isArray(chatRow.messages)) {
+                if (chatRow.messages.some(m => m.messageId === msg.id)) {
+                    console.log(`[USER -> BOT] Duplicate message ID ignored (DB check): ${msg.id}`);
+                    return res.sendStatus(200);
+                }
+            }
+        } catch (dbErr) {
+            console.error('❌ Database deduplication check failed:', dbErr.message);
+        }
 
         await handleMessage(msg);
         res.sendStatus(200);
