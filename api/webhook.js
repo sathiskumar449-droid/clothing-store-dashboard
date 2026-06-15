@@ -370,8 +370,31 @@ function detectIntent(text) {
 // Pure JS Sales Flow (Gemini Removed)
 // =============================
 
+// Normalize user query by correcting common spelling variations and typos
+const normalizeQuery = (queryText) => {
+    let t = queryText.toLowerCase().trim();
+    
+    const replacements = {
+        'shit': 'shirt',
+        'shits': 'shirts',
+        'shrit': 'shirt',
+        'shrits': 'shirts',
+        'phant': 'pant',
+        'phants': 'pants',
+        'lenin': 'linen',
+        'coton': 'cotton',
+        'palin': 'plain',
+        'tshirt': 't-shirt',
+    };
+    
+    let words = t.split(/\s+/);
+    words = words.map(w => replacements[w] || w);
+    return words.join(' ');
+};
+
 export function handleSalesAssistantJS(from, userMessage, products, session) {
-    const textLower = userMessage.trim().toLowerCase();
+    const normalizedMessage = normalizeQuery(userMessage);
+    const textLower = normalizedMessage.toLowerCase();
 
     // STATE CHECK: AWAITING_HELP_CONFIRM
     if (session.state === "AWAITING_HELP_CONFIRM") {
@@ -381,7 +404,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         if (yesKeywords.includes(textLower) || textLower.includes('yes') || textLower.includes('aama') || textLower.includes('sari') || textLower.includes('seri')) {
             session.state = "AWAITING_CATEGORY";
             return {
-                replyText: "Welcome to Super Collections 😊\n\nEnna Shopping Panriga?\n\n1️⃣ Cotton Shirt\n2️⃣ Linen Shirt\n3️⃣ Jeans\n4️⃣ Cargo Pant\n5️⃣ T-Shirt\n\nNumber mattum reply pannunga 😊",
+                replyText: "Welcome to Super Collections 😊\n\nEnna Shopping Panriga?\n\n1️⃣ Shirts\n2️⃣ Pants\n3️⃣ T-Shirts\n4️⃣ Jeans\n5️⃣ Shorts\n\nNumber mattum reply pannunga 😊",
                 sendImages: []
             };
         } else if (noKeywords.includes(textLower) || textLower.includes('no') || textLower.includes('illa') || textLower.includes('vendam')) {
@@ -536,7 +559,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     if (textLower === "hi" || textLower === "hello" || textLower === "hey" || textLower === "hi bro" || textLower === "hi anna" || textLower === "hii" || textLower === "hai" || textLower === "vanakkam") {
         session.state = "AWAITING_CATEGORY";
         return {
-            replyText: "Welcome to Super Collections bro 😊\n\nEnna category venum?\n\n1️⃣ Cotton Shirt\n2️⃣ Linen Shirt\n3️⃣ Jeans\n4️⃣ Cargo Pant\n5️⃣ T-Shirt\n\nNumber mattum reply pannunga bro 😊",
+            replyText: "Welcome to Super Collections bro 😊\n\nEnna category venum?\n\n1️⃣ Shirts\n2️⃣ Pants\n3️⃣ T-Shirts\n4️⃣ Jeans\n5️⃣ Shorts\n\nNumber mattum reply pannunga bro 😊",
             sendImages: []
         };
     }
@@ -581,11 +604,11 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     // D-0. Welcome Category Number shortcut
     if (session.state === "AWAITING_CATEGORY" && /^[1-5]$/.test(textLower)) {
         const welcomeCategories = {
-            '1': 'cotton shirt',
-            '2': 'linen shirt',
-            '3': 'jeans',
-            '4': 'cargo pant',
-            '5': 'tshirt'
+            '1': 'shirt',
+            '2': 'pant',
+            '3': 't-shirt',
+            '4': 'jeans',
+            '5': 'shorts'
         };
         const mappedCategory = welcomeCategories[textLower];
         if (mappedCategory) {
@@ -593,37 +616,29 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
         }
     }
 
-    // D. Category Search
-    const categoryKeywords = ["shirt", "pant", "jeans", "cargo", "tshirt", "t shirt", "t-shirt", "shorts", "phant"];
-    const isCategorySearch = categoryKeywords.some(keyword => textLower.includes(keyword));
+    // D. Category / Product Search
+    const categoryKeywords = ["shirt", "pant", "jeans", "cargo", "tshirt", "t-shirt", "shorts", "phant", "linen", "cotton", "plain", "printed", "arrival", "chava", "lenin", "coton", "shit", "shrit"];
+    const isCategorySearch = categoryKeywords.some(keyword => textLower.includes(keyword)) || intent === 'PRODUCT_ENQUIRY';
 
     if (isCategorySearch) {
         let matched = products.filter(p => Number(p.stock) > 0);
 
-        if (textLower.includes("cotton") && textLower.includes("shirt")) {
-            matched = matched.filter(p => p.name.toLowerCase().includes("cotton") && (p.name.toLowerCase().includes("shirt") || p.category?.toLowerCase().includes("shirt")));
-        } else if (textLower.includes("linen") && textLower.includes("shirt")) {
-            matched = matched.filter(p => p.name.toLowerCase().includes("linen") && (p.name.toLowerCase().includes("shirt") || p.category?.toLowerCase().includes("shirt")));
-        } else if (textLower.includes("cargo")) {
-            matched = matched.filter(p => p.name.toLowerCase().includes("cargo") || p.category?.toLowerCase().includes("cargo"));
-        } else if (textLower.includes("jeans")) {
-            matched = matched.filter(p => p.name.toLowerCase().includes("jeans") || p.category?.toLowerCase().includes("jeans") || p.pattern?.toLowerCase().includes("jeans"));
-        } else if (textLower.includes("tshirt") || textLower.includes("t shirt") || textLower.includes("t-shirt")) {
-            matched = matched.filter(p => p.category?.toLowerCase().includes("tshirt") || p.name.toLowerCase().includes("t shirt") || p.name.toLowerCase().includes("tshirt") || p.name.toLowerCase().includes("t-shirt"));
-        } else if (textLower.includes("shirt")) {
-            matched = matched.filter(p => p.category?.toLowerCase().includes("shirt") || p.name.toLowerCase().includes("shirt"));
-        } else if (textLower.includes("pant") || textLower.includes("phant")) {
-            matched = matched.filter(p => p.category?.toLowerCase().includes("pant") || p.category?.toLowerCase().includes("phant") || p.name.toLowerCase().includes("pant") || p.name.toLowerCase().includes("phant"));
-        } else if (textLower.includes("shorts")) {
-            matched = matched.filter(p => p.category?.toLowerCase().includes("shorts") || p.name.toLowerCase().includes("shorts"));
-        } else {
-            matched = matched.filter(p => p.name.toLowerCase().includes(textLower) || p.category?.toLowerCase().includes(textLower));
-        }
+        // Split query into keywords
+        const keywords = textLower.split(/\s+/).filter(word => word.length > 0 && word !== "bro" && word !== "anna");
+
+        // Filter products where ALL keywords match
+        matched = matched.filter(p => {
+            return keywords.every(kw => {
+                return (
+                    p.name?.toLowerCase().includes(kw) ||
+                    p.category?.toLowerCase().includes(kw) ||
+                    (p.color && p.color.toLowerCase().includes(kw)) ||
+                    (p.pattern && p.pattern.toLowerCase().includes(kw))
+                );
+            });
+        });
 
         if (matched.length > 0) {
-            session.searchProducts = matched;
-            session.state = "AWAITING_MODEL_SELECTION";
-
             const catEmoji = textLower.includes('shirt') ? '👕' :
                 textLower.includes('pant') || textLower.includes('phant') ? '👖' :
                     textLower.includes('jeans') ? '👖' :
@@ -632,7 +647,10 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                                 textLower.includes('tshirt') || textLower.includes('t-shirt') ? '👕' : '🔥';
 
             let replyText = `${catEmoji} *Super Collections - Available Stock:*\n\n`;
-            matched.forEach((p, idx) => {
+            
+            // Limit to top 10 products so the message fits nicely on WhatsApp
+            const displayProducts = matched.slice(0, 10);
+            displayProducts.forEach((p, idx) => {
                 let displayName = p.name;
                 if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
                     displayName = `${p.color} ${displayName}`;
@@ -641,7 +659,11 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
             });
             replyText += `👆 number mattum reply pannunga bro! 😊`;
-            return { replyText, sendImages: [], searchProducts: matched };
+            
+            session.searchProducts = displayProducts;
+            session.state = "AWAITING_MODEL_SELECTION";
+            
+            return { replyText, sendImages: [], searchProducts: displayProducts };
         } else {
             return { replyText: "Sorry bro, ippo stock illa. 😔 Vera category try pannunga!", sendImages: [] };
         }
@@ -837,7 +859,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             const cartCount = session.cart.length;
             const cartTotal = session.cart.reduce((sum, i) => sum + Number(i.price), 0);
             return {
-                replyText: `Super bro! 😊 Cart la ${cartCount} item(s) iruku (₹${cartTotal})\n\nVera category search pannunga:\n• Cotton Shirt\n• Linen Shirt\n• Jeans\n• Cargo Pant\n• T-Shirt`,
+                replyText: `Super bro! 😊 Cart la ${cartCount} item(s) iruku (₹${cartTotal})\n\nVera category search pannunga:\n• Shirts\n• Pants\n• T-Shirts\n• Jeans\n• Shorts`,
                 sendImages: []
             };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai") {
@@ -881,7 +903,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     }
 
     return {
-        replyText: "😊 Enna help venumnu sollunga bro!\n\nDress thedureenga?\n• Cotton Shirt\n• Linen Shirt\n• Jeans\n• Cargo Pant\n• T-Shirt\n\nOr delivery / payment / return pathi kelvi irundha kelunga!",
+        replyText: "😊 Enna help venumnu sollunga bro!\n\nDress thedureenga?\n• Shirts\n• Pants\n• T-Shirts\n• Jeans\n• Shorts\n\nOr delivery / payment / return pathi kelvi irundha kelunga!",
         sendImages: []
     };
 }
