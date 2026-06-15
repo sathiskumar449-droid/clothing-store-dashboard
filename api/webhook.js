@@ -2,7 +2,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { supabase } from '../lib/supabase.js';
-import { createProductCollage, createRecommendationCollage } from '../lib/collage.js';
+import { createProductCollage, createRecommendationCollage, createPromoCollage } from '../lib/collage.js';
 
 dotenv.config();
 
@@ -1925,29 +1925,57 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
                 };
             }
 
-            // Standard product added -> Check for recommendation combo
-            const recs = getRecommendationsList(product, products);
-            if (recs.length >= 2) {
-                session.recommendationPool = recs.map(r => r.id);
-                session.recommendationIndex = 0;
-                session.isRecommendation = true;
-                session.state = "AWAITING_RECOMMENDATION_CHOICE";
-                session.originalProductId = product.id;
-                return await prepareRecommendationResponse(session, products);
-            } else {
-                session.state = "AWAITING_MORE_ITEMS";
-                return {
-                    sendButtons: {
-                        body: `✅ Cart la add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
-                        buttons: [
-                            { id: 'yes', title: '🛍️ YES' },
-                            { id: 'no_checkout', title: '🛒 NO - Checkout' }
-                        ]
-                    },
-                    sendImages: [],
-                    cart: session.cart
-                };
+            // Cross-sell teaser flow: Suggest other category as visual banner
+            const addedParent = getParentCategory(product.category).toLowerCase();
+            const isAddedTop = addedParent.includes('shirt') || addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedParent.includes('jersey') || addedParent.includes('polo');
+
+            const promoCategory = isAddedTop ? 'Pants' : 'Shirts';
+            const promoKeyword = isAddedTop ? 'PANTS' : 'SHIRTS';
+            const promoEmoji = isAddedTop ? '👖' : '👕';
+            const promoCollectionName = isAddedTop ? 'Pants collection is currently trending' : 'Matching Shirt Collection Available';
+
+            const candidates = products.filter(p => {
+                if (p.id === product.id) return false;
+                if (Number(p.stock) <= 0) return false;
+                
+                const img = getProductImageUri(p, products);
+                if (!img || img === 'null' || img === 'undefined') return false;
+
+                const parent = getParentCategory(p.category).toLowerCase();
+                if (isAddedTop) {
+                    return parent.includes('pant') || parent.includes('phant') || parent.includes('jeans') || parent.includes('shorts') || parent.includes('track') || parent.includes('cargo');
+                } else {
+                    return parent.includes('shirt') || parent.includes('tshirt') || parent.includes('t-day') || parent.includes('t-shirt') || parent.includes('jersey') || parent.includes('polo');
+                }
+            });
+
+            const promoCandidates = candidates.slice(0, 4);
+            let collageUrl = null;
+            if (promoCandidates.length > 0) {
+                collageUrl = await createPromoCollage(promoCandidates, products);
             }
+
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            
+            session.parentCategories = parents;
+            session.state = "AWAITING_CATEGORY";
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.isRecommendation = false;
+
+            const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
+            let replyText = `✅ *${addedName}* added to cart.\n\n`;
+            replyText += `🔥 *Special Offer*\n`;
+            replyText += `${promoCollectionName}.\n\n`;
+            replyText += `${promoEmoji} Want to browse ${promoCategory.toLowerCase()}?\nType: *${promoKeyword}*\n\n`;
+            replyText += `🛒 Ready to order?\nType: *CHECKOUT*`;
+
+            return {
+                replyText,
+                sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
+                cart: session.cart
+            };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai") {
             session.isRecommendation = false;
             session.pendingProduct = null;

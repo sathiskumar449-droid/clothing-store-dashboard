@@ -150,45 +150,37 @@ const sessionPrev = {
 };
 await runTest('Pagination - Prev Page', 'prev', sessionPrev);
 
-// Test 13: Standard product added to cart -> Triggers multi-combo recommendations
+// Test 13: Standard Shirt added to cart -> Triggers Pants cross-sell promo teaser
 const sessionRec1 = {
     state: 'AWAITING_CART_CONFIRM',
     pendingProduct: mockProducts[0], // id: 1, Premium Plain Shirt
     selectedSize: 'M',
     cart: []
 };
-await runTest('Add to Cart -> Trigger Multi-Combo Recommendations', 'yes', sessionRec1);
+await runTest('Add Shirt -> Trigger Pants Cross-Sell Promo', 'yes', sessionRec1);
 
-// Test 14: Choosing recommendation #1
-const sessionRecChoice = {
-    state: 'AWAITING_RECOMMENDATION_CHOICE',
-    recommendationPool: [3, 1717, 4],
-    recommendationIndex: 0,
-    isRecommendation: true,
-    originalProductId: 1,
+// Test 14: Customer replies "PANTS" to browse pants
+const sessionRecPants = {
+    state: 'AWAITING_CATEGORY',
+    parentCategories: ['Shirts', 'Pants', 'T-Shirts', 'Jeans', 'Shorts'],
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-await runTest('Choose first recommended product', '1', sessionRecChoice);
+await runTest('Browse Pants from cross-sell choice', 'PANTS', sessionRecPants);
 
-// Test 15: SHOW MORE options
-const sessionRecShowMore = {
-    state: 'AWAITING_RECOMMENDATION_CHOICE',
-    recommendationPool: [3, 1717, 4],
-    recommendationIndex: 0,
-    isRecommendation: true,
-    originalProductId: 1,
+// Test 15: Customer replies "CHECKOUT" to complete checkout
+const sessionRecCheckout = {
+    state: 'AWAITING_CATEGORY',
+    parentCategories: ['Shirts', 'Pants', 'T-Shirts', 'Jeans', 'Shorts'],
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-await runTest('Show more recommended options', 'show more', sessionRecShowMore);
+await runTest('Go to Checkout from cross-sell choice', 'CHECKOUT', sessionRecCheckout);
 
-// Test 16: Skip recommendations
-const sessionRecSkip = {
-    state: 'AWAITING_RECOMMENDATION_CHOICE',
-    recommendationPool: [3, 1717, 4],
-    recommendationIndex: 0,
-    isRecommendation: true,
-    originalProductId: 1,
-    cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
+// Test 16: Standard Pant added to cart -> Triggers Shirts cross-sell promo teaser
+const sessionRecPantAdded = {
+    state: 'AWAITING_CART_CONFIRM',
+    pendingProduct: mockProducts[2], // id: 3, Formal Cotton Pant
+    selectedSize: '32',
+    cart: []
 };
-await runTest('Skip recommendation choice', 'skip', sessionRecSkip);
+await runTest('Add Pant -> Trigger Shirts Cross-Sell Promo', 'yes', sessionRecPantAdded);
 
