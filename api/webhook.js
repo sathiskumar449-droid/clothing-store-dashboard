@@ -751,7 +751,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     const isNumber = /^[1-9][0-9]?$/.test(textLower);
 
     let isValidSize = false;
-    if (session.state === "AWAITING_SIZE_SELECTION" && session.pendingProduct) {
+    if (["AWAITING_SIZE_SELECTION", "AWAITING_CART_CONFIRM"].includes(session.state) && session.pendingProduct) {
         const product = session.pendingProduct;
         const availableSizes = Array.isArray(product.sizes)
             ? product.sizes.map(s => s.toLowerCase().trim())
@@ -975,8 +975,30 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
     // STATE: AWAITING_CART_CONFIRM
     if (session.state === "AWAITING_CART_CONFIRM" && session.pendingProduct) {
+        const product = session.pendingProduct;
+
+        // Check if the user typed a size to change/update their selection!
+        const availableSizes = Array.isArray(product.sizes)
+            ? product.sizes.map(s => s.toLowerCase().trim())
+            : String(product.sizes).toLowerCase().split(',').map(s => s.trim());
+        const normalizedInput = normalizeSize(textLower);
+        const matchedSize = availableSizes.find(s => normalizeSize(s) === normalizedInput);
+
+        if (matchedSize) {
+            session.selectedSize = matchedSize.toUpperCase();
+            return {
+                sendButtons: {
+                    body: `✅ ${product.name} - ${session.selectedSize}\n\nCart la add pannalama bro?`,
+                    buttons: [
+                        { id: 'yes', title: '✅ YES' },
+                        { id: 'no', title: '❌ NO' }
+                    ]
+                },
+                selectedSize: session.selectedSize
+            };
+        }
+
         if (textLower === "yes" || textLower === "y" || textLower === "aama" || textLower === "add" || textLower === "ok" || textLower === "add cart") {
-            const product = session.pendingProduct;
             session.cart.push({
                 id: product.id,
                 name: product.name,
@@ -1064,6 +1086,11 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 },
                 sendImages: []
             };
+        } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
+            return {
+                replyText: `⚠️ Invalid response bro! YES or NO reply pannunga. 😊`,
+                sendImages: []
+            };
         }
     }
 
@@ -1088,6 +1115,11 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai" || textLower === "checkout") {
             return startCheckout(session);
+        } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
+            return {
+                replyText: `⚠️ Invalid response bro! YES or NO reply pannunga. 😊`,
+                sendImages: []
+            };
         }
     }
 
@@ -1365,6 +1397,18 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             : 'S, M, L, XL';
         return {
             replyText: `Size sollunga bro 😊 Available: ${sizeList}`,
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_CART_CONFIRM") {
+        return {
+            replyText: `⚠️ Invalid response bro! YES or NO reply pannunga. 😊`,
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_MORE_ITEMS") {
+        return {
+            replyText: `⚠️ Invalid response bro! YES or NO reply pannunga. 😊`,
             sendImages: []
         };
     }
