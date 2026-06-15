@@ -878,6 +878,68 @@ const getRecommendationMessage = (addedProduct, recommendedProduct, currentParen
            `3️⃣ Skip`;
 };
 
+const isShirtCategory = (cat, name = '') => {
+    const parent = getParentCategory(cat);
+    if (parent === 'Shirts') return true;
+    const catLower = (cat || '').toLowerCase();
+    const nameLower = (name || '').toLowerCase();
+    return (catLower.includes('shirt') || nameLower.includes('shirt')) && 
+           !catLower.includes('t-shirt') && !catLower.includes('t shirt') && !catLower.includes('tshirt') &&
+           !nameLower.includes('t-shirt') && !nameLower.includes('t shirt') && !nameLower.includes('tshirt');
+};
+
+const isTShirtCategory = (cat, name = '') => {
+    const parent = getParentCategory(cat);
+    if (parent === 'T-Shirts') return true;
+    const catLower = (cat || '').toLowerCase();
+    const nameLower = (name || '').toLowerCase();
+    return catLower.includes('t-shirt') || catLower.includes('t shirt') || catLower.includes('tshirt') ||
+           nameLower.includes('t-shirt') || nameLower.includes('t shirt') || nameLower.includes('tshirt');
+};
+
+const isPantOrJeansCategory = (cat, name = '') => {
+    const parent = getParentCategory(cat);
+    if (parent === 'Pants' || parent === 'Jeans') return true;
+    const catLower = (cat || '').toLowerCase();
+    const nameLower = (name || '').toLowerCase();
+    return catLower.includes('pant') || catLower.includes('phant') || catLower.includes('jeans') ||
+           nameLower.includes('pant') || nameLower.includes('phant') || nameLower.includes('jeans');
+};
+
+const isPoloFitPant = (p) => {
+    const nameLower = (p.name || '').toLowerCase();
+    const catLower = (p.category || '').toLowerCase();
+    const matchesPolo = nameLower.includes('polo fit') || nameLower.includes('polofit') || catLower.includes('polo fit') || catLower.includes('polofit');
+    const matchesPant = nameLower.includes('pant') || nameLower.includes('pants') || catLower.includes('pant') || catLower.includes('pants') || getParentCategory(p.category) === 'Pants';
+    return matchesPolo && matchesPant;
+};
+
+const isJeans = (p) => {
+    const nameLower = (p.name || '').toLowerCase();
+    const catLower = (p.category || '').toLowerCase();
+    return nameLower.includes('jeans') || nameLower.includes('jean') || catLower.includes('jeans') || catLower.includes('jean') || getParentCategory(p.category) === 'Jeans';
+};
+
+const isCargoTrackPant = (p) => {
+    const nameLower = (p.name || '').toLowerCase();
+    const catLower = (p.category || '').toLowerCase();
+    return nameLower.includes('cargo track') || catLower.includes('cargo track') ||
+           (nameLower.includes('cargo') && nameLower.includes('track')) ||
+           (catLower.includes('cargo') && catLower.includes('track'));
+};
+
+const isTrouser = (p) => {
+    const nameLower = (p.name || '').toLowerCase();
+    const catLower = (p.category || '').toLowerCase();
+    return nameLower.includes('trouser') || catLower.includes('trouser');
+};
+
+const isJogger = (p) => {
+    const nameLower = (p.name || '').toLowerCase();
+    const catLower = (p.category || '').toLowerCase();
+    return nameLower.includes('jogger') || catLower.includes('jogger');
+};
+
 // Dynamically group subcategories into top-level parent categories based on noun rules
 const getParentCategory = (categoryName) => {
     if (!categoryName) return 'General';
@@ -963,8 +1025,13 @@ const startCheckout = (session) => {
 // Intent Detection & Routing Layer
 // =============================
 
-function detectIntent(text, products = []) {
+function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
+
+    // 0. CATEGORY keyword routing when a promo category exists
+    if (session && session.promoCategory && (t === 'category' || t === 'view category' || t === 'show category' || t.includes('view collection') || t.includes('show collection'))) {
+        return { type: 'CATEGORY', category: session.promoCategory };
+    }
 
     // 1. HUMAN Intent
     const humanKeywords = ['owner', 'human', 'customer support', 'call me', 'agent', 'support', 'talk to owner', 'contact owner', 'connect to human', 'chat with owner', 'human mode'];
@@ -1550,6 +1617,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     session.state = session.state || "AWAITING_CATEGORY";
     session.isRecommendation = session.isRecommendation || false;
     session.crossSellShown = session.crossSellShown || false;
+    session.promoCategory = session.promoCategory || null;
 
     // Backward compatibility for stale recommendation states
     if (session.state === "AWAITING_RECOMMENDATION_CONFIRM" || session.state === "AWAITING_COMBO_CART_CONFIRM") {
@@ -1557,7 +1625,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
 
     // ─── Intent Detection & Routing Layer ───
-    const intentResult = detectIntent(textLower, products);
+    const intentResult = detectIntent(textLower, products, session);
     if (intentResult.type !== 'UNKNOWN') {
         const intentResponse = await handleIntent(intentResult, session, products);
         if (intentResponse) {
@@ -1995,11 +2063,11 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const addedParent = getParentCategory(product.category);
             let promoCategory = '';
 
-            if (addedParent === 'Shirts') {
+            if (isShirtCategory(product.category, product.name)) {
                 promoCategory = 'Pants';
-            } else if (addedParent === 'Pants' || addedParent === 'Jeans') {
+            } else if (isPantOrJeansCategory(product.category, product.name)) {
                 promoCategory = 'Shirts';
-            } else if (addedParent === 'T-Shirts') {
+            } else if (isTShirtCategory(product.category, product.name)) {
                 promoCategory = 'Pants';
             } else if (addedParent === 'Shorts') {
                 promoCategory = 'T-Shirts';
@@ -2015,12 +2083,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 }
             }
 
-            const promoKeyword = promoCategory.toUpperCase();
-            let promoEmoji = '🛍️';
-            if (promoCategory === 'Shirts') promoEmoji = '👕';
-            if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
-            if (promoCategory === 'T-Shirts') promoEmoji = '👕';
-            if (promoCategory === 'Shorts') promoEmoji = '🩳';
+            session.promoCategory = promoCategory;
 
             const candidates = products.filter(p => {
                 if (p.id === product.id) return false;
@@ -2030,7 +2093,31 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 if (!img || img === 'null' || img === 'undefined') return false;
 
                 const parent = getParentCategory(p.category);
-                return parent === promoCategory;
+                const nameLower = (p.name || '').toLowerCase();
+                const catLower = (p.category || '').toLowerCase();
+
+                if (isShirtCategory(product.category, product.name)) {
+                    // Shirt category -> recommend only Polo Fit Pant or Jeans
+                    const isPoloFit = nameLower.includes('polo fit') || nameLower.includes('polofit') || catLower.includes('polo fit') || catLower.includes('polofit');
+                    const isJ = nameLower.includes('jeans') || nameLower.includes('jean') || catLower.includes('jeans') || catLower.includes('jean') || parent === 'Jeans';
+                    if (!isPoloFit && !isJ) return false;
+                    
+                    // Exclude Cargo Track Pant and Trouser explicitly
+                    const isCargoTrack = nameLower.includes('cargo track') || nameLower.includes('track pant') || catLower.includes('cargo track') || catLower.includes('track pant') || (nameLower.includes('cargo') && nameLower.includes('track'));
+                    const isTr = nameLower.includes('trouser') || catLower.includes('trouser');
+                    if (isCargoTrack || isTr) return false;
+                } else if (isTShirtCategory(product.category, product.name)) {
+                    // T-Shirt category -> recommend only Cargo Track Pant, Trouser, or Jogger
+                    const isCargoTrack = nameLower.includes('cargo track') || nameLower.includes('track pant') || catLower.includes('cargo track') || catLower.includes('track pant') || (nameLower.includes('cargo') && nameLower.includes('track'));
+                    const isTr = nameLower.includes('trouser') || catLower.includes('trouser');
+                    const isJog = nameLower.includes('jogger') || catLower.includes('jogger');
+                    if (!isCargoTrack && !isTr && !isJog) return false;
+                } else {
+                    // Fallback to general category matching (e.g. Pants -> Shirts, Shorts -> T-Shirts)
+                    if (parent !== promoCategory) return false;
+                }
+
+                return true;
             });
 
             if (candidates.length === 0) {
@@ -2048,10 +2135,27 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 };
             }
 
-            const promoCandidates = candidates.slice(0, 4);
+            // Score and sort candidates by color and style compatibility
+            const sortedCandidates = candidates
+                .map(p => ({ product: p, score: getRecommendationScore(product, p, products) }))
+                .sort((a, b) => b.score - a.score)
+                .map(item => item.product);
+
+            // Slice top 2 recommendations
+            const promoCandidates = sortedCandidates.slice(0, 2);
+
             let collageUrl = null;
             if (promoCandidates.length > 0) {
-                collageUrl = await createPromoCollage(promoCandidates, products);
+                // Generate a 2x2 collage using recommended products (up to 2). We fill all 4 slots by repeating them.
+                const collageCandidates = [];
+                if (promoCandidates.length === 2) {
+                    collageCandidates.push(promoCandidates[0], promoCandidates[1], promoCandidates[0], promoCandidates[1]);
+                } else if (promoCandidates.length === 1) {
+                    collageCandidates.push(promoCandidates[0], promoCandidates[0], promoCandidates[0], promoCandidates[0]);
+                } else {
+                    collageCandidates.push(...promoCandidates);
+                }
+                collageUrl = await createPromoCollage(collageCandidates, products);
             }
 
             const categoryCounts = getCategoryCounts(products);
@@ -2066,9 +2170,10 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
             let replyText = `✅ *${addedName}* added to cart.\n\n`;
-            replyText += `🔥 Special Offer! Matching ${promoCategory} Collection Available\n\n`;
-            replyText += `${promoEmoji} Type *${promoKeyword}*\n`;
-            replyText += `🛒 Type *CHECKOUT*`;
+            replyText += `🔥 Special Offer!\n`;
+            replyText += `Matching Collection Available\n\n`;
+            replyText += `Type *CATEGORY* to view collection\n`;
+            replyText += `Type *CHECKOUT* to continue order`;
 
             return {
                 replyText,
