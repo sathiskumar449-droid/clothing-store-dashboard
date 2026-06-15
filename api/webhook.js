@@ -2180,14 +2180,27 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.crossSellShown = true;
 
             const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
-            let replyText = `✅ *${addedName}* added to cart.\n\n`;
-            replyText += `🔥 Special Offer!\n`;
-            replyText += `Matching Collection Available\n\n`;
-            replyText += `Type *CATEGORY* to view collection\n`;
-            replyText += `Type *CHECKOUT* to continue order`;
+            
+            let promoEmoji = '🛍️';
+            if (promoCategory === 'Shirts') promoEmoji = '👕';
+            if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
+            if (promoCategory === 'T-Shirts') promoEmoji = '👕';
+            if (promoCategory === 'Shorts') promoEmoji = '🩳';
+
+            const promoKeyword = promoCategory.toUpperCase();
+            
+            let bodyText = `✅ *${addedName}* added to cart.\n\n`;
+            bodyText += `🔥 Special Offer!\n`;
+            bodyText += `Matching Collection Available`;
 
             return {
-                replyText,
+                sendButtons: {
+                    body: bodyText,
+                    buttons: [
+                        { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
+                        { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
+                    ]
+                },
                 sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
                 cart: session.cart
             };
