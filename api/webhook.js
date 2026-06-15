@@ -178,6 +178,69 @@ export async function saveChats(chats) {
     }
 }
 
+export async function getSession(phone) {
+    try {
+        const { data, error } = await supabase
+            .from('chats')
+            .select('last_message')
+            .eq('customer_phone', `session_${phone}`)
+            .maybeSingle();
+
+        if (error) throw error;
+
+        if (data && data.last_message) {
+            return JSON.parse(data.last_message);
+        }
+    } catch (err) {
+        console.error(`❌ Error reading session for ${phone}:`, err.message);
+    }
+
+    return {
+        state: "AWAITING_CATEGORY",
+        cart: [],
+        history: [],
+        searchProducts: [],
+        selectedColor: null,
+        selectedSize: null,
+        lastRecommendation: null,
+        awaitingRecommendationResponse: false,
+        awaitingCartAdditionConfirmation: false,
+        pendingProduct: null
+    };
+}
+
+export async function saveSession(phone, session) {
+    try {
+        const { error } = await supabase
+            .from('chats')
+            .upsert({
+                customer_phone: `session_${phone}`,
+                customer_name: 'Session State',
+                last_message: JSON.stringify(session),
+                last_updated: new Date().toISOString(),
+                bot_paused: false,
+                messages: []
+            }, { onConflict: 'customer_phone' });
+
+        if (error) throw error;
+    } catch (err) {
+        console.error(`❌ Error saving session for ${phone}:`, err.message);
+    }
+}
+
+export async function deleteSession(phone) {
+    try {
+        const { error } = await supabase
+            .from('chats')
+            .delete()
+            .eq('customer_phone', `session_${phone}`);
+
+        if (error) throw error;
+    } catch (err) {
+        console.error(`❌ Error deleting session for ${phone}:`, err.message);
+    }
+}
+
 export async function logChatMessage(customerPhone, sender, text, type = 'text', imageUrl = null) {
     try {
         // Fetch current row (or create default)
@@ -198,10 +261,11 @@ export async function logChatMessage(customerPhone, sender, text, type = 'text',
             messages: []
         };
 
-        // Try to resolve customer name from active session
+        // Try to resolve customer name from active session in database
         let customerName = existing.customer_name;
-        if (userSessions[customerPhone]?.orderDetails?.customerName) {
-            customerName = userSessions[customerPhone].orderDetails.customerName;
+        const dbSession = await getSession(customerPhone);
+        if (dbSession?.orderDetails?.customerName) {
+            customerName = dbSession.orderDetails.customerName;
         }
 
         // Trim messages to last 100
@@ -1204,23 +1268,7 @@ async function handleMessage(msg) {
             return;
         }
 
-        // Initialize user session if it doesn't exist
-        if (!userSessions[from]) {
-            userSessions[from] = {
-                state: "AWAITING_CATEGORY",
-                cart: [],
-                history: [],
-                searchProducts: [],
-                selectedColor: null,
-                selectedSize: null,
-                lastRecommendation: null,
-                awaitingRecommendationResponse: false,
-                awaitingCartAdditionConfirmation: false,
-                pendingProduct: null
-            };
-        }
-
-        const session = userSessions[from];
+        const session = await getSession(from);
         const aiResponse = handleSalesAssistantJS(from, text, products, session);
 
         // Execute session side effects
@@ -1232,6 +1280,9 @@ async function handleMessage(msg) {
         if (aiResponse.awaitingRecommendationResponse !== undefined) session.awaitingRecommendationResponse = aiResponse.awaitingRecommendationResponse;
         if (aiResponse.awaitingCartAdditionConfirmation !== undefined) session.awaitingCartAdditionConfirmation = aiResponse.awaitingCartAdditionConfirmation;
         if (aiResponse.pendingProduct !== undefined) session.pendingProduct = aiResponse.pendingProduct;
+
+        // Save session details to Supabase
+        await saveSession(from, session);
 
         // Order Confirmed — save to Supabase + update stock
         if (aiResponse.isOrderConfirmed && aiResponse.orderDetails) {
@@ -1303,7 +1354,7 @@ async function handleMessage(msg) {
             bill += `🙏 Thanks for shopping at\n`;
             bill += `*Super Collections!* ❤️`;
 
-            delete userSessions[from];
+            await deleteSession(from);
             await sendText(from, bill);
             await logChatMessage(from, 'bot', bill);
             return;

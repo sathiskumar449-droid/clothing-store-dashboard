@@ -1,6 +1,6 @@
 // api/chats.js  — Supabase version (replaces fs-based implementation)
 // All getChats/saveChats calls are now async
-import { getChats, saveChats, sendText, sendImage, userSessions } from './webhook.js';
+import { getChats, saveChats, sendText, sendImage, userSessions, deleteSession } from './webhook.js';
 import { supabase } from '../lib/supabase.js';
 
 // GET /chats
@@ -8,6 +8,7 @@ export const getAllChats = async (req, res) => {
     try {
         const chats = await getChats();
         const chatList = Object.values(chats)
+            .filter(chat => chat.customerPhone && !chat.customerPhone.startsWith('session_'))
             .map(chat => ({
                 customerPhone: chat.customerPhone,
                 customerName:  chat.customerName  || 'Customer',
@@ -37,6 +38,11 @@ export const getChatHistory = async (req, res) => {
             botPaused:     false,
             messages:      []
         };
+
+        // Filter out session state messages if any were written
+        if (chat.messages) {
+            chat.messages = chat.messages.filter(m => m.type !== 'session_state');
+        }
 
         res.json({ success: true, chat });
     } catch (error) {
@@ -101,7 +107,7 @@ export const sendChatMessage = async (req, res) => {
             lastMessage:   data.last_message,
             lastUpdated:   data.last_updated,
             botPaused:     data.bot_paused,
-            messages:      data.messages || []
+            messages:      (data.messages || []).filter(m => m.type !== 'session_state')
         };
 
         res.json({ success: true, chat });
@@ -142,8 +148,8 @@ export const toggleBot = async (req, res) => {
         if (error) throw error;
 
         // If resuming the bot, clear active session state
-        if (!targetPausedState && userSessions[phone]) {
-            delete userSessions[phone];
+        if (!targetPausedState) {
+            await deleteSession(phone);
             console.log(`[BOT] Reset active session for ${phone} due to bot resume.`);
         }
 
@@ -176,9 +182,7 @@ export const deleteChat = async (req, res) => {
 
         if (error) throw error;
 
-        if (userSessions[phone]) {
-            delete userSessions[phone];
-        }
+        await deleteSession(phone);
 
         res.json({ success: true, message: `Chat for ${phone} deleted.` });
     } catch (error) {
