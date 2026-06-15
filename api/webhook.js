@@ -537,6 +537,119 @@ const normalizeSize = (s) => {
         .trim();
 };
 
+// Salesperson classification rules based on name and category
+const getProductTag = (product) => {
+    const name = (product.name || '').toLowerCase();
+    const category = (product.category || '').toLowerCase();
+
+    // 1. Pants, Jeans, Tracks, Cargos
+    if (name.includes('formal pant') || category.includes('formal pant')) {
+        return 'FORMAL_PANT';
+    }
+    if (name.includes('cargo') || category.includes('cargo')) {
+        return 'CARGO_PANT';
+    }
+    if (name.includes('track') || name.includes('trach') || category.includes('track') || category.includes('trach')) {
+        return 'TRACK_PANT';
+    }
+    if (name.includes('jeans') || category.includes('jeans')) {
+        return 'JEANS';
+    }
+    if (name.includes('cotton pant') || name.includes('chinos') || category.includes('cotton pant')) {
+        return 'COTTON_PANT';
+    }
+    if (name.includes('pant') || name.includes('phant') || category.includes('pant') || category.includes('pants')) {
+        return 'PANT';
+    }
+
+    // 2. Shirts and T-Shirts
+    if (name.includes('football') || name.includes('jersey') || name.includes('neymar') || name.includes('dhoni') || name.includes('ronaldo') || name.includes('ipl') || category.includes('jersey')) {
+        return 'SPORTS_JERSEY';
+    }
+    if (name.includes('formal shirt') || category.includes('formal shirt')) {
+        return 'FORMAL_SHIRT';
+    }
+    if (name.includes('casual shirt') || category.includes('casual shirt') || name.includes('linen') || name.includes('cotton') || name.includes('plain shirt') || name.includes('printed shirt') || category.includes('lenin') || category.includes('linen')) {
+        return 'CASUAL_SHIRT';
+    }
+    if (name.includes('t-shirt') || name.includes('tshirt') || name.includes('polo') || category.includes('t-shirt') || category.includes('tshirt') || category.includes('t-shirts')) {
+        return 'TSHIRT';
+    }
+    if (name.includes('shirt') || category.includes('shirt') || category.includes('shirts')) {
+        return 'SHIRT';
+    }
+
+    return 'OTHER';
+};
+
+// Target recommendation pairing tags
+const getTargetRecommendationTags = (tag) => {
+    switch (tag) {
+        case 'FORMAL_SHIRT':
+            return ['FORMAL_PANT', 'PANT'];
+        case 'CASUAL_SHIRT':
+            return ['JEANS', 'COTTON_PANT', 'PANT'];
+        case 'TSHIRT':
+            return ['TRACK_PANT'];
+        case 'FORMAL_PANT':
+            return ['FORMAL_SHIRT', 'SHIRT'];
+        case 'CARGO_PANT':
+            return ['TRACK_PANT', 'TSHIRT'];
+        case 'TRACK_PANT':
+            return ['TSHIRT'];
+        case 'JEANS':
+        case 'COTTON_PANT':
+            return ['CASUAL_SHIRT', 'SHIRT'];
+        case 'SHIRT':
+            return ['PANT', 'JEANS', 'COTTON_PANT', 'CARGO_PANT'];
+        case 'PANT':
+            return ['CASUAL_SHIRT', 'SHIRT', 'TSHIRT'];
+        case 'SPORTS_JERSEY':
+            return ['TRACK_PANT'];
+        default:
+            return [];
+    }
+};
+
+// Recommendation engine linking tags and categories
+const getSmartRecommendation = (addedProduct, allProducts) => {
+    const addedTag = getProductTag(addedProduct);
+    const targetTags = getTargetRecommendationTags(addedTag);
+
+    // 1. Try to find a matching product with the target tags
+    for (const tag of targetTags) {
+        const matched = allProducts.find(p => 
+            p.id !== addedProduct.id && 
+            Number(p.stock) > 0 && 
+            getProductTag(p) === tag
+        );
+        if (matched) return matched;
+    }
+
+    // 2. Generic cross-category fallback if no specific smart tag match found
+    const currentParent = getParentCategory(addedProduct.category);
+    const otherParents = Array.from(new Set(
+        allProducts
+            .filter(p => Number(p.stock) > 0)
+            .map(p => getParentCategory(p.category))
+    )).filter(p => p !== currentParent);
+
+    if (otherParents.length > 0) {
+        let targetParent = null;
+        if (currentParent.toLowerCase().includes('shirt')) {
+            targetParent = otherParents.find(p => p.toLowerCase().includes('pant') || p.toLowerCase().includes('jeans'));
+        } else {
+            targetParent = otherParents.find(p => p.toLowerCase().includes('shirt'));
+        }
+        if (!targetParent) {
+            targetParent = otherParents[0];
+        }
+        return allProducts.find(p => getParentCategory(p.category) === targetParent && Number(p.stock) > 0);
+    }
+
+    return null;
+};
+
 // Dynamically group subcategories into top-level parent categories based on noun rules
 const getParentCategory = (categoryName) => {
     if (!categoryName) return 'General';
@@ -766,6 +879,12 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 session.state = "AWAITING_CATEGORY";
                 return { replyText: "Sorry bro, intha subcategory la stock illa. 😔", sendImages: [] };
             }
+        } else {
+            const max = session.subCategories?.length || 1;
+            return {
+                replyText: `⚠️ Wrong choice bro! 1-larunthu ${max} varaikum iruka subcategory number-a mattum choose pannunga. 😊`,
+                sendImages: []
+            };
         }
     }
 
@@ -789,6 +908,12 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 replyText,
                 sendImages: [{ url: product.imageUri, caption: product.name }],
                 pendingProduct: product
+            };
+        } else {
+            const max = session.searchProducts?.length || 1;
+            return {
+                replyText: `⚠️ Wrong choice bro! 1-larunthu ${max} varaikum iruka product number-a mattum choose pannunga. 😊`,
+                sendImages: []
             };
         }
     }
@@ -882,25 +1007,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
             // Standard product added -> Check for recommendation combo
             const currentParent = getParentCategory(product.category);
-            const otherParents = Array.from(new Set(
-                products
-                    .filter(p => Number(p.stock) > 0)
-                    .map(p => getParentCategory(p.category))
-            )).filter(p => p !== currentParent);
-
-            let recommended = null;
-            if (otherParents.length > 0) {
-                let targetParent = null;
-                if (currentParent.toLowerCase().includes('shirt')) {
-                    targetParent = otherParents.find(p => p.toLowerCase().includes('pant') || p.toLowerCase().includes('jeans'));
-                } else {
-                    targetParent = otherParents.find(p => p.toLowerCase().includes('shirt'));
-                }
-                if (!targetParent) {
-                    targetParent = otherParents[0];
-                }
-                recommended = products.find(p => getParentCategory(p.category) === targetParent && Number(p.stock) > 0);
-            }
+            const recommended = getSmartRecommendation(product, products);
 
             if (recommended) {
                 session.pendingProduct = recommended;
@@ -1224,6 +1331,12 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             replyText += "\nNumber mattum reply pannunga bro! 😊";
 
             return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
+        } else {
+            const max = session.parentCategories.length;
+            return {
+                replyText: `⚠️ Wrong choice bro! 1-larunthu ${max} varaikum iruka category number-a mattum choose pannunga. 😊`,
+                sendImages: []
+            };
         }
     }
 
@@ -1236,7 +1349,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     }
     if (session.state === "AWAITING_MODEL_SELECTION") {
         return {
-            replyText: `Number mattum reply pannunga bro 😊 (1, 2, 3...)`,
+            replyText: `⚠️ Format correct ah choose pannunga bro! List-la iruka number (1, 2, 3...) mattum reply pannunga. 😊`,
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_SUBCATEGORY_SELECTION") {
+        return {
+            replyText: `⚠️ Format correct ah choose pannunga bro! List-la iruka number (1, 2, 3...) mattum reply pannunga. 😊`,
             sendImages: []
         };
     }
@@ -1246,6 +1365,12 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             : 'S, M, L, XL';
         return {
             replyText: `Size sollunga bro 😊 Available: ${sizeList}`,
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_CATEGORY") {
+        return {
+            replyText: `⚠️ Format correct ah choose pannunga bro! List-la iruka category number (1, 2, 3...) mattum reply pannunga. 😊`,
             sendImages: []
         };
     }
