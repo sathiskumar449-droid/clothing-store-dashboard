@@ -2,6 +2,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { supabase } from '../lib/supabase.js';
+import { createProductCollage } from '../lib/collage.js';
 
 dotenv.config();
 
@@ -1145,7 +1146,71 @@ function getStatePrompt(session, products) {
     }
 }
 
-function handleIntent(intentResult, session, products) {
+async function prepareProductsPageResponse(session, productsPool, queryLabel) {
+    const pageSize = 16;
+    const currentPage = session.currentPage || 0;
+    const startIndex = currentPage * pageSize;
+    const pageProducts = session.searchProducts.slice(startIndex, startIndex + pageSize);
+
+    if (pageProducts.length === 0) {
+        return {
+            replyText: "No products found on this page bro! 😔",
+            sendImages: []
+        };
+    }
+
+    const startNumber = startIndex + 1;
+    const collageUrl = await createProductCollage(pageProducts, startNumber, productsPool);
+
+    const totalProducts = session.searchProducts.length;
+    const totalPages = Math.ceil(totalProducts / pageSize);
+    const pageNum = currentPage + 1;
+
+    let replyText = `👔 *${queryLabel}* (Page ${pageNum}/${totalPages})\n\n`;
+    pageProducts.forEach((p, idx) => {
+        const globalIdx = startIndex + idx + 1;
+        let displayName = p.name;
+        if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
+            displayName = `${p.color} ${displayName}`;
+        }
+        replyText += `*${globalIdx}.* ${displayName}\n`;
+        replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
+    });
+    replyText += `👆 number/action reply pannunga bro! 😊`;
+
+    const buttons = [];
+    if (currentPage > 0) {
+        buttons.push({ id: 'prev_page', title: '⬅ Prev Page' });
+    }
+    if (startIndex + pageSize < totalProducts) {
+        buttons.push({ id: 'next_page', title: '➡ Next Page' });
+    }
+
+    const response = {
+        replyText,
+        sendImages: collageUrl ? [{ url: collageUrl, caption: `${queryLabel} - Page ${pageNum}` }] : [],
+        searchProducts: session.searchProducts
+    };
+
+    if (buttons.length > 0) {
+        response.sendButtons = {
+            body: `Manage Pages:`,
+            buttons: buttons
+        };
+    }
+
+    response.listContext = {
+        type: 'products',
+        data: session.searchProducts,
+        currentPage: currentPage,
+        selectedSubCategory: session.selectedSubCategory,
+        selectedParentCategory: session.selectedParentCategory
+    };
+
+    return response;
+}
+
+async function handleIntent(intentResult, session, products) {
     switch (intentResult.type) {
         case 'CLEAR_CART': {
             session.cart = [];
@@ -1308,37 +1373,14 @@ function handleIntent(intentResult, session, products) {
             });
 
             if (matched.length > 0) {
-                let replyText = `🔍 *Search Results:* (Stock available)\n\n`;
-                const displayProducts = matched.slice(0, 10);
-                displayProducts.forEach((p, idx) => {
-                    let displayName = p.name;
-                    if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
-                        displayName = `${p.color} ${displayName}`;
-                    }
-                    replyText += `*${idx + 1}.* ${displayName}\n`;
-                    replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
-                });
-                replyText += `👆 number mattum reply pannunga bro! 😊`;
-
-                session.searchProducts = displayProducts;
+                session.searchProducts = matched;
+                session.currentPage = 0;
                 session.state = "AWAITING_MODEL_SELECTION";
                 session.pendingProduct = null;
                 session.selectedSize = null;
                 session.isRecommendation = false;
 
-                const imagesToSend = displayProducts.map((p, idx) => {
-                    const imgUri = getProductImageUri(p, products);
-                    if (imgUri && imgUri.startsWith('http') && imgUri !== 'null' && imgUri !== 'undefined') {
-                        let displayName = p.name;
-                        if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
-                            displayName = `${p.color} ${displayName}`;
-                        }
-                        return { url: imgUri, caption: `*${idx + 1}.* ${displayName} - ₹${p.price}` };
-                    }
-                    return null;
-                }).filter(Boolean);
-
-                return { replyText, sendImages: imagesToSend, searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
+                return await prepareProductsPageResponse(session, products, `Search: ${query}`);
             } else {
                 let replyText = "Sorry bro, search matching products ippo stock illa. 😔";
                 if (session.state !== "AWAITING_CATEGORY") {
@@ -1359,7 +1401,7 @@ function handleIntent(intentResult, session, products) {
     }
 }
 
-export function handleSalesAssistantJS(from, userMessage, products, session) {
+export async function handleSalesAssistantJS(from, userMessage, products, session) {
     const normalizedMessage = normalizeQuery(userMessage);
     const textLower = normalizedMessage.toLowerCase();
 
@@ -1376,7 +1418,7 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
     // ─── Intent Detection & Routing Layer ───
     const intentResult = detectIntent(textLower, products);
     if (intentResult.type !== 'UNKNOWN') {
-        const intentResponse = handleIntent(intentResult, session, products);
+        const intentResponse = await handleIntent(intentResult, session, products);
         if (intentResponse) {
             return intentResponse;
         }
@@ -1524,42 +1566,13 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
             if (matched.length > 0) {
                 session.selectedSubCategory = selectedSub;
                 session.state = "AWAITING_MODEL_SELECTION";
+                session.currentPage = 0;
+                session.searchProducts = matched;
 
                 const emoji = getCategoryEmoji(session.selectedParentCategory || '');
                 const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-                
-                let replyText = `${emoji} *${capSub} - Available Stock:*\n\n`;
-                const displayProducts = matched.slice(0, 15);
-                displayProducts.forEach((p, pIdx) => {
-                    let displayName = p.name;
-                    if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
-                        displayName = `${p.color} ${displayName}`;
-                    }
-                    replyText += `*${pIdx + 1}.* ${displayName}\n`;
-                    replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
-                });
-                replyText += `👆 number mattum reply pannunga bro! 😊`;
 
-                session.searchProducts = displayProducts;
-
-                const imagesToSend = displayProducts.map((p, pIdx) => {
-                    const imgUri = getProductImageUri(p, products);
-                    if (imgUri && imgUri.startsWith('http') && imgUri !== 'null' && imgUri !== 'undefined') {
-                        let displayName = p.name;
-                        if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
-                            displayName = `${p.color} ${displayName}`;
-                        }
-                        return { url: imgUri, caption: `*${pIdx + 1}.* ${displayName} - ₹${p.price}` };
-                    }
-                    return null;
-                }).filter(Boolean);
-
-                return {
-                    replyText,
-                    sendImages: imagesToSend,
-                    searchProducts: displayProducts,
-                    listContext: { type: 'products', data: displayProducts, selectedSubCategory: selectedSub, selectedParentCategory: session.selectedParentCategory }
-                };
+                return await prepareProductsPageResponse(session, products, `${emoji} ${capSub} - Available Stock`);
             } else {
                 session.state = "AWAITING_CATEGORY";
                 return { replyText: "Sorry bro, intha subcategory la stock illa. 😔", sendImages: [] };
@@ -1570,6 +1583,36 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
                 replyText: `⚠️ Wrong choice bro! 1-larunthu ${max} varaikum iruka subcategory number-a mattum choose pannunga. 😊`,
                 sendImages: []
             };
+        }
+    }
+
+    // Handle pagination in AWAITING_MODEL_SELECTION
+    if (session.state === "AWAITING_MODEL_SELECTION") {
+        const isNext = /^(next|next page|next_page|➡ next page)$/i.test(textLower);
+        const isPrev = /^(prev|previous|prev page|previous page|prev_page|⬅ prev page)$/i.test(textLower);
+        
+        if (isNext || isPrev) {
+            const pageSize = 16;
+            const totalProducts = session.searchProducts?.length || 0;
+            const totalPages = Math.ceil(totalProducts / pageSize);
+            let page = session.currentPage || 0;
+            
+            if (isNext) {
+                if ((page + 1) * pageSize < totalProducts) {
+                    session.currentPage = page + 1;
+                } else {
+                    return { replyText: `⚠️ Search end-a reach aytom bro! Last page-la thaan irukeenga. (Page ${page + 1}/${totalPages})`, sendImages: [] };
+                }
+            } else if (isPrev) {
+                if (page > 0) {
+                    session.currentPage = page - 1;
+                } else {
+                    return { replyText: `⚠️ Mudhal page-la thaan irukeenga bro! 😊`, sendImages: [] };
+                }
+            }
+            
+            const label = session.selectedSubCategory || "Products";
+            return await prepareProductsPageResponse(session, products, label);
         }
     }
 
@@ -2314,7 +2357,7 @@ async function handleMessage(msg) {
             }
         }
 
-        const aiResponse = handleSalesAssistantJS(from, text, products, session);
+        const aiResponse = await handleSalesAssistantJS(from, text, products, session);
 
         // Handle human handoff if requested
         if (aiResponse.isHumanHandoff) {

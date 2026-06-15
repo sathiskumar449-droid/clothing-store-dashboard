@@ -12,7 +12,7 @@ const mockProducts = [
     { id: 1717, name: 'POLOFIT WHITE PANT', price: '899', stock: '5', sizes: '32,34', category: 'Formal Pant', color: 'White', imageUri: 'https://supercollections.in/white_pants_healed.jpg' }
 ];
 
-const runTest = (testName, userMessage, initialSession) => {
+const runTest = async (testName, userMessage, initialSession) => {
     console.log(`\n==============================================`);
     console.log(`🧪 TEST CASE: ${testName}`);
     console.log(`👉 User Sent  : "${userMessage}"`);
@@ -23,7 +23,7 @@ const runTest = (testName, userMessage, initialSession) => {
     // Create a deep copy of the session to avoid modifying test parameters
     const session = JSON.parse(JSON.stringify(initialSession));
 
-    const response = handleSalesAssistantJS('1234567890', userMessage, mockProducts, session);
+    const response = await handleSalesAssistantJS('1234567890', userMessage, mockProducts, session);
 
     console.log(`👈 Reply Text  : ${response.replyText || 'N/A'}`);
     if (response.sendButtons) {
@@ -42,28 +42,28 @@ const session1 = {
     state: 'AWAITING_CHECKOUT_DETAILS',
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-runTest('Typo FAQ matching - deleivery', 'How many days take deleivery time', session1);
+await runTest('Typo FAQ matching - deleivery', 'How many days take deleivery time', session1);
 
 // Test 2: Typo FAQ - delcirvy spelling error
 const session2 = {
     state: 'AWAITING_CHECKOUT_DETAILS',
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-runTest('Typo FAQ matching - delcirvy', 'Evlo days agum delcirvy aga', session2);
+await runTest('Typo FAQ matching - delcirvy', 'Evlo days agum delcirvy aga', session2);
 
 // Test 3: Shipping charges typo/synonyms
 const session3 = {
     state: 'AWAITING_CHECKOUT_DETAILS',
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-runTest('Shipping Charges synonym matching', 'Shipping amount?', session3);
+await runTest('Shipping Charges synonym matching', 'Shipping amount?', session3);
 
 // Test 4: Clear Cart intent
 const session4 = {
     state: 'AWAITING_CHECKOUT_DETAILS',
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-runTest('Clear Cart command (resets state & cart)', 'clear cart please', session4);
+await runTest('Clear Cart command (resets state & cart)', 'clear cart please', session4);
 
 // Test 5: Standard shopping flow check (make sure numbers still work)
 const session5 = {
@@ -72,35 +72,35 @@ const session5 = {
     subCategories: ['Formal Pant', 'Cargo Pant'],
     selectedParentCategory: 'Pants'
 };
-runTest('Standard number choice fallback (bypasses intent routing)', '1', session5);
+await runTest('Standard number choice fallback (bypasses intent routing)', '1', session5);
 
 // Test 6: Greeting with items in cart -> AWAITING_PENDING_CART_DECISION
 const sessionGreeting = {
     state: 'AWAITING_CATEGORY',
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-runTest('Greeting with pending cart items', 'hi bro', sessionGreeting);
+await runTest('Greeting with pending cart items', 'hi bro', sessionGreeting);
 
 // Test 7: Decision: Checkout (1)
 const sessionDecisionCheckout = {
     state: 'AWAITING_PENDING_CART_DECISION',
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-runTest('Pending cart decision - Select Checkout', '1', sessionDecisionCheckout);
+await runTest('Pending cart decision - Select Checkout', '1', sessionDecisionCheckout);
 
 // Test 8: Decision: Continue Shopping (2)
 const sessionDecisionContinue = {
     state: 'AWAITING_PENDING_CART_DECISION',
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-runTest('Pending cart decision - Select Continue', 'continue', sessionDecisionContinue);
+await runTest('Pending cart decision - Select Continue', 'continue', sessionDecisionContinue);
 
 // Test 9: Decision: Clear Cart (3)
 const sessionDecisionClear = {
     state: 'AWAITING_PENDING_CART_DECISION',
     cart: [{ id: 1, name: 'Premium Plain Shirt', price: 699, color: 'Black', size: 'M' }]
 };
-runTest('Pending cart decision - Select Clear', '3', sessionDecisionClear);
+await runTest('Pending cart decision - Select Clear', '3', sessionDecisionClear);
 
 // Test 10: Recommendation Image Healing
 // Adding Casual Shirt to cart, and triggering recommendation. Casual Shirt tag is CASUAL_SHIRT.
@@ -112,4 +112,41 @@ const sessionHeal = {
     searchProducts: [mockProducts[5]], // 1714 POLO FIT WHITE PANTS
     cart: []
 };
-runTest('Self-Healing image in size selection', '1', sessionHeal);
+await runTest('Self-Healing image in size selection', '1', sessionHeal);
+
+// Test 11: Pagination - Next Page
+const sessionNext = {
+    state: 'AWAITING_MODEL_SELECTION',
+    currentPage: 0,
+    searchProducts: Array.from({ length: 20 }, (_, i) => ({
+        id: 100 + i,
+        name: `Product ${i + 1}`,
+        price: '100',
+        stock: '10',
+        sizes: 'M',
+        category: 'Casual Shirt',
+        imageUri: 'null'
+    })),
+    selectedSubCategory: 'Casual Shirt',
+    selectedParentCategory: 'Shirts'
+};
+await runTest('Pagination - Next Page', 'next', sessionNext);
+
+// Test 12: Pagination - Prev Page
+const sessionPrev = {
+    state: 'AWAITING_MODEL_SELECTION',
+    currentPage: 1,
+    searchProducts: Array.from({ length: 20 }, (_, i) => ({
+        id: 100 + i,
+        name: `Product ${i + 1}`,
+        price: '100',
+        stock: '10',
+        sizes: 'M',
+        category: 'Casual Shirt',
+        imageUri: 'null'
+    })),
+    selectedSubCategory: 'Casual Shirt',
+    selectedParentCategory: 'Shirts'
+};
+await runTest('Pagination - Prev Page', 'prev', sessionPrev);
+
