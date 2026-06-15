@@ -1358,6 +1358,7 @@ async function handleIntent(intentResult, session, products) {
             session.selectedSize = null;
             session.searchProducts = [];
             session.isRecommendation = false;
+            session.crossSellShown = false;
             
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
@@ -1540,7 +1541,7 @@ async function handleIntent(intentResult, session, products) {
     }
 }
 
-export async function handleSalesAssistantJS(from, userMessage, products, session) {
+async function _handleSalesAssistantJS(from, userMessage, products, session) {
     const normalizedMessage = normalizeQuery(userMessage);
     const textLower = normalizedMessage.toLowerCase();
 
@@ -1548,6 +1549,7 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
     session.cart = session.cart || [];
     session.state = session.state || "AWAITING_CATEGORY";
     session.isRecommendation = session.isRecommendation || false;
+    session.crossSellShown = session.crossSellShown || false;
 
     // Backward compatibility for stale recommendation states
     if (session.state === "AWAITING_RECOMMENDATION_CONFIRM" || session.state === "AWAITING_COMBO_CART_CONFIRM") {
@@ -1616,6 +1618,7 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
             session.selectedSize = null;
             session.searchProducts = [];
             session.isRecommendation = false;
+            session.crossSellShown = false;
 
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
@@ -1972,6 +1975,22 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
                 };
             }
 
+            if (session.crossSellShown) {
+                // If promo teaser already shown once, do not suggest again
+                session.state = "AWAITING_MORE_ITEMS";
+                return {
+                    sendButtons: {
+                        body: `✅ Cart la add achu bro! 😊\n\nVera ethachu pakkiriya bro?`,
+                        buttons: [
+                            { id: 'yes', title: '🛍️ YES' },
+                            { id: 'no_checkout', title: '🛒 NO - Checkout' }
+                        ]
+                    },
+                    sendImages: [],
+                    cart: session.cart
+                };
+            }
+
             // Cross-sell teaser flow: Suggest other category as visual banner
             const addedParent = getParentCategory(product.category).toLowerCase();
             const addedNameLower = (product.name || '').toLowerCase();
@@ -2023,6 +2042,7 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
             session.pendingProduct = null;
             session.selectedSize = null;
             session.isRecommendation = false;
+            session.crossSellShown = true;
 
             const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
             let replyText = `✅ *${addedName}* added to cart.\n\n`;
@@ -2214,6 +2234,7 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
         session.state = "AWAITING_CATEGORY";
         session.pendingProduct = null;
         session.selectedSize = null;
+        session.crossSellShown = false;
         return {
             replyText: "🙏 Thanks bro.\n\nFuture la dress venumna anytime message pannunga.\n\nSuper Collections support pannathuku thanks 😊",
             sendImages: []
@@ -2403,6 +2424,16 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
     };
 }
 
+export async function handleSalesAssistantJS(from, userMessage, products, session) {
+    const res = await _handleSalesAssistantJS(from, userMessage, products, session);
+    if (res && typeof res === 'object') {
+        if (res.crossSellShown === undefined) {
+            res.crossSellShown = session.crossSellShown;
+        }
+    }
+    return res;
+}
+
 // =============================
 // Core Message Handler (async — uses await for all DB calls)
 // =============================
@@ -2537,6 +2568,7 @@ async function handleMessage(msg) {
         if (aiResponse.awaitingRecommendationResponse !== undefined) session.awaitingRecommendationResponse = aiResponse.awaitingRecommendationResponse;
         if (aiResponse.awaitingCartAdditionConfirmation !== undefined) session.awaitingCartAdditionConfirmation = aiResponse.awaitingCartAdditionConfirmation;
         if (aiResponse.pendingProduct !== undefined) session.pendingProduct = aiResponse.pendingProduct;
+        if (aiResponse.crossSellShown !== undefined) session.crossSellShown = aiResponse.crossSellShown;
 
         // Save session details to Supabase
         await saveSession(from, session);
