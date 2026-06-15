@@ -1326,7 +1326,19 @@ function handleIntent(intentResult, session, products) {
                 session.selectedSize = null;
                 session.isRecommendation = false;
 
-                return { replyText, sendImages: [], searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
+                const imagesToSend = displayProducts.map((p, idx) => {
+                    const imgUri = getProductImageUri(p, products);
+                    if (imgUri && imgUri.startsWith('http') && imgUri !== 'null' && imgUri !== 'undefined') {
+                        let displayName = p.name;
+                        if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
+                            displayName = `${p.color} ${displayName}`;
+                        }
+                        return { url: imgUri, caption: `*${idx + 1}.* ${displayName} - ₹${p.price}` };
+                    }
+                    return null;
+                }).filter(Boolean);
+
+                return { replyText, sendImages: imagesToSend, searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
             } else {
                 let replyText = "Sorry bro, search matching products ippo stock illa. 😔";
                 if (session.state !== "AWAITING_CATEGORY") {
@@ -1530,9 +1542,21 @@ export function handleSalesAssistantJS(from, userMessage, products, session) {
 
                 session.searchProducts = displayProducts;
 
+                const imagesToSend = displayProducts.map((p, pIdx) => {
+                    const imgUri = getProductImageUri(p, products);
+                    if (imgUri && imgUri.startsWith('http') && imgUri !== 'null' && imgUri !== 'undefined') {
+                        let displayName = p.name;
+                        if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
+                            displayName = `${p.color} ${displayName}`;
+                        }
+                        return { url: imgUri, caption: `*${pIdx + 1}.* ${displayName} - ₹${p.price}` };
+                    }
+                    return null;
+                }).filter(Boolean);
+
                 return {
                     replyText,
-                    sendImages: [],
+                    sendImages: imagesToSend,
                     searchProducts: displayProducts,
                     listContext: { type: 'products', data: displayProducts, selectedSubCategory: selectedSub, selectedParentCategory: session.selectedParentCategory }
                 };
