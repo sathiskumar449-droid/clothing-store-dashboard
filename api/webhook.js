@@ -54,9 +54,11 @@ export async function getProducts() {
         return (data || []).map(row => {
             const nameLower = (row.name || '').toLowerCase();
             let cat = row.category || 'General';
+            const catLower = String(cat).toLowerCase().trim();
 
-            // Self-healing rules based on name keywords:
-            if (nameLower.includes('t-shirt') || nameLower.includes('tshirt') || nameLower.includes('t shirt') || nameLower.includes('polo t-shirt') || nameLower.includes('five sleeve t shirt') || nameLower.includes('round neck t shirt')) {
+            if (['menu', 'new arrival', 'new arrivals'].includes(catLower)) {
+                cat = 'New Arrivals';
+            } else if (nameLower.includes('t-shirt') || nameLower.includes('tshirt') || nameLower.includes('t shirt') || nameLower.includes('polo t-shirt') || nameLower.includes('five sleeve t shirt') || nameLower.includes('round neck t shirt')) {
                 if (nameLower.includes('polo')) {
                     cat = 'Polo T-Shirts';
                 } else {
@@ -64,7 +66,7 @@ export async function getProducts() {
                 }
             } else if (nameLower.includes('shirt')) {
                 // If it's a shirt but has wrong category like 'Casual Pant'
-                if (cat.toLowerCase().includes('pant') || cat.toLowerCase().includes('phant') || cat === 'Men' || cat === 'New Arrival' || cat === 'General' || cat === 'Casual Shirt') {
+                if (cat.toLowerCase().includes('pant') || cat.toLowerCase().includes('phant') || cat === 'Men' || cat === 'General' || cat === 'Casual Shirt') {
                     cat = 'Casual Shirts';
                 }
             } else if (nameLower.includes('polofit') || nameLower.includes('polo fit pant') || nameLower.includes('polo fit pants')) {
@@ -1043,6 +1045,7 @@ export const getParentCategory = (categoryName) => {
     const catLower = categoryName.toLowerCase().trim();
 
     const rules = [
+        { keywords: ['new arrival', 'new arrivals'], parent: 'New Arrivals' },
         { keywords: ['t-shirt', 't shirt', 'tshirt', 'polo t'], parent: 'T-Shirts' },
         { keywords: ['shirt', 'linen'], parent: 'Shirts' },
         { keywords: ['pant', 'pants', 'phant', 'trouser', 'jogger'], parent: 'Pants' },
@@ -1069,6 +1072,7 @@ export const getParentCategory = (categoryName) => {
 // Dynamically get emoji based on parent category
 const getCategoryEmoji = (parentCategory) => {
     const name = parentCategory.toLowerCase();
+    if (name.includes('new arrival')) return '🆕';
     if (name.includes('shirt')) return '👕';
     if (name.includes('pant') || name.includes('phant') || name.includes('jeans')) return '👖';
     if (name.includes('shorts')) return '🩳';
@@ -1092,7 +1096,7 @@ export const getCategoryCounts = (products) => {
 export const getSortedParents = (categoryCounts) => {
     const parents = Object.keys(categoryCounts).filter(cat => categoryCounts[cat] > 0);
     parents.sort((a, b) => {
-        const order = { 'Shirts': 1, 'T-Shirts': 2, 'Pants': 3, 'Jeans': 4, 'Shorts': 5 };
+        const order = { 'New Arrivals': 1, 'Shirts': 2, 'T-Shirts': 3, 'Pants': 4, 'Jeans': 5, 'Shorts': 6 };
         const orderA = order[a] || 99;
         const orderB = order[b] || 99;
         if (orderA !== orderB) return orderA - orderB;
@@ -1279,7 +1283,7 @@ function detectIntent(text, products = [], session = null) {
     }
 
     // ─── STORE INFO Match ───
-    const storeKeywords = ['address', 'location', 'shop', 'store', 'enga', 'where', 'phone number', 'contact number', 'kodu'];
+    const storeKeywords = ['shop address', 'store address', 'shop enga', 'store enga', 'location', 'phone number', 'contact number', 'kodu'];
     if (storeKeywords.some(k => t.includes(k))) {
         return { type: 'FAQ', reply: '🏪 Super Collections\n\nWe accept online orders only. Please place your order via WhatsApp! 😊' };
     }
@@ -1292,7 +1296,7 @@ function detectIntent(text, products = [], session = null) {
     }
 
     // 5. Category vs Search Intent
-    const parentCategories = ['Shirts', 'Pants', 'T-Shirts', 'Jeans', 'Shorts'];
+    const parentCategories = ['New Arrivals', 'Shirts', 'Pants', 'T-Shirts', 'Jeans', 'Shorts'];
     const foundCategory = parentCategories.find(cat => {
         const catSingular = cat.endsWith('s') ? cat.slice(0, -1) : cat;
         const regex = new RegExp(`\\b${catSingular}(s)?\\b`, 'i');
@@ -1326,6 +1330,8 @@ function detectIntent(text, products = [], session = null) {
 function matchParentCategory(text, parentCategories) {
     const t = text.toLowerCase().trim();
     const mappings = {
+        'new arrival': 'New Arrivals',
+        'new arrivals': 'New Arrivals',
         'shirt': 'Shirts',
         'shirts': 'Shirts',
         'pant': 'Pants',
@@ -1353,10 +1359,35 @@ function matchParentCategory(text, parentCategories) {
     return parentCategories.find(cat => t.includes(cat.toLowerCase()));
 }
 
+function withInlineCancelSection(sections) {
+    const normalizedSections = (sections || []).map(section => ({
+        ...section,
+        rows: Array.isArray(section.rows) ? [...section.rows] : []
+    }));
+    const hasCancel = normalizedSections.some(section =>
+        section.rows.some(row => row.id === 'cancel_shopping')
+    );
+
+    if (!hasCancel) {
+        normalizedSections.push({
+            title: "Actions",
+            rows: [
+                {
+                    id: 'cancel_shopping',
+                    title: '❌ Cancel',
+                    description: 'Stop shopping for now'
+                }
+            ]
+        });
+    }
+
+    return normalizedSections;
+}
+
 function makeCategoriesListResponse(parents, categoryCounts, bodyPrefix = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.") {
     const body = bodyPrefix;
     const buttonText = "Select Category";
-    const sections = [
+    const sections = withInlineCancelSection([
         {
             title: "Categories",
             rows: parents.map((cat, idx) => {
@@ -1368,7 +1399,7 @@ function makeCategoriesListResponse(parents, categoryCounts, bodyPrefix = "👋 
                 };
             })
         }
-    ];
+    ]);
     return {
         sendList: { body, buttonText, sections },
         sendImages: [],
@@ -1379,7 +1410,7 @@ function makeCategoriesListResponse(parents, categoryCounts, bodyPrefix = "👋 
 function makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent) {
     const body = `*${selectedParent}*:\n\nPlease select a subcategory.`;
     const buttonText = "Select Subcategory";
-    const sections = [
+    const sections = withInlineCancelSection([
         {
             title: "Subcategories",
             rows: subs.map((sub, sIdx) => {
@@ -1391,7 +1422,7 @@ function makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent) 
                 };
             })
         }
-    ];
+    ]);
     return {
         sendList: { body, buttonText, sections },
         sendImages: [],
@@ -3811,7 +3842,8 @@ async function handleMessage(msg) {
 
         // Recover state context if replying to a listed menu message
         const quotedMsgId = msg.context?.id;
-        if (quotedMsgId && session.msgContext?.[quotedMsgId]) {
+        const isListReply = Boolean(msg.interactive?.list_reply?.id);
+        if (isListReply && quotedMsgId && session.msgContext?.[quotedMsgId]) {
             const context = session.msgContext[quotedMsgId];
             console.log(`[handleMessage] Recovered context from quoted message ${quotedMsgId}:`, context);
             if (context.type === 'categories') {
@@ -4016,9 +4048,6 @@ async function handleMessage(msg) {
                 buttonMsg += '\n' + aiResponse.sendButtons.buttons.map(b => `[${b.title}]`).join(' ');
             }
             await logChatMessage(from, 'bot', buttonMsg);
-        } else if (aiResponse.sendList) {
-            await sendButtons(from, 'Options:', [{ id: 'cancel_shopping', title: '❌ Cancel' }]);
-            await logChatMessage(from, 'bot', 'Options:\n[❌ Cancel]');
         }
 
     } catch (err) {

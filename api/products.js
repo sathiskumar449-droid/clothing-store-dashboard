@@ -164,7 +164,13 @@ function dbRowToProduct(row) {
 
 const selectBestCategory = (categories) => {
     if (!Array.isArray(categories) || categories.length === 0) return 'General';
-    const genericList = ['men', 'new arrival', 'new arrivals', 'general', 'uncategorized', 'kids'];
+    const newArrivalCategory = categories.find(c => {
+        const name = (c.name || '').toLowerCase().trim();
+        return name === 'new arrival' || name === 'new arrivals';
+    });
+    if (newArrivalCategory) return 'New Arrivals';
+
+    const genericList = ['men', 'menu', 'general', 'uncategorized', 'kids'];
     const specificCat = categories.find(c => {
         const name = (c.name || '').toLowerCase().trim();
         return !genericList.includes(name);
