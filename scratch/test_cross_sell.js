@@ -38,13 +38,18 @@ async function runFlow() {
         { msg: "1", desc: "Select category 1 (Shirts)" },
         { msg: "1", desc: "Select product 1 (Premium Plain Shirt)" },
         { msg: "M", desc: "Select size M" },
-        { msg: "qty_plus", desc: "Increment quantity to 2" },
-        { msg: "qty_confirm", desc: "Confirm quantity of 2" },
+        { msg: "qty_2", desc: "Select quantity 2" },
         { msg: "PANTS", desc: "Browse pants" },
         { msg: "2", desc: "Select subcategory 2 (Pants)" },
         { msg: "1", desc: "Select product 1 (Polo Fit Pant)" },
         { msg: "32", desc: "Select size 32" },
-        { msg: "qty_confirm", desc: "Confirm quantity of 1" }
+        { msg: "qty_1", desc: "Select quantity 1" },
+        { msg: "no_checkout", desc: "Decline continue shopping, go to checkout" },
+        { msg: "Ravi", desc: "Enter name" },
+        { msg: "use_current_phone", desc: "Select use current phone number" },
+        { msg: "642126", desc: "Enter pincode" },
+        { msg: "12 Anna Nagar, Chennai", desc: "Enter door no & street address" },
+        { msg: "confirm", desc: "Confirm the order details" }
     ];
 
     const phone = "1234567890";
@@ -66,7 +71,7 @@ async function runFlow() {
         if (response.pendingProduct !== undefined) session.pendingProduct = response.pendingProduct;
         if (response.crossSellShown !== undefined) session.crossSellShown = response.crossSellShown;
 
-        console.log(`Reply: ${response.replyText || (response.sendButtons ? response.sendButtons.body : 'N/A')}`);
+        console.log(`Reply: ${response.replyText || (response.sendButtons ? response.sendButtons.body : (response.sendList ? response.sendList.body : 'N/A'))}`);
         if (response.sendImages && response.sendImages.length > 0) {
             console.log(`Images: ${JSON.stringify(response.sendImages)}`);
         }

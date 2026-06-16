@@ -76,8 +76,8 @@ async function runTests() {
     res = await handleSalesAssistantJS("12345", "M", mockProducts, sessionMultiple);
     assert.strictEqual(sessionMultiple.state, "AWAITING_PRODUCT_QTY", "Should transition to AWAITING_PRODUCT_QTY");
     
-    // User confirms qty -> transitions to AWAITING_PRODUCT_SIZE for the second product
-    res = await handleSalesAssistantJS("12345", "qty_confirm", mockProducts, sessionMultiple);
+    // User selects quantity -> transitions to AWAITING_PRODUCT_SIZE for the second product
+    res = await handleSalesAssistantJS("12345", "qty_2", mockProducts, sessionMultiple);
     console.log("Response prompt for the second product:\n", JSON.stringify(res, null, 2));
     
     // Assert next prompt does NOT send next product images
@@ -119,8 +119,8 @@ async function runTests() {
     assert.strictEqual(sessionPantValidation.state, "AWAITING_PRODUCT_QTY", "Should transition to AWAITING_PRODUCT_QTY");
     assert.strictEqual(sessionPantValidation.selectedSize, "28 SIZE", "Normalized size should map back to 28 SIZE");
     
-    // User confirms qty -> added to cart
-    res = await handleSalesAssistantJS("12345", "qty_confirm", mockProducts, sessionPantValidation);
+    // User selects quantity -> added to cart
+    res = await handleSalesAssistantJS("12345", "qty_1", mockProducts, sessionPantValidation);
     assert.strictEqual(sessionPantValidation.orderingCart.length, 1, "Should successfully add 1 item to orderingCart");
     assert.strictEqual(sessionPantValidation.orderingCart[0].size, "28 SIZE", "Cart item size should be 28 SIZE");
 

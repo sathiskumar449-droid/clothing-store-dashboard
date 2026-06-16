@@ -1073,19 +1073,71 @@ export const getSortedParents = (categoryCounts) => {
     return parents;
 };
 
+// Helper to retrieve customer's last order details
+async function getCustomerLastOrder(phone) {
+    try {
+        const cleanPhone = String(phone).trim();
+        const { data, error } = await supabase
+            .from('orders')
+            .select('customer_name, customer_phone, customer_address')
+            .eq('customer_phone', cleanPhone)
+            .order('date', { ascending: false })
+            .limit(1);
+        if (error) throw error;
+        if (data && data.length > 0) {
+            return data[0];
+        }
+    } catch (err) {
+        console.error("Error fetching customer last order:", err);
+    }
+    return null;
+}
+
 // Helper to initiate checkout
-const startCheckout = (session) => {
+const startCheckout = async (session, from = null) => {
     if (!session.cart || session.cart.length === 0) {
         session.state = "AWAITING_CATEGORY";
         return { replyText: "Your cart is empty. 😊 Please select a category to start shopping.", sendImages: [] };
     }
+
+    if (from) {
+        const lastOrder = await getCustomerLastOrder(from);
+        if (lastOrder && lastOrder.customer_address && lastOrder.customer_name) {
+            session.state = "AWAITING_CHECKOUT_USE_SAVED_ADDRESS";
+            session.orderDetails = {
+                customerName: lastOrder.customer_name,
+                customerPhone: lastOrder.customer_phone || from,
+                customerAddress: lastOrder.customer_address,
+                paymentMethod: 'UPI'
+            };
+
+            let cartSummary = `🛒 *Your Cart:*\n\n`;
+            session.cart.forEach((item, i) => {
+                cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
+            });
+            const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
+            cartSummary += `\n💰 Total: ₹${cartTotal}\n\n`;
+
+            return {
+                sendButtons: {
+                    body: `${cartSummary}We found a saved address from your previous order:\n\n👤 *Name:* ${lastOrder.customer_name}\n📞 *Phone:* ${lastOrder.customer_phone || from}\n🏠 *Address:* ${lastOrder.customer_address}\n\nWould you like to use this saved address?`,
+                    buttons: [
+                        { id: 'use_saved_yes', title: '✅ Yes, Use Saved' },
+                        { id: 'use_saved_no', title: '✍️ Enter New Address' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+    }
+
     let cartSummary = `🛒 *Your Cart:*\n\n`;
     session.cart.forEach((item, i) => {
         cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
     });
     const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
-    cartSummary += `\n💰 Total: ₹${cartTotal}\n\nPlease provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`;
-    session.state = "AWAITING_CHECKOUT_DETAILS";
+    cartSummary += `\n💰 Total: ₹${cartTotal}\n\nThank you for shopping! Let's get your delivery details step-by-step. 😊\n\n👤 Please enter your *Full Name*:`;
+    session.state = "AWAITING_CHECKOUT_NAME";
     session.orderDetails = { customerName: '', customerPhone: '', customerAddress: '', paymentMethod: 'UPI' };
     return { replyText: cartSummary, sendImages: [] };
 };
@@ -1110,7 +1162,7 @@ function detectIntent(text, products = [], session = null) {
 
     // 2. CHECKOUT Intent
     const checkoutKeywords = ['checkout', 'place order', 'confirm order', 'buy now', 'buy', 'order confirm'];
-    if (checkoutKeywords.some(k => t === k || t.includes('checkout') || t.includes('place order') || t.includes('confirm order') || t.includes('buy now'))) {
+    if (checkoutKeywords.some(k => t === k || (t.includes('checkout') && !t.includes('no_checkout') && !t.includes('no checkout') && !t.includes('no-checkout')) || t.includes('place order') || t.includes('confirm order') || t.includes('buy now'))) {
         return { type: 'CHECKOUT' };
     }
 
@@ -1423,14 +1475,44 @@ async function getStatePrompt(session, products) {
                 sendImages: []
             };
         }
-        case "AWAITING_CHECKOUT_DETAILS": {
+        case "AWAITING_CHECKOUT_USE_SAVED_ADDRESS": {
             let cartSummary = `🛒 *Your Cart:*\n\n`;
             session.cart.forEach((item, i) => {
                 cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
             });
             const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
-            cartSummary += `\n💰 Total: ₹${cartTotal}\n\nPlease provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`;
-            return { replyText: cartSummary, sendImages: [] };
+            cartSummary += `\n💰 Total: ₹${cartTotal}\n\n`;
+
+            return {
+                sendButtons: {
+                    body: `${cartSummary}We found a saved address from your previous order:\n\n👤 *Name:* ${session.orderDetails?.customerName}\n📞 *Phone:* ${session.orderDetails?.customerPhone}\n🏠 *Address:* ${session.orderDetails?.customerAddress}\n\nWould you like to use this saved address?`,
+                    buttons: [
+                        { id: 'use_saved_yes', title: '✅ Yes, Use Saved' },
+                        { id: 'use_saved_no', title: '✍️ Enter New Address' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+        case "AWAITING_CHECKOUT_NAME": {
+            return { replyText: "👤 Please enter your *Full Name*:", sendImages: [] };
+        }
+        case "AWAITING_CHECKOUT_PHONE": {
+            return {
+                sendButtons: {
+                    body: `👤 Name: *${session.orderDetails?.customerName || ''}*\n\n📞 Please enter your *Mobile Number* or choose to use your current WhatsApp number:`,
+                    buttons: [
+                        { id: 'use_current_phone', title: '📱 Use Current Number' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+        case "AWAITING_CHECKOUT_PINCODE": {
+            return { replyText: "📍 Please enter your 6-digit *Delivery Pincode* (e.g. 642126):", sendImages: [] };
+        }
+        case "AWAITING_CHECKOUT_ADDRESS": {
+            return { replyText: "🏠 Please enter your *Delivery Address* (Door No, Street Name, Area/City):", sendImages: [] };
         }
         case "AWAITING_PRODUCT_SIZE": {
             const queue = session.orderingQueue || [];
@@ -1496,40 +1578,59 @@ async function getStatePrompt(session, products) {
             if (!currentItem) return { replyText: "Please select a category to start shopping.", sendImages: [] };
             const product = currentItem.product;
             const size = session.selectedSize || 'N/A';
-            const qty = session.tempQty || 1;
 
-            const body = `📐 *${product.name}*\nSelected Size: *${size}*\nSelected Qty: *${qty}*\n\nUse the buttons below to change quantity or confirm:`;
+            const body = `📐 *${product.name}*\nSelected Size: *${size}*\n\nPlease select the quantity you want to purchase:`;
+
+            const sections = [
+                {
+                    title: "Select Quantity",
+                    rows: [
+                        { id: "qty_1", title: "1", description: "Buy 1 item" },
+                        { id: "qty_2", title: "2", description: "Buy 2 items" },
+                        { id: "qty_3", title: "3", description: "Buy 3 items" },
+                        { id: "qty_4", title: "4", description: "Buy 4 items" },
+                        { id: "qty_5", title: "5", description: "Buy 5 items" },
+                        { id: "qty_6", title: "6", description: "Buy 6 items" },
+                        { id: "qty_7", title: "7", description: "Buy 7 items" },
+                        { id: "qty_8", title: "8", description: "Buy 8 items" },
+                        { id: "qty_9", title: "9", description: "Buy 9 items" },
+                        { id: "qty_10", title: "10", description: "Buy 10 items" }
+                    ]
+                }
+            ];
 
             return {
-                sendButtons: {
+                sendList: {
                     body,
-                    buttons: [
-                        { id: 'qty_minus', title: '➖ Qty' },
-                        { id: 'qty_plus', title: '➕ Qty' },
-                        { id: 'qty_confirm', title: `✅ Confirm: ${qty}` }
-                    ]
+                    buttonText: "Choose Qty",
+                    sections
                 },
                 sendImages: []
             };
         }
         case "AWAITING_ORDER_CONFIRMATION": {
-            let summaryText = `Order Summary\n\n`;
+            let summaryText = `🛒 *Order Summary:*\n\n`;
             let total = 0;
             const cartItems = session.cart || [];
             cartItems.forEach(item => {
                 const itemTotal = Number(item.price) * (item.qty || 1);
                 total += itemTotal;
-                summaryText += `${item.product || item.name}\nSize: ${item.size}\nQty: ${item.qty || 1}\nPrice: ₹${itemTotal}\n\n`;
+                summaryText += `• ${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${itemTotal}\n`;
             });
-            summaryText += `Total: ₹${total}`;
+            summaryText += `\n💰 *Total:* ₹${total}\n\n`;
+            if (session.orderDetails) {
+                summaryText += `👤 *Name:* ${session.orderDetails.customerName}\n`;
+                summaryText += `📞 *Phone:* ${session.orderDetails.customerPhone}\n`;
+                summaryText += `🏠 *Address:* ${session.orderDetails.customerAddress}\n\n`;
+            }
             return {
                 replyText: summaryText,
                 sendImages: [],
                 sendButtons: {
-                    body: `Confirm Order?`,
+                    body: `Is this information correct?`,
                     buttons: [
-                        { id: 'confirm_order_yes', title: '1. Confirm' },
-                        { id: 'confirm_order_cancel', title: '2. Cancel' }
+                        { id: 'confirm_order_yes', title: '✅ Yes, Place Order' },
+                        { id: 'confirm_order_cancel', title: '❌ Cancel' }
                     ]
                 }
             };
@@ -1668,8 +1769,7 @@ async function handleIntent(intentResult, session, products, from) {
                 }
                 return { replyText, sendImages: [] };
             }
-            session.state = "AWAITING_ORDER_CONFIRMATION";
-            return await getStatePrompt(session, products);
+            return await startCheckout(session, from);
         }
         case 'FAQ': {
             let replyText = intentResult.reply;
@@ -1868,7 +1968,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const isClear = lowerInput === "clear" || lowerInput === "cancel" || lowerInput === "delete" || lowerInput === "3" || lowerInput === "3️⃣" || lowerInput.includes("clear") || lowerInput.includes("cancel") || lowerInput.includes("delete");
 
         if (isCheckout) {
-            return startCheckout(session);
+            return await startCheckout(session, from);
         } else if (isContinue) {
             session.state = "AWAITING_CATEGORY";
             const categoryCounts = getCategoryCounts(products);
@@ -1930,25 +2030,86 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         }
     }
 
-    // STATE: AWAITING_CHECKOUT_DETAILS
-    if (session.state === "AWAITING_CHECKOUT_DETAILS") {
-        const parts = userMessage.split(',').map(s => s.trim());
-        if (parts.length >= 3) {
-            session.orderDetails.customerName = parts[0];
-            session.orderDetails.customerPhone = parts[1];
-            session.orderDetails.customerAddress = parts.slice(2).join(', ');
-            session.isOrderConfirmed = true;
-            return {
-                sendImages: [],
-                isOrderConfirmed: true,
-                orderDetails: session.orderDetails
-            };
+    // STATE: AWAITING_CHECKOUT_USE_SAVED_ADDRESS
+    if (session.state === "AWAITING_CHECKOUT_USE_SAVED_ADDRESS") {
+        const choice = textLower.trim();
+        if (choice === "use_saved_yes" || choice.includes("yes") || choice === "1") {
+            session.state = "AWAITING_ORDER_CONFIRMATION";
+            return await getStatePrompt(session, products);
         } else {
+            session.state = "AWAITING_CHECKOUT_NAME";
+            session.orderDetails = { customerName: '', customerPhone: '', customerAddress: '', paymentMethod: 'UPI' };
             return {
-                replyText: `⚠️ Please provide your details in the correct format:\n\n*Full Name, Mobile Number, Delivery Address*\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`,
+                replyText: "👤 Please enter your *Full Name*:",
                 sendImages: []
             };
         }
+    }
+
+    // STATE: AWAITING_CHECKOUT_NAME
+    if (session.state === "AWAITING_CHECKOUT_NAME") {
+        session.orderDetails = session.orderDetails || {};
+        session.orderDetails.customerName = userMessage.trim();
+        session.state = "AWAITING_CHECKOUT_PHONE";
+
+        return {
+            sendButtons: {
+                body: `👤 Name: *${session.orderDetails.customerName}*\n\n📞 Please enter your *Mobile Number* or choose to use your current WhatsApp number:`,
+                buttons: [
+                    { id: 'use_current_phone', title: '📱 Use Current Number' }
+                ]
+            },
+            sendImages: []
+        };
+    }
+
+    // STATE: AWAITING_CHECKOUT_PHONE
+    if (session.state === "AWAITING_CHECKOUT_PHONE") {
+        session.orderDetails = session.orderDetails || {};
+        const choice = textLower.trim();
+        if (choice === "use_current_phone" || choice.includes("use current")) {
+            session.orderDetails.customerPhone = from;
+        } else {
+            const cleanedNum = choice.replace(/\D/g, '');
+            if (cleanedNum.length < 10) {
+                return {
+                    replyText: "⚠️ Invalid mobile number. Please enter a valid 10-digit mobile number:",
+                    sendImages: []
+                };
+            }
+            session.orderDetails.customerPhone = userMessage.trim();
+        }
+        session.state = "AWAITING_CHECKOUT_PINCODE";
+        return {
+            replyText: "📍 Please enter your 6-digit *Delivery Pincode* (e.g. 642126):",
+            sendImages: []
+        };
+    }
+
+    // STATE: AWAITING_CHECKOUT_PINCODE
+    if (session.state === "AWAITING_CHECKOUT_PINCODE") {
+        session.orderDetails = session.orderDetails || {};
+        const choice = textLower.trim().replace(/\s/g, '');
+        if (!/^\d{6}$/.test(choice)) {
+            return {
+                replyText: "⚠️ Invalid Pincode. Please enter a valid 6-digit Pincode (e.g., 642126):",
+                sendImages: []
+            };
+        }
+        session.orderDetails.pincode = choice;
+        session.state = "AWAITING_CHECKOUT_ADDRESS";
+        return {
+            replyText: "🏠 Please enter your *Delivery Address* (Door No, Street Name, Area/City):",
+            sendImages: []
+        };
+    }
+
+    // STATE: AWAITING_CHECKOUT_ADDRESS
+    if (session.state === "AWAITING_CHECKOUT_ADDRESS") {
+        session.orderDetails = session.orderDetails || {};
+        session.orderDetails.customerAddress = userMessage.trim() + ", Pin: " + (session.orderDetails.pincode || '');
+        session.state = "AWAITING_ORDER_CONFIRMATION";
+        return await getStatePrompt(session, products);
     }
 
     // STATE: AWAITING_SUBCATEGORY_SELECTION (expects a number)
@@ -2107,155 +2268,171 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         }
 
         const product = currentItem.product;
-        const currentQty = session.tempQty || 1;
 
-        if (textLower === "qty_plus" || textLower.includes("plus") || textLower === "+") {
-            session.tempQty = currentQty + 1;
-            return await getStatePrompt(session, products);
-        } else if (textLower === "qty_minus" || textLower.includes("minus") || textLower === "-") {
-            if (currentQty > 1) {
-                session.tempQty = currentQty - 1;
-            }
-            return await getStatePrompt(session, products);
-        } else if (textLower === "qty_confirm" || textLower.includes("confirm") || textLower === "confirm_qty") {
-            session.orderingCart = session.orderingCart || [];
-            session.orderingCart.push({
-                id: product.id,
-                name: product.name,
-                product: product.name,
-                size: session.selectedSize || 'M',
-                qty: currentQty,
-                price: Number(product.price),
-                color: product.color || ''
-            });
-
-            const nextIndex = currentIndex + 1;
-            session.orderingIndex = nextIndex;
-
-            if (nextIndex < queue.length) {
-                session.selectedSize = null;
-                session.tempQty = 1;
-                session.state = "AWAITING_PRODUCT_SIZE";
-                return await getStatePrompt(session, products);
-            } else {
-                session.cart = session.orderingCart;
-
-                // Fetch recommendations for the last configured product
-                const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
-                const excludedIds = session.cart.map(item => item.id);
-                const related = getRecommendationsList(product, uniqueProducts, excludedIds);
-
-                if (related.length > 0 && !session.crossSellShown) {
-                    let promoCandidates = related.slice(0, 4);
-
-                    // Ensure unique product IDs inside collage
-                    if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
-                        const uniquePromoCandidates = [];
-                        const seenIds = new Set();
-                        for (const p of promoCandidates) {
-                            if (!seenIds.has(p.id)) {
-                                seenIds.add(p.id);
-                                uniquePromoCandidates.push(p);
-                            }
-                        }
-                        promoCandidates = uniquePromoCandidates;
-                    }
-
-                    let collageUrl = null;
-                    if (promoCandidates.length > 1) {
-                        collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
-                    } else if (promoCandidates.length === 1) {
-                        collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
-                    }
-
-                    let promoCategory = '';
-                    if (isShirtCategory(product.category, product.name)) {
-                        promoCategory = 'Pants';
-                    } else if (isPantOrJeansCategory(product.category, product.name)) {
-                        promoCategory = 'Shirts';
-                    } else if (isTShirtCategory(product.category, product.name)) {
-                        promoCategory = 'Pants';
-                    } else {
-                        promoCategory = 'Pants';
-                    }
-                    session.promoCategory = promoCategory;
-
-                    session.state = "AWAITING_CATEGORY";
-                    session.pendingProduct = null;
-                    session.selectedSize = null;
-                    session.isRecommendation = false;
-                    session.crossSellShown = true;
-
-                    let promoEmoji = '🛍️';
-                    if (promoCategory === 'Shirts') promoEmoji = '👕';
-                    if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
-                    if (promoCategory === 'T-Shirts') promoEmoji = '👕';
-                    if (promoCategory === 'Shorts') promoEmoji = '🩳';
-
-                    const promoKeyword = promoCategory.toUpperCase();
-
-                    let bodyText = `🔥 Special Offer!\n`;
-                    bodyText += `Matching Collection Available`;
-
-                    return {
-                        sendButtons: {
-                            body: bodyText,
-                            buttons: [
-                                { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
-                                { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
-                            ]
-                        },
-                        sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
-                        cart: session.cart
-                    };
-                } else {
-                    session.state = "AWAITING_MORE_ITEMS";
-                    return {
-                        sendButtons: {
-                            body: `✅ Item added to cart successfully.\n\nWould you like to continue shopping?`,
-                            buttons: [
-                                { id: 'yes', title: '🛍️ YES' },
-                                { id: 'no_checkout', title: '🛒 NO - Checkout' }
-                            ]
-                        },
-                        sendImages: [],
-                        cart: session.cart
-                    };
-                }
-            }
+        // Parse selected quantity
+        let selectedQty = 1;
+        const matchQty = textLower.match(/^qty_(\d+)$/);
+        if (matchQty) {
+            selectedQty = parseInt(matchQty[1], 10);
         } else {
-            // Check if user entered a number directly to change quantity
             const typedQty = parseInt(textLower.trim(), 10);
             if (!isNaN(typedQty) && typedQty > 0 && typedQty < 100) {
-                session.tempQty = typedQty;
-                return await getStatePrompt(session, products);
+                selectedQty = typedQty;
+            } else {
+                // Fallback for invalid input in quantity stage
+                const size = session.selectedSize || 'N/A';
+                const body = `📐 *${product.name}*\nSelected Size: *${size}*\n\nPlease select the quantity you want to purchase:`;
+                const sections = [
+                    {
+                        title: "Select Quantity",
+                        rows: [
+                            { id: "qty_1", title: "1", description: "Buy 1 item" },
+                            { id: "qty_2", title: "2", description: "Buy 2 items" },
+                            { id: "qty_3", title: "3", description: "Buy 3 items" },
+                            { id: "qty_4", title: "4", description: "Buy 4 items" },
+                            { id: "qty_5", title: "5", description: "Buy 5 items" },
+                            { id: "qty_6", title: "6", description: "Buy 6 items" },
+                            { id: "qty_7", title: "7", description: "Buy 7 items" },
+                            { id: "qty_8", title: "8", description: "Buy 8 items" },
+                            { id: "qty_9", title: "9", description: "Buy 9 items" },
+                            { id: "qty_10", title: "10", description: "Buy 10 items" }
+                        ]
+                    }
+                ];
+                return {
+                    replyText: `⚠️ Invalid quantity. Please select a quantity from the list or type a number:`,
+                    sendList: {
+                        body,
+                        buttonText: "Choose Qty",
+                        sections
+                    },
+                    sendImages: []
+                };
             }
+        }
 
-            // Fallback for invalid input in quantity stage
-            return {
-                replyText: `⚠️ Invalid response. Please use the buttons below to change the quantity or confirm your selection:`,
-                sendButtons: {
-                    body: `📐 *${product.name}*\nSelected Size: *${session.selectedSize || 'N/A'}*\nSelected Qty: *${currentQty}*\n\nUse the buttons below to change quantity or confirm:`,
-                    buttons: [
-                        { id: 'qty_minus', title: '➖ Qty' },
-                        { id: 'qty_plus', title: '➕ Qty' },
-                        { id: 'qty_confirm', title: `✅ Confirm: ${currentQty}` }
-                    ]
-                },
-                sendImages: []
-            };
+        // Successfully parsed quantity! Add to cart.
+        session.orderingCart = session.orderingCart || [];
+        session.orderingCart.push({
+            id: product.id,
+            name: product.name,
+            product: product.name,
+            size: session.selectedSize || 'M',
+            qty: selectedQty,
+            price: Number(product.price),
+            color: product.color || ''
+        });
+
+        const nextIndex = currentIndex + 1;
+        session.orderingIndex = nextIndex;
+
+        if (nextIndex < queue.length) {
+            session.selectedSize = null;
+            session.tempQty = 1;
+            session.state = "AWAITING_PRODUCT_SIZE";
+            return await getStatePrompt(session, products);
+        } else {
+            session.cart = session.orderingCart;
+
+            // Fetch recommendations for the last configured product
+            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
+            const excludedIds = session.cart.map(item => item.id);
+            const related = getRecommendationsList(product, uniqueProducts, excludedIds);
+
+            if (related.length > 0 && !session.crossSellShown) {
+                let promoCandidates = related.slice(0, 4);
+
+                // Ensure unique product IDs inside collage
+                if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
+                    const uniquePromoCandidates = [];
+                    const seenIds = new Set();
+                    for (const p of promoCandidates) {
+                        if (!seenIds.has(p.id)) {
+                            seenIds.add(p.id);
+                            uniquePromoCandidates.push(p);
+                        }
+                    }
+                    promoCandidates = uniquePromoCandidates;
+                }
+
+                let collageUrl = null;
+                if (promoCandidates.length > 1) {
+                    collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
+                } else if (promoCandidates.length === 1) {
+                    collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
+                }
+
+                let promoCategory = '';
+                if (isShirtCategory(product.category, product.name)) {
+                    promoCategory = 'Pants';
+                } else if (isPantOrJeansCategory(product.category, product.name)) {
+                    promoCategory = 'Shirts';
+                } else if (isTShirtCategory(product.category, product.name)) {
+                    promoCategory = 'Pants';
+                } else {
+                    promoCategory = 'Pants';
+                }
+                session.promoCategory = promoCategory;
+
+                session.state = "AWAITING_CATEGORY";
+                session.pendingProduct = null;
+                session.selectedSize = null;
+                session.isRecommendation = false;
+                session.crossSellShown = true;
+
+                let promoEmoji = '🛍️';
+                if (promoCategory === 'Shirts') promoEmoji = '👕';
+                if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
+                if (promoCategory === 'T-Shirts') promoEmoji = '👕';
+                if (promoCategory === 'Shorts') promoEmoji = '🩳';
+
+                const promoKeyword = promoCategory.toUpperCase();
+
+                let bodyText = `🔥 Special Offer!\n`;
+                bodyText += `Matching Collection Available`;
+
+                return {
+                    sendButtons: {
+                        body: bodyText,
+                        buttons: [
+                            { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
+                            { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
+                        ]
+                    },
+                    sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
+                    cart: session.cart
+                };
+            } else {
+                session.state = "AWAITING_MORE_ITEMS";
+                return {
+                    sendButtons: {
+                        body: `✅ Item added to cart successfully.\n\nWould you like to continue shopping?`,
+                        buttons: [
+                            { id: 'yes', title: '🛍️ YES' },
+                            { id: 'no_checkout', title: '🛒 NO - Checkout' }
+                        ]
+                    },
+                    sendImages: [],
+                    cart: session.cart
+                };
+            }
         }
     }
 
     // STATE: AWAITING_ORDER_CONFIRMATION
     if (session.state === "AWAITING_ORDER_CONFIRMATION") {
         const choice = textLower.trim();
-        const isConfirm = choice === "1" || choice === "confirm" || choice === "confirm_order_yes" || choice.includes("confirm");
+        const isConfirm = choice === "1" || choice === "confirm" || choice === "confirm_order_yes" || choice.includes("confirm") || choice.includes("yes");
         const isModify = choice === "modify" || choice === "confirm_order_modify" || choice.includes("modify");
-        const isCancel = choice === "2" || choice === "cancel" || choice === "confirm_order_cancel" || choice.includes("cancel") || choice === "3";
+        const isCancel = choice === "2" || choice === "cancel" || choice === "confirm_order_cancel" || choice.includes("cancel") || choice === "3" || choice.includes("no");
 
         if (isConfirm) {
-            return startCheckout(session);
+            session.isOrderConfirmed = true;
+            return {
+                sendImages: [],
+                isOrderConfirmed: true,
+                orderDetails: session.orderDetails
+            };
         } else if (isModify) {
             session.cart = [];
             session.orderingCart = [];
@@ -2281,10 +2458,10 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             return {
                 replyText: `⚠️ Invalid response. Please confirm or cancel your order using the buttons below.`,
                 sendButtons: {
-                    body: `Confirm Order?`,
+                    body: `Is this information correct?`,
                     buttons: [
-                        { id: 'confirm_order_yes', title: '1. Confirm' },
-                        { id: 'confirm_order_cancel', title: '2. Cancel' }
+                        { id: 'confirm_order_yes', title: '✅ Yes, Place Order' },
+                        { id: 'confirm_order_cancel', title: '❌ Cancel' }
                     ]
                 },
                 sendImages: []
@@ -2675,7 +2852,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         } else if (textLower === "no" || textLower === "n" || textLower === "illai" || textLower === "checkout" || textLower === "no_checkout") {
-            return startCheckout(session);
+            return await startCheckout(session, from);
         } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
             return {
                 replyText: `⚠️ Invalid response. Please reply with YES or NO. 😊`,
@@ -2841,7 +3018,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
     // CHECKOUT INITIATION
     if (isCheckoutTrigger) {
-        return startCheckout(session);
+        return await startCheckout(session, from);
     }
 
     // NATURAL CATEGORY / PRODUCT SEARCH
@@ -2992,9 +3169,33 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             sendImages: []
         };
     }
-    if (session.state === "AWAITING_CHECKOUT_DETAILS") {
+    if (session.state === "AWAITING_CHECKOUT_USE_SAVED_ADDRESS") {
         return {
-            replyText: `Please provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`,
+            replyText: "⚠️ Please reply with YES or NO to use your saved address.",
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_CHECKOUT_NAME") {
+        return {
+            replyText: "👤 Please enter your *Full Name*:",
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_CHECKOUT_PHONE") {
+        return {
+            replyText: "⚠️ Please enter a valid mobile number or choose to use your current WhatsApp number.",
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_CHECKOUT_PINCODE") {
+        return {
+            replyText: "⚠️ Please enter your 6-digit *Delivery Pincode*:",
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_CHECKOUT_ADDRESS") {
+        return {
+            replyText: "🏠 Please enter your *Delivery Address* (Door No, Street Name, Area/City):",
             sendImages: []
         };
     }
