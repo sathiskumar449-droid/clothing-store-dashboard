@@ -1527,7 +1527,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
     return response;
 }
 
-async function handleIntent(intentResult, session, products) {
+async function handleIntent(intentResult, session, products, from) {
     switch (intentResult.type) {
         case 'CLEAR_CART': {
             session.cart = [];
@@ -1612,8 +1612,12 @@ async function handleIntent(intentResult, session, products) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            const welcomePrefix = await getWelcomeMessagePrefix();
-            let replyText = `${welcomePrefix}👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n`;
+            const welcomeMsg = await getWelcomeMessagePrefix();
+            if (welcomeMsg) {
+                await sendText(from, welcomeMsg.trim());
+                await logChatMessage(from, 'bot', welcomeMsg.trim());
+            }
+            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
@@ -1743,7 +1747,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // ─── Intent Detection & Routing Layer ───
     const intentResult = detectIntent(textLower, products, session);
     if (intentResult.type !== 'UNKNOWN') {
-        const intentResponse = await handleIntent(intentResult, session, products);
+        const intentResponse = await handleIntent(intentResult, session, products, from);
         if (intentResponse) {
             return intentResponse;
         }
@@ -2828,8 +2832,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const parents = getSortedParents(categoryCounts);
         session.parentCategories = parents;
 
-        const welcomePrefix = await getWelcomeMessagePrefix();
-        let replyText = `${welcomePrefix}👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n`;
+        const welcomeMsg = await getWelcomeMessagePrefix();
+        if (welcomeMsg) {
+            await sendText(from, welcomeMsg.trim());
+            await logChatMessage(from, 'bot', welcomeMsg.trim());
+        }
+        let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
         parents.forEach((cat, idx) => {
             const emoji = getCategoryEmoji(cat);
             replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
