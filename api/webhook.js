@@ -973,10 +973,30 @@ const isJogger = (p) => {
 // Dynamically group subcategories into top-level parent categories based on noun rules
 export const getParentCategory = (categoryName) => {
     if (!categoryName) return 'General';
-    // Clean up category casing properly to match exact WooCommerce category name
+    const catLower = categoryName.toLowerCase().trim();
+
+    const rules = [
+        { keywords: ['t-shirt', 't shirt', 'tshirt', 'polo t'], parent: 'T-Shirts' },
+        { keywords: ['shirt', 'linen'], parent: 'Shirts' },
+        { keywords: ['pant', 'pants', 'phant', 'trouser', 'jogger'], parent: 'Pants' },
+        { keywords: ['jeans', 'jean'], parent: 'Jeans' },
+        { keywords: ['shorts', 'short'], parent: 'Shorts' },
+        { keywords: ['saree'], parent: 'Sarees' },
+        { keywords: ['frock'], parent: 'Frocks' },
+        { keywords: ['suit'], parent: 'Suits' },
+        { keywords: ['kurti', 'kurta'], parent: 'Kurtis' }
+    ];
+
+    for (const rule of rules) {
+        if (rule.keywords.some(kw => catLower.includes(kw))) {
+            return rule.parent;
+        }
+    }
+
+    // Capitalize properly
     return categoryName.split(/\s+/)
         .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-        .join(' ');
+        .join(' ').trim();
 };
 
 // Dynamically get emoji based on parent category
@@ -1005,23 +1025,10 @@ export const getCategoryCounts = (products) => {
 export const getSortedParents = (categoryCounts) => {
     const parents = Object.keys(categoryCounts).filter(cat => categoryCounts[cat] > 0);
     parents.sort((a, b) => {
-        const getOrderScore = (cat) => {
-            const lower = cat.toLowerCase();
-            if (lower.includes('printed shirt')) return 1;
-            if (lower.includes('linen shirt')) return 2;
-            if (lower.includes('plain shirt')) return 3;
-            if (lower.includes('casual shirt')) return 4;
-            if (lower.includes('shirt') && !lower.includes('t-shirt') && !lower.includes('t shirt')) return 5;
-            if (lower.includes('t-shirt') || lower.includes('t shirt') || lower.includes('tshirt')) return 6;
-            if (lower.includes('polo fit') || lower.includes('polofit')) return 7;
-            if (lower.includes('jeans') || lower.includes('jean')) return 8;
-            if (lower.includes('cargo')) return 9;
-            if (lower.includes('pant') || lower.includes('pants')) return 10;
-            return 99;
-        };
-        const scoreA = getOrderScore(a);
-        const scoreB = getOrderScore(b);
-        if (scoreA !== scoreB) return scoreA - scoreB;
+        const order = { 'Shirts': 1, 'T-Shirts': 2, 'Pants': 3, 'Jeans': 4, 'Shorts': 5 };
+        const orderA = order[a] || 99;
+        const orderB = order[b] || 99;
+        if (orderA !== orderB) return orderA - orderB;
         return a.localeCompare(b);
     });
     return parents;

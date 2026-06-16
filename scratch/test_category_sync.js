@@ -6,15 +6,16 @@ dotenv.config();
 function runTests() {
     console.log("=== Running Category Sync & Sorting Verification ===");
 
-    // Test 1: Category Casing and Grouping Bypass
-    console.log("\nTesting getParentCategory (Bypass generic grouping):");
+    // Test 1: Category Grouping
+    console.log("\nTesting getParentCategory (Grouping into parent categories):");
     const testCases = [
-        { input: "printed shirts", expected: "Printed Shirts" },
-        { input: "linen shirts", expected: "Linen Shirts" },
-        { input: "T-SHIRTS", expected: "T-shirts" },
-        { input: "polo fit pant", expected: "Polo Fit Pant" },
+        { input: "printed shirts", expected: "Shirts" },
+        { input: "linen shirts", expected: "Shirts" },
+        { input: "T-SHIRTS", expected: "T-Shirts" },
+        { input: "polo fit pant", expected: "Pants" },
         { input: "jeans", expected: "Jeans" },
-        { input: "cargo track pant", expected: "Cargo Track Pant" }
+        { input: "cargo track pant", expected: "Pants" },
+        { input: "Imported Shorts", expected: "Shorts" }
     ];
 
     for (const tc of testCases) {
@@ -27,27 +28,25 @@ function runTests() {
     }
     console.log("✅ getParentCategory test passed!");
 
-    // Test 2: Custom Keyword Sorting
+    // Test 2: Custom Group Sorting
     console.log("\nTesting getSortedParents (Custom sorting priority):");
     const mockCounts = {
-        "Cargo Track Pant": 5,
-        "Printed Shirts": 10,
-        "Jeans": 8,
-        "Linen Shirts": 4,
-        "Polo Fit Pant": 12,
-        "T-shirts": 15
+        "Pants": 12,
+        "Shorts": 6,
+        "Shirts": 10,
+        "T-Shirts": 15,
+        "Jeans": 8
     };
 
     const sorted = getSortedParents(mockCounts);
     console.log("Sorted output:", sorted);
 
     const expectedOrder = [
-        "Printed Shirts",
-        "Linen Shirts",
-        "T-shirts",
-        "Polo Fit Pant",
+        "Shirts",
+        "T-Shirts",
+        "Pants",
         "Jeans",
-        "Cargo Track Pant"
+        "Shorts"
     ];
 
     for (let i = 0; i < expectedOrder.length; i++) {
@@ -58,7 +57,7 @@ function runTests() {
     }
     console.log("✅ getSortedParents test passed!");
 
-    console.log("\n✅ WooCommerce Exact Category Sync and Custom Sorting Tests Passed successfully!");
+    console.log("\n✅ WooCommerce Category Grouping and Sorting Tests Passed successfully!");
 }
 
 runTests();
