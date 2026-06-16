@@ -1049,7 +1049,7 @@ export const getParentCategory = (categoryName) => {
     const rules = [
         { keywords: ['new arrival', 'new arrivals'], parent: 'New Arrivals' },
         { keywords: ['t-shirt', 't shirt', 'tshirt', 'polo t'], parent: 'T-Shirts' },
-        { keywords: ['shirt', 'linen'], parent: 'Shirts' },
+        { keywords: ['shirt', 'linen', 'lenin', 'chava'], parent: 'Shirts' },
         { keywords: ['pant', 'pants', 'phant', 'trouser', 'jogger'], parent: 'Pants' },
         { keywords: ['jeans', 'jean'], parent: 'Jeans' },
         { keywords: ['shorts', 'short'], parent: 'Shorts' },
@@ -3838,6 +3838,9 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
         if (res.crossSellShown === undefined) {
             res.crossSellShown = session.crossSellShown;
         }
+        if (res.cartCrossSellShown === undefined) {
+            res.cartCrossSellShown = session.cartCrossSellShown;
+        }
         if (res.sendButtons && res.sendButtons.buttons) {
             const buttons = res.sendButtons.buttons;
             const hasCancel = buttons.some(b => 
@@ -3990,6 +3993,7 @@ async function handleMessage(msg) {
         if (aiResponse.awaitingCartAdditionConfirmation !== undefined) session.awaitingCartAdditionConfirmation = aiResponse.awaitingCartAdditionConfirmation;
         if (aiResponse.pendingProduct !== undefined) session.pendingProduct = aiResponse.pendingProduct;
         if (aiResponse.crossSellShown !== undefined) session.crossSellShown = aiResponse.crossSellShown;
+        if (aiResponse.cartCrossSellShown !== undefined) session.cartCrossSellShown = aiResponse.cartCrossSellShown;
 
         // Save session details to Supabase
         if (aiResponse && aiResponse.shouldDeleteSession) {
