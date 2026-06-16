@@ -162,20 +162,28 @@ function dbRowToProduct(row) {
     };
 }
 
+const GENERIC_CATEGORIES = ['men', 'menu', 'general', 'uncategorized', 'kids', 'new arrival', 'new arrivals'];
+
+// Returns the most specific product category (skips generic/umbrella ones).
+// New Arrivals is treated as generic so e.g. ["New Arrival", "POLO FIT PANT"]
+// correctly yields "POLO FIT PANT", not "New Arrivals".
 const selectBestCategory = (categories) => {
     if (!Array.isArray(categories) || categories.length === 0) return 'General';
-    const newArrivalCategory = categories.find(c => {
-        const name = (c.name || '').toLowerCase().trim();
-        return name === 'new arrival' || name === 'new arrivals';
+    const specific = categories.find(c => !GENERIC_CATEGORIES.includes((c.name || '').toLowerCase().trim()));
+    if (specific) return specific.name;
+    // All are generic — prefer "New Arrivals" over other generic labels
+    const newArrival = categories.find(c => {
+        const n = (c.name || '').toLowerCase().trim();
+        return n === 'new arrival' || n === 'new arrivals';
     });
-    if (newArrivalCategory) return 'New Arrivals';
+    return newArrival ? 'New Arrivals' : categories[0].name;
+};
 
-    const genericList = ['men', 'menu', 'general', 'uncategorized', 'kids'];
-    const specificCat = categories.find(c => {
-        const name = (c.name || '').toLowerCase().trim();
-        return !genericList.includes(name);
-    });
-    return specificCat ? specificCat.name : categories[0].name;
+// Returns ALL WooCommerce category names (lowercased) for a product.
+// Used to populate the `categories` array column so any category can be searched.
+const allCategoryNames = (categories) => {
+    if (!Array.isArray(categories)) return [];
+    return categories.map(c => (c.name || '').trim()).filter(Boolean);
 };
 
 // ✅ Batch Sync products from WooCommerce
@@ -208,11 +216,12 @@ export const syncProducts = async (req, res) => {
                 name:        p.name,
                 code:        p.sku || String(p.id),
                 category:    selectBestCategory(p.categories),
+                categories:  allCategoryNames(p.categories),   // full category list
                 pattern:     p.pattern || null,
                 color:       color || p.color || null,
                 price:       p.price !== undefined ? String(p.price) : '0',
-                stock:       p.stock_quantity !== null && p.stock_quantity !== undefined 
-                                ? String(p.stock_quantity) 
+                stock:       p.stock_quantity !== null && p.stock_quantity !== undefined
+                                ? String(p.stock_quantity)
                                 : (p.stock_status === 'instock' ? '10' : '0'),
                 sizes:       sizes,
                 image_uri:   p.images?.[0]?.src || null
@@ -253,11 +262,12 @@ const mapWooProductToDb = (p) => {
         name:        p.name,
         code:        p.sku || String(p.id),
         category:    selectBestCategory(p.categories),
+        categories:  allCategoryNames(p.categories),
         pattern:     p.pattern || null,
         color:       color || p.color || null,
         price:       p.price !== undefined ? String(p.price) : '0',
-        stock:       p.stock_quantity !== null && p.stock_quantity !== undefined 
-                        ? String(p.stock_quantity) 
+        stock:       p.stock_quantity !== null && p.stock_quantity !== undefined
+                        ? String(p.stock_quantity)
                         : (p.stock_status === 'instock' ? '10' : '0'),
         sizes:       sizes,
         image_uri:   p.images?.[0]?.src || null

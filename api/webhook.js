@@ -85,11 +85,18 @@ export async function getProducts() {
                 cat = 'Formal Pant';
             }
 
+            // Full WooCommerce category list (text[] column). Falls back to the
+            // self-healed primary category so legacy rows still work.
+            const allCats = Array.isArray(row.categories) && row.categories.length > 0
+                ? row.categories
+                : [cat];
+
             return {
                 id: row.id,
                 name: row.name,
                 code: row.code,
                 category: cat,
+                categories: allCats,   // all WooCommerce categories for this product
                 pattern: row.pattern,
                 color: row.color,
                 price: row.price,
@@ -2268,11 +2275,29 @@ async function handleIntent(intentResult, session, products, from) {
 
             const inStock = products.filter(p => Number(p.stock) > 0);
 
-            // ── Priority 1: category-name match ──────────────────────────────────
-            // Collect all unique subcategory names and parent category names
-            const uniqueSubCats = [...new Set(inStock.map(p => p.category).filter(Boolean))];
+            // Helper: does a product's full category list contain the query?
+            // Checks every WooCommerce category the product belongs to (p.categories array)
+            // so products like ["New Arrival","POLO FIT PANT"] match BOTH queries.
+            const productHasCategoryMatch = (p, catQuery) => {
+                const cats = Array.isArray(p.categories) && p.categories.length > 0
+                    ? p.categories
+                    : [p.category];
+                return cats.some(c => {
+                    const cl = (c || '').toLowerCase();
+                    return cl.includes(catQuery) || catQuery.includes(cl);
+                });
+            };
 
-            // Check if query matches a subcategory (bidirectional partial, case-insensitive)
+            // ── Priority 1: category-name match ──────────────────────────────────
+            // Collect all unique subcategory names across ALL categories of all products
+            const uniqueSubCats = [...new Set(
+                inStock.flatMap(p => Array.isArray(p.categories) && p.categories.length > 0
+                    ? p.categories
+                    : [p.category]
+                ).filter(Boolean)
+            )];
+
+            // Check if query matches any category (bidirectional partial, case-insensitive)
             const matchedSubCat = uniqueSubCats.find(cat => {
                 const c = cat.toLowerCase();
                 return c.includes(queryClean) || queryClean.includes(c);
@@ -2280,8 +2305,11 @@ async function handleIntent(intentResult, session, products, from) {
 
             let matched = [];
             if (matchedSubCat) {
-                // Return every in-stock product in that subcategory
-                matched = applyPriceFilter(inStock.filter(p => p.category === matchedSubCat));
+                // Return every in-stock product that belongs to that category
+                // (checking ALL WooCommerce categories, not just the primary one)
+                matched = applyPriceFilter(
+                    inStock.filter(p => productHasCategoryMatch(p, matchedSubCat.toLowerCase()))
+                );
             } else {
                 // Check parent category match ("pants", "shirts", "jeans", etc.)
                 const matchedParent = uniqueSubCats.find(cat => {
@@ -2292,7 +2320,11 @@ async function handleIntent(intentResult, session, products, from) {
                 if (matchedParent) {
                     const parentName = getParentCategory(matchedParent);
                     matched = applyPriceFilter(
-                        inStock.filter(p => getParentCategory(p.category) === parentName)
+                        inStock.filter(p => {
+                            const cats = Array.isArray(p.categories) && p.categories.length > 0
+                                ? p.categories : [p.category];
+                            return cats.some(c => getParentCategory(c) === parentName);
+                        })
                     );
                 }
             }
@@ -2307,9 +2339,11 @@ async function handleIntent(intentResult, session, products, from) {
                 matched = applyPriceFilter(
                     inStock.filter(p => {
                         if (keywords.length === 0) return true;
+                        const cats = Array.isArray(p.categories) && p.categories.length > 0
+                            ? p.categories : [p.category];
                         return keywords.every(kw =>
                             p.name?.toLowerCase().includes(kw) ||
-                            p.category?.toLowerCase().includes(kw) ||
+                            cats.some(c => (c || '').toLowerCase().includes(kw)) ||
                             (p.color && p.color.toLowerCase().includes(kw)) ||
                             (p.pattern && p.pattern.toLowerCase().includes(kw))
                         );
