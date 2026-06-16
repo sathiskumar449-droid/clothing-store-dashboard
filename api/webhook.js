@@ -56,19 +56,11 @@ export async function getProducts() {
             let cat = row.category || 'General';
             const catLower = String(cat).toLowerCase().trim();
 
-            if (['menu', 'new arrival', 'new arrivals'].includes(catLower)) {
-                cat = 'New Arrivals';
-            } else if (nameLower.includes('t-shirt') || nameLower.includes('tshirt') || nameLower.includes('t shirt') || nameLower.includes('polo t-shirt') || nameLower.includes('five sleeve t shirt') || nameLower.includes('round neck t shirt')) {
-                if (nameLower.includes('polo')) {
-                    cat = 'Polo T-Shirts';
-                } else {
-                    cat = 'T-Shirts';
-                }
-            } else if (nameLower.includes('shirt')) {
-                // If it's a shirt but has wrong category like 'Casual Pant'
-                if (cat.toLowerCase().includes('pant') || cat.toLowerCase().includes('phant') || cat === 'Men' || cat === 'General' || cat === 'Casual Shirt') {
-                    cat = 'Casual Shirts';
-                }
+            // ── Name-based detection runs FIRST (highest priority) ──────────
+            // This ensures a product like "polofit dark green" stored as
+            // "New Arrivals" in the DB is still correctly classified by name.
+            if (nameLower.includes('t-shirt') || nameLower.includes('tshirt') || nameLower.includes('t shirt') || nameLower.includes('polo t-shirt') || nameLower.includes('five sleeve t shirt') || nameLower.includes('round neck t shirt')) {
+                cat = nameLower.includes('polo') ? 'Polo T-Shirts' : 'T-Shirts';
             } else if (nameLower.includes('polofit') || nameLower.includes('polo fit pant') || nameLower.includes('polo fit pants') || nameLower.includes('polo fit')) {
                 cat = 'Polo Fit Pant';
             } else if (nameLower.includes('cargo') && (nameLower.includes('pant') || nameLower.includes('track'))) {
@@ -83,6 +75,14 @@ export async function getProducts() {
                 cat = 'Formal Pant';
             } else if (nameLower.includes('pant') || nameLower.includes('phant')) {
                 cat = 'Formal Pant';
+            } else if (nameLower.includes('shirt')) {
+                // Shirt: fix wrong DB category (Casual Pant, Men, General, etc.)
+                const wrongCat = catLower.includes('pant') || catLower.includes('phant') ||
+                    ['men', 'menu', 'general', 'new arrival', 'new arrivals', 'casual shirt'].includes(catLower);
+                if (wrongCat) cat = 'Casual Shirts';
+            } else if (['menu', 'new arrival', 'new arrivals'].includes(catLower)) {
+                // Name gave no clue → honour the DB "New Arrivals" label
+                cat = 'New Arrivals';
             }
 
             // Full WooCommerce category list (text[] column). Falls back to the
@@ -1064,6 +1064,7 @@ export const getParentCategory = (categoryName) => {
         { keywords: ['new arrival', 'new arrivals'], parent: 'New Arrivals' },
         { keywords: ['t-shirt', 't shirt', 'tshirt', 'polo t'], parent: 'T-Shirts' },
         { keywords: ['shirt', 'linen', 'lenin', 'chava'], parent: 'Shirts' },
+        { keywords: ['men', 'menu', 'general', 'uncategorized'], parent: 'Shirts' },
         { keywords: ['pant', 'pants', 'phant', 'trouser', 'jogger', 'polo fit', 'polofit'], parent: 'Pants' },
         { keywords: ['jeans', 'jean'], parent: 'Jeans' },
         { keywords: ['shorts', 'short'], parent: 'Shorts' },
