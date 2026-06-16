@@ -383,6 +383,7 @@ async function sendRequest(payload) {
             }
         });
         console.log(`[BOT -> USER] ✅ Success! message_id:`, response.data?.messages?.[0]?.id);
+        return response.data;
     } catch (error) {
         console.error('❌ [sendRequest] WhatsApp API Error!');
         console.error('   HTTP Status  :', error.response?.status);
@@ -406,6 +407,28 @@ async function sendRequest(payload) {
             console.error('❌ Failed to save error to Supabase:', dbErr.message);
         }
     }
+}
+
+async function sendList(to, bodyText, buttonText, sections, headerText = null, footerText = null) {
+    const interactive = {
+        type: 'list',
+        body: { text: bodyText },
+        action: {
+            button: buttonText,
+            sections: sections
+        }
+    };
+    if (headerText) {
+        interactive.header = { type: 'text', text: headerText };
+    }
+    if (footerText) {
+        interactive.footer = { text: footerText };
+    }
+    return await sendRequest({
+        to,
+        type: 'interactive',
+        interactive
+    });
 }
 
 export async function sendText(to, text) {
@@ -504,7 +527,7 @@ export async function sendImage(to, imageUrl, caption = '') {
 }
 
 async function sendButtons(to, bodyText, buttons) {
-    await sendRequest({
+    return await sendRequest({
         to,
         type: 'interactive',
         interactive: {
@@ -1244,6 +1267,52 @@ function matchParentCategory(text, parentCategories) {
     return parentCategories.find(cat => t.includes(cat.toLowerCase()));
 }
 
+function makeCategoriesListResponse(parents, categoryCounts, bodyPrefix = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.") {
+    const body = bodyPrefix;
+    const buttonText = "Select Category";
+    const sections = [
+        {
+            title: "Categories",
+            rows: parents.map((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                return {
+                    id: String(idx + 1),
+                    title: `${emoji} ${cat}`.substring(0, 24),
+                    description: `${categoryCounts[cat]} items available`
+                };
+            })
+        }
+    ];
+    return {
+        sendList: { body, buttonText, sections },
+        sendImages: [],
+        listContext: { type: 'categories', data: parents }
+    };
+}
+
+function makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent) {
+    const body = `*${selectedParent}*:\n\nPlease select a subcategory.`;
+    const buttonText = "Select Subcategory";
+    const sections = [
+        {
+            title: "Subcategories",
+            rows: subs.map((sub, sIdx) => {
+                const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                return {
+                    id: String(sIdx + 1),
+                    title: capSub.substring(0, 24),
+                    description: `${subcategoryCounts[sub]} items available`
+                };
+            })
+        }
+    ];
+    return {
+        sendList: { body, buttonText, sections },
+        sendImages: [],
+        listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent }
+    };
+}
+
 async function getStatePrompt(session, products) {
     switch (session.state) {
         case "AWAITING_CATEGORY": {
@@ -1251,14 +1320,7 @@ async function getStatePrompt(session, products) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            replyText += "\nPlease reply with the Category number.";
-
-            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+            return makeCategoriesListResponse(parents, categoryCounts);
         }
         case "AWAITING_SUBCATEGORY_SELECTION": {
             const selectedParent = session.selectedParentCategory;
@@ -1273,14 +1335,7 @@ async function getStatePrompt(session, products) {
             subs.sort((a, b) => a.localeCompare(b));
             session.subCategories = subs;
 
-            let replyText = `*${selectedParent}:*\n\n`;
-            subs.forEach((sub, sIdx) => {
-                const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-                replyText += `${sIdx + 1}️⃣ ${capSub} (${subcategoryCounts[sub]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
-
-            return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
+            return makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent);
         }
         case "AWAITING_MODEL_SELECTION": {
             const selectedSub = session.selectedSubCategory;
@@ -1445,12 +1500,8 @@ async function getStatePrompt(session, products) {
         default: {
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
-            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue:\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            return { replyText, sendImages: [] };
+            session.parentCategories = parents;
+            return makeCategoriesListResponse(parents, categoryCounts);
         }
     }
 }
@@ -1468,7 +1519,7 @@ function getShortProductName(p) {
 }
 
 async function prepareProductsPageResponse(session, productsPool, queryLabel) {
-    const pageSize = 16;
+    const pageSize = 10;
     const currentPage = session.currentPage || 0;
     const startIndex = currentPage * pageSize;
     const pageProducts = session.searchProducts.slice(startIndex, startIndex + pageSize);
@@ -1487,13 +1538,22 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
     const totalPages = Math.ceil(totalProducts / pageSize);
     const pageNum = currentPage + 1;
 
-    let replyText = `👔 *${queryLabel}* (Page ${pageNum}/${totalPages})\n\n`;
-    pageProducts.forEach((p, idx) => {
-        const globalIdx = startIndex + idx + 1;
-        const shortName = getShortProductName(p);
-        replyText += `${globalIdx}. ${shortName} - ₹${p.price}\n`;
-    });
-    replyText += `\nPlease select an option from the available choices.`;
+    const body = `👔 *${queryLabel}* (Page ${pageNum}/${totalPages})`;
+    const buttonText = "Select Product";
+    const sections = [
+        {
+            title: "Products",
+            rows: pageProducts.map((p, idx) => {
+                const globalIdx = startIndex + idx + 1;
+                const shortName = getShortProductName(p);
+                return {
+                    id: String(globalIdx),
+                    title: `${globalIdx}. ${shortName}`.substring(0, 24),
+                    description: `₹${p.price} | Stock: ${p.stock}`
+                };
+            })
+        }
+    ];
 
     const buttons = [];
     if (currentPage > 0) {
@@ -1504,7 +1564,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
     }
 
     const response = {
-        replyText,
+        sendList: { body, buttonText, sections },
         sendImages: collageUrl ? [{ url: collageUrl, caption: `${queryLabel} - Page ${pageNum}` }] : [],
         searchProducts: session.searchProducts
     };
@@ -1542,14 +1602,7 @@ async function handleIntent(intentResult, session, products, from) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Your cart has been cleared. 😊\n\nPlease select a category to continue:\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
-
-            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+            return makeCategoriesListResponse(parents, categoryCounts, "Your cart has been cleared. 😊\n\nPlease select a category to continue:");
         }
         case 'HUMAN': {
             return {
@@ -1563,11 +1616,16 @@ async function handleIntent(intentResult, session, products, from) {
                 let replyText = "Your cart is empty. 😊 Please add products to your cart first.";
                 if (session.state !== "AWAITING_CATEGORY") {
                     const statePrompt = await getStatePrompt(session, products);
-                    replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
+                    if (statePrompt.replyText) {
+                        replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
+                    } else {
+                        replyText += `\n\nFeel free to continue shopping: 😊`;
+                    }
                     return {
                         replyText,
                         sendImages: statePrompt.sendImages || [],
                         sendButtons: statePrompt.sendButtons || null,
+                        sendList: statePrompt.sendList || null,
                         listContext: statePrompt.listContext || null
                     };
                 }
@@ -1589,6 +1647,7 @@ async function handleIntent(intentResult, session, products, from) {
                     replyText,
                     sendImages: statePrompt.sendImages || [],
                     sendButtons: statePrompt.sendButtons || null,
+                    sendList: statePrompt.sendList || null,
                     listContext: statePrompt.listContext || null
                 };
             }
@@ -1617,14 +1676,8 @@ async function handleIntent(intentResult, session, products, from) {
                 await sendText(from, welcomeMsg.trim());
                 await logChatMessage(from, 'bot', welcomeMsg.trim());
             }
-            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
 
-            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+            return makeCategoriesListResponse(parents, categoryCounts);
         }
         case 'CATEGORY': {
             const categoryCounts = getCategoryCounts(products);
@@ -1652,14 +1705,7 @@ async function handleIntent(intentResult, session, products, from) {
                 subs.sort((a, b) => a.localeCompare(b));
                 session.subCategories = subs;
 
-                let replyText = `*${selectedParent}:*\n\n`;
-                subs.forEach((sub, sIdx) => {
-                    const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-                    replyText += `${sIdx + 1}️⃣ ${capSub} (${subcategoryCounts[sub]})\n`;
-                });
-                replyText += "\nPlease reply with the product number.";
-
-                return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
+                return makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent);
             }
             // If match fails, fall through to SEARCH
         }
@@ -1792,13 +1838,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Sure! 😊 Please select a category to continue:\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
-            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+            return makeCategoriesListResponse(parents, categoryCounts, "Sure! 😊 Please select a category to continue:");
         } else if (isClear) {
             session.cart = [];
             session.state = "AWAITING_CATEGORY";
@@ -1812,13 +1852,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Your cart has been cleared. 😊\n\nPlease select a category to continue:\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
-            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+            return makeCategoriesListResponse(parents, categoryCounts, "Your cart has been cleared. 😊\n\nPlease select a category to continue:");
         } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
             return {
                 sendButtons: {
@@ -1845,13 +1879,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue:\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
-            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+            return makeCategoriesListResponse(parents, categoryCounts);
         } else if (noKeywords.includes(textLower) || textLower.includes('no') || textLower.includes('illa') || textLower.includes('vendam')) {
             session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
@@ -1922,7 +1950,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const isPrev = /^(prev|previous|prev page|previous page|prev_page|⬅ prev page)$/i.test(textLower);
 
         if (isNext || isPrev) {
-            const pageSize = 16;
+            const pageSize = 10;
             const totalProducts = session.searchProducts?.length || 0;
             const totalPages = Math.ceil(totalProducts / pageSize);
             let page = session.currentPage || 0;
@@ -2202,27 +2230,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     cart: session.cart
                 };
             } else {
-                session.state = "AWAITING_ORDER_CONFIRMATION";
-
-                let summaryText = `Order Summary\n\n`;
-                let total = 0;
-                session.cart.forEach(item => {
-                    const itemTotal = Number(item.price) * item.qty;
-                    total += itemTotal;
-                    summaryText += `${item.product || item.name}\nSize: ${item.size}\nQty: ${item.qty}\nPrice: ₹${itemTotal}\n\n`;
-                });
-                summaryText += `Total: ₹${total}`;
-
+                session.state = "AWAITING_MORE_ITEMS";
                 return {
-                    replyText: summaryText,
-                    sendImages: [],
                     sendButtons: {
-                        body: `Confirm Order?`,
+                        body: `✅ Item added to cart successfully.\n\nWould you like to continue shopping?`,
                         buttons: [
-                            { id: 'confirm_order_yes', title: '1. Confirm' },
-                            { id: 'confirm_order_cancel', title: '2. Cancel' }
+                            { id: 'yes', title: '🛍️ YES' },
+                            { id: 'no_checkout', title: '🛒 NO - Checkout' }
                         ]
                     },
+                    sendImages: [],
                     cart: session.cart
                 };
             }
@@ -2244,19 +2261,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.orderingQueue = [];
             session.orderingIndex = 0;
             session.state = "AWAITING_CATEGORY";
+            session.crossSellShown = false;
 
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "Let's modify your order. Please select a category to continue shopping:\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
-
-            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+            return makeCategoriesListResponse(parents, categoryCounts, "Let's modify your order. Please select a category to continue shopping:");
         } else if (isCancel) {
             session.cart = [];
             session.orderingCart = [];
@@ -2949,14 +2960,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.selectedParentCategory = selectedParent;
             session.state = "AWAITING_SUBCATEGORY_SELECTION";
 
-            let replyText = `*${selectedParent}:*\n\n`;
-            subs.forEach((sub, sIdx) => {
-                const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-                replyText += `${sIdx + 1}️⃣ ${capSub} (${subcategoryCounts[sub]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
-
-            return { replyText, sendImages: [], listContext: { type: 'subcategories', data: subs, selectedParentCategory: selectedParent } };
+            return makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent);
         } else {
             const max = session.parentCategories.length;
             return {
@@ -3065,7 +3069,7 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
 // =============================
 
 async function handleMessage(msg) {
-    const text = msg.text?.body?.trim() || msg.interactive?.button_reply?.id?.trim() || '';
+    const text = msg.text?.body?.trim() || msg.interactive?.button_reply?.id?.trim() || msg.interactive?.list_reply?.id?.trim() || '';
     const from = msg.from;
 
     console.log(`[handleMessage] from=${from} | text="${text}"`);
@@ -3075,7 +3079,7 @@ async function handleMessage(msg) {
         return;
     }
 
-    const logText = msg.text?.body?.trim() || msg.interactive?.button_reply?.title?.trim() || msg.interactive?.button_reply?.id?.trim() || '';
+    const logText = msg.text?.body?.trim() || msg.interactive?.button_reply?.title?.trim() || msg.interactive?.button_reply?.id?.trim() || msg.interactive?.list_reply?.title?.trim() || msg.interactive?.list_reply?.id?.trim() || '';
     await logChatMessage(from, 'customer', logText, 'text', null, msg.id);
 
     // Check if bot is paused
@@ -3311,6 +3315,23 @@ async function handleMessage(msg) {
             const apiRes = await sendText(from, aiResponse.replyText);
             sentMsgId = apiRes?.messages?.[0]?.id;
             await logChatMessage(from, 'bot', aiResponse.replyText, 'text', null, sentMsgId);
+        }
+        if (aiResponse.sendList) {
+            const listData = aiResponse.sendList;
+            const apiRes = await sendList(
+                from,
+                listData.body,
+                listData.buttonText,
+                listData.sections,
+                listData.headerText,
+                listData.footerText
+            );
+            const listMsgId = apiRes?.messages?.[0]?.id;
+            if (listMsgId) {
+                sentMsgId = listMsgId;
+            }
+            const listLog = `${listData.body}\n[${listData.buttonText}]`;
+            await logChatMessage(from, 'bot', listLog, 'text', null, listMsgId);
         }
 
         // Store the context for this message

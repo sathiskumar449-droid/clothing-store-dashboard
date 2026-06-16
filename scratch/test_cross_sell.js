@@ -1,9 +1,20 @@
 import { handleSalesAssistantJS } from '../api/webhook.js';
+import axios from 'axios';
+
+// Mock axios to prevent 401 unauthorized errors during local testing
+axios.post = async (url, data) => {
+    console.log(`[AXIOS POST MOCK] URL: ${url}`);
+    return { data: { messages: [{ id: 'wamid.mockid' }] } };
+};
+axios.get = async (url) => {
+    console.log(`[AXIOS GET MOCK] URL: ${url}`);
+    return { data: Buffer.alloc(0), headers: { 'content-type': 'image/jpeg' } };
+};
 
 const mockProducts = [
     { id: 1, name: 'Premium Plain Shirt', price: '699', stock: '10', sizes: 'M,L,XL', category: 'Casual Shirt', color: 'Black', imageUri: 'https://supercollections.in/plain_shirt.jpg' },
     { id: 2, name: 'Premium Printed Shirt', price: '799', stock: '5', sizes: 'S,M,L', category: 'Casual Shirt', color: 'White', imageUri: 'https://supercollections.in/printed_shirt.jpg' },
-    { id: 3, name: 'Formal Cotton Pant', price: '999', stock: '8', sizes: '30,32,34', category: 'Formal Pant', color: 'Navy', imageUri: 'https://supercollections.in/navy_pant.jpg' },
+    { id: 3, name: 'Polo Fit Pant', price: '999', stock: '8', sizes: '30,32,34', category: 'Pants', color: 'Blue', imageUri: 'https://supercollections.in/navy_pant.jpg' },
     { id: 4, name: 'Cargo Track Pant', price: '599', stock: '12', sizes: 'M,L,XL', category: 'Cargo Pant', color: 'Green', imageUri: 'https://supercollections.in/cargo_pant.jpg' }
 ];
 
@@ -27,13 +38,11 @@ async function runFlow() {
         { msg: "1", desc: "Select category 1 (Shirts)" },
         { msg: "1", desc: "Select subcategory 1 (Casual Shirt)" },
         { msg: "1", desc: "Select product 1 (Premium Plain Shirt)" },
-        { msg: "M", desc: "Select size M" },
-        { msg: "yes", desc: "Confirm add to cart (1st addition)" },
+        { msg: "M-1", desc: "Select size M, qty 1" },
         { msg: "PANTS", desc: "Browse pants" },
-        { msg: "2", desc: "Select subcategory 2 (Formal Pant)" },
-        { msg: "1", desc: "Select product 1 (Formal Cotton Pant)" },
-        { msg: "32", desc: "Select size 32" },
-        { msg: "yes", desc: "Confirm add to cart (2nd addition)" }
+        { msg: "2", desc: "Select subcategory 2 (Pants)" },
+        { msg: "1", desc: "Select product 1 (Polo Fit Pant)" },
+        { msg: "32-1", desc: "Select size 32, qty 1" }
     ];
 
     const phone = "1234567890";
@@ -64,3 +73,4 @@ async function runFlow() {
 }
 
 runFlow().catch(console.error);
+
