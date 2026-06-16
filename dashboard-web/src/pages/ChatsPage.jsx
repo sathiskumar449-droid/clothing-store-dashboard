@@ -349,25 +349,25 @@ export default function ChatsPage() {
                 <EmptyState icon={MessageSquare} title="No messages yet" />
               ) : (
                 messages.map((msg, i) => {
-                  const isOwner = msg.sender === 'owner';
+                  const isSentByUs = msg.sender === 'owner' || msg.sender === 'bot';
                   const isEditing = editingIndex === i;
                   return (
-                    <div key={i} className={`flex ${isOwner ? 'justify-end' : 'justify-start'}`}>
+                    <div key={i} className={`flex ${isSentByUs ? 'justify-end' : 'justify-start'}`}>
                       <div 
                         className={`max-w-[70%] rounded-xl px-3.5 py-2 shadow-sm relative group ${
-                          isOwner
+                          isSentByUs
                             ? 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
                             : 'bg-white text-[#111b21] rounded-tl-none border border-[#e9edef]'
                         }`}
                       >
-                        {/* Hover Action Menu Button */}
-                        <div className="absolute right-1.5 top-1 opacity-0 group-hover:opacity-100 transition-all z-20">
+                        {/* Action Menu Button (Slightly visible always, fully visible on hover) */}
+                        <div className="absolute right-1 top-0.5 opacity-40 group-hover:opacity-100 transition-all z-20">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setActiveMenuIndex(activeMenuIndex === i ? null : i);
                             }}
-                            className="p-1 rounded-full hover:bg-black/5 text-[#667781]"
+                            className="p-0.5 rounded-full hover:bg-black/5 text-[#667781]"
                           >
                             <ChevronDown size={14} />
                           </button>
@@ -375,7 +375,7 @@ export default function ChatsPage() {
                           {/* Message Dropdown Menu */}
                           {activeMenuIndex === i && (
                             <div className="absolute right-0 mt-1 w-32 bg-white rounded-lg shadow-lg border border-[#e9edef] py-1 z-30">
-                              {isOwner && msg.type === 'text' && (
+                              {isSentByUs && msg.type === 'text' && (
                                 <button
                                   onClick={() => handleEditInit(i, msg.text)}
                                   className="w-full text-left px-3 py-1.5 text-xs text-[#111b21] hover:bg-[#f0f2f5] flex items-center gap-1.5"
@@ -443,8 +443,11 @@ export default function ChatsPage() {
                             <span className="text-[10px] text-[#667781]">
                               {formatTime(msg.timestamp)}
                             </span>
-                            {isOwner && (
-                              <span className="text-[#53bdeb] ml-0.5" title="Read status">
+                            {isSentByUs && (
+                              <span 
+                                className={`${msg.sender === 'owner' ? 'text-[#53bdeb]' : 'text-[#8696a0]'} ml-0.5`} 
+                                title={msg.sender === 'owner' ? 'Read' : 'Delivered'}
+                              >
                                 <CheckCheck size={14} className="stroke-[2.5]" />
                               </span>
                             )}

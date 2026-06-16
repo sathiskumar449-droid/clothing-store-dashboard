@@ -261,19 +261,6 @@ export default function SettingsPage() {
             </button>
           </div>
         </Section>
-
-        {/* Backend info */}
-        <Section title="Backend Connection" icon={Globe}>
-          <div className="bg-gray-50 rounded-xl p-4 font-mono text-xs text-gray-600 space-y-1">
-            <p><span className="text-gray-400">API URL:</span> {import.meta.env.VITE_API_URL || 'https://clothing-store-api-two.vercel.app'}</p>
-            <p><span className="text-gray-400">Chats:</span> GET /chats</p>
-            <p><span className="text-gray-400">Orders:</span> GET /orders</p>
-            <p><span className="text-gray-400">WhatsApp:</span> POST /webhook</p>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">
-            To change the backend URL, edit <code className="bg-gray-100 px-1 rounded">dashboard-web/.env</code> → VITE_API_URL
-          </p>
-        </Section>
       </div>
     </div>
   );
