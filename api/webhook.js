@@ -1500,16 +1500,34 @@ function withInlineCancelSection(sections) {
     );
 
     if (!hasCancel) {
-        normalizedSections.push({
-            title: "Actions",
-            rows: [
-                {
-                    id: 'cancel_shopping',
-                    title: '❌ Cancel',
-                    description: 'Stop shopping for now'
-                }
-            ]
-        });
+        // Count total rows across all sections
+        const totalRows = normalizedSections.reduce((sum, s) => sum + s.rows.length, 0);
+        if (totalRows < 10) {
+            normalizedSections.push({
+                title: "Actions",
+                rows: [
+                    {
+                        id: 'cancel_shopping',
+                        title: '❌ Cancel',
+                        description: 'Stop shopping for now'
+                    }
+                ]
+            });
+        } else {
+            // Trim last section to make room for cancel
+            const lastSection = normalizedSections[normalizedSections.length - 1];
+            lastSection.rows = lastSection.rows.slice(0, lastSection.rows.length - 1);
+            normalizedSections.push({
+                title: "Actions",
+                rows: [
+                    {
+                        id: 'cancel_shopping',
+                        title: '❌ Cancel',
+                        description: 'Stop shopping for now'
+                    }
+                ]
+            });
+        }
     }
 
     return normalizedSections;
