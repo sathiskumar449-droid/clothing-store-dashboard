@@ -755,12 +755,6 @@ const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => 
     };
     const hasValidPrice = (p) => p.price && String(p.price).trim() !== '' && !isNaN(parseFloat(String(p.price).replace(/[^\d.]/g, '')));
 
-    const addedParent = getParentCategory(addedProduct.category).toLowerCase();
-    const addedName = (addedProduct.name || '').toLowerCase();
-    const isAddedTop = addedParent.includes('shirt') || addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedParent.includes('jersey') || addedParent.includes('polo');
-    const isAddedBottom = addedParent.includes('pant') || addedParent.includes('phant') || addedParent.includes('jeans') || addedParent.includes('shorts') || addedParent.includes('track') || addedParent.includes('cargo');
-    const isAddedTShirt = addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedName.includes('t-shirt') || addedName.includes('tshirt') || addedName.includes('polo');
-
     const candidates = allProducts.filter(p => {
         if (p.id === addedProduct.id) return false;
         if (isExcluded(p.id)) return false;
@@ -768,26 +762,48 @@ const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => 
         if (!hasValidPrice(p)) return false;
         if (!hasValidImage(p)) return false;
 
-        const candParent = getParentCategory(p.category).toLowerCase();
-        const candNameLower = (p.name || '').toLowerCase();
-        const isCandTop = candParent.includes('shirt') || candParent.includes('tshirt') || candParent.includes('t-day') || candParent.includes('t-shirt') || candParent.includes('jersey') || candParent.includes('polo');
-        
-        const isTrackPant = candParent.includes('track') || candNameLower.includes('track');
-        let isCandBottom = false;
-        if (isAddedTShirt) {
-            isCandBottom = isTrackPant;
-        } else {
-            if (isTrackPant) {
-                isCandBottom = false;
-            } else {
-                isCandBottom = (candParent.includes('pant') || candParent.includes('phant') || candParent.includes('jeans') || candParent.includes('cargo')) && !candParent.includes('shorts') && !candNameLower.includes('shorts') && !candParent.includes('trouser') && !candNameLower.includes('trouser');
-            }
+        const isAddedShirt = isShirtCategory(addedProduct.category, addedProduct.name);
+        const isAddedTShirt = isTShirtCategory(addedProduct.category, addedProduct.name);
+
+        const isCandPoloFit = isPoloFitPant(p);
+        const isCandJeans = isJeans(p);
+        const isCandCargo = isCargoTrackPant(p);
+        const isCandTrouser = isTrouser(p);
+        const isCandJogger = isJogger(p);
+
+        if (isAddedShirt) {
+            // Must be Polo Fit Pant or Jeans (Exclude Cargo Track Pant or Trouser)
+            return isCandPoloFit || isCandJeans;
         }
 
-        // Swap tops with bottoms, bottoms with tops
-        if (isAddedTop && isCandBottom) return true;
-        if (isAddedBottom && isCandTop) return true;
-        
+        if (isAddedTShirt) {
+            // Must be Cargo Track Pant, Trouser, or Jogger
+            return isCandCargo || isCandTrouser || isCandJogger;
+        }
+
+        // For other added products (e.g. Pants/Jeans/Cargos/Trousers/Joggers recommending Tops):
+        const isAddedPoloFit = isPoloFitPant(addedProduct);
+        const isAddedJeans = isJeans(addedProduct);
+        if (isAddedPoloFit || isAddedJeans) {
+            return isShirtCategory(p.category, p.name);
+        }
+
+        const isAddedCargo = isCargoTrackPant(addedProduct);
+        const isAddedTrouser = isTrouser(addedProduct);
+        const isAddedJogger = isJogger(addedProduct);
+        if (isAddedCargo || isAddedTrouser || isAddedJogger) {
+            return isTShirtCategory(p.category, p.name);
+        }
+
+        // Default category swap fallback
+        const addedParent = getParentCategory(addedProduct.category).toLowerCase();
+        const candParent = getParentCategory(p.category).toLowerCase();
+        const isAddedTop = addedParent.includes('shirt') || addedParent.includes('tshirt') || addedParent.includes('t-day') || addedParent.includes('t-shirt') || addedParent.includes('jersey') || addedParent.includes('polo');
+        const isCandTop = candParent.includes('shirt') || candParent.includes('tshirt') || candParent.includes('t-day') || candParent.includes('t-shirt') || candParent.includes('jersey') || candParent.includes('polo');
+
+        if (isAddedTop && !isCandTop) return true;
+        if (!isAddedTop && isCandTop) return true;
+
         return false;
     });
 
@@ -1355,7 +1371,20 @@ async function getStatePrompt(session, products) {
                 : String(product.sizes).split(',').map(s => s.trim())
             ).filter(Boolean);
             const sizesText = sizeList.map(s => s.toUpperCase()).join(', ');
-            const replyText = `For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+            // Fetch recommendations using product ID
+            const related = getRecommendationsList(product, products);
+            const recommendations = related.slice(0, 2);
+
+            let recBlock = `Selected:\n${product.name}\n\n`;
+            if (recommendations.length > 0) {
+                recBlock += `Recommended:\n`;
+                recommendations.forEach((rec, idx) => {
+                    recBlock += `${idx + 1}. ${rec.name}\n`;
+                });
+                recBlock += `\n`;
+            }
+
+            const replyText = `${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
             return {
                 replyText,
                 sendImages: [{ url: getProductImageUri(product, products), caption: product.name }]
@@ -1515,7 +1544,8 @@ async function handleIntent(intentResult, session, products) {
                 }
                 return { replyText, sendImages: [] };
             }
-            return startCheckout(session);
+            session.state = "AWAITING_ORDER_CONFIRMATION";
+            return await getStatePrompt(session, products);
         }
         case 'FAQ': {
             let replyText = intentResult.reply;
@@ -1918,7 +1948,20 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     youSelectedText += `${item.displayNum}. ${item.product.name}\n`;
                 });
 
-                const replyText = `${youSelectedText}\nFor ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+                // Fetch recommendations using product ID
+                const related = getRecommendationsList(product, products);
+                const recommendations = related.slice(0, 2);
+
+                let recBlock = `Selected:\n${product.name}\n\n`;
+                if (recommendations.length > 0) {
+                    recBlock += `Recommended:\n`;
+                    recommendations.forEach((rec, idx) => {
+                        recBlock += `${idx + 1}. ${rec.name}\n`;
+                    });
+                    recBlock += `\n`;
+                }
+
+                const replyText = `${youSelectedText}\n${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
 
                 return {
                     replyText,
@@ -2012,8 +2055,21 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 : String(nextProduct.sizes).split(',').map(s => s.trim())
             ).filter(Boolean).map(s => s.toUpperCase());
 
+            // Fetch recommendations using product ID
+            const nextRelated = getRecommendationsList(nextProduct, products);
+            const nextRecs = nextRelated.slice(0, 2);
+
+            let nextRecBlock = `Selected:\n${nextProduct.name}\n\n`;
+            if (nextRecs.length > 0) {
+                nextRecBlock += `Recommended:\n`;
+                nextRecs.forEach((rec, idx) => {
+                    nextRecBlock += `${idx + 1}. ${rec.name}\n`;
+                });
+                nextRecBlock += `\n`;
+            }
+
             return {
-                replyText: `For ${nextProduct.name} select size and quantity.\n\nAvailable Sizes:\n${nextSizeList.join(', ')}\n\nReply:\n${nextSizeList[0] || 'M'}-1`,
+                replyText: `${nextRecBlock}For ${nextProduct.name} select size and quantity.\n\nAvailable Sizes:\n${nextSizeList.join(', ')}\n\nReply:\n${nextSizeList[0] || 'M'}-1`,
                 sendImages: [{ url: getProductImageUri(nextProduct, products), caption: nextProduct.name }],
                 orderingQueue: session.orderingQueue,
                 orderingIndex: session.orderingIndex,
@@ -2021,30 +2077,101 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else {
             session.cart = session.orderingCart;
-            session.state = "AWAITING_ORDER_CONFIRMATION";
 
-            let summaryText = `Order Summary\n\n`;
-            let total = 0;
-            session.cart.forEach(item => {
-                const itemTotal = Number(item.price) * item.qty;
-                total += itemTotal;
-                summaryText += `${item.product || item.name}\nSize: ${item.size}\nQty: ${item.qty}\nPrice: ₹${itemTotal}\n\n`;
-            });
-            summaryText += `Total: ₹${total}\n\nConfirm Order?\n1. Confirm\n2. Modify\n3. Cancel`;
+            // Fetch recommendations for the last configured product
+            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
+            const excludedIds = session.cart.map(item => item.id);
+            const related = getRecommendationsList(product, uniqueProducts, excludedIds);
 
-            return {
-                replyText: summaryText,
-                sendImages: [],
-                sendButtons: {
-                    body: `Confirm Order?`,
-                    buttons: [
-                        { id: 'confirm_order_yes', title: '1. Confirm' },
-                        { id: 'confirm_order_modify', title: '2. Modify' },
-                        { id: 'confirm_order_cancel', title: '3. Cancel' }
-                    ]
-                },
-                cart: session.cart
-            };
+            if (related.length > 0) {
+                let promoCandidates = related.slice(0, 4);
+
+                // Ensure unique product IDs inside collage
+                if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
+                    const uniquePromoCandidates = [];
+                    const seenIds = new Set();
+                    for (const p of promoCandidates) {
+                        if (!seenIds.has(p.id)) {
+                            seenIds.add(p.id);
+                            uniquePromoCandidates.push(p);
+                        }
+                    }
+                    promoCandidates = uniquePromoCandidates;
+                }
+
+                let collageUrl = null;
+                if (promoCandidates.length > 1) {
+                    collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
+                } else if (promoCandidates.length === 1) {
+                    collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
+                }
+
+                let promoCategory = '';
+                if (isShirtCategory(product.category, product.name)) {
+                    promoCategory = 'Pants';
+                } else if (isPantOrJeansCategory(product.category, product.name)) {
+                    promoCategory = 'Shirts';
+                } else if (isTShirtCategory(product.category, product.name)) {
+                    promoCategory = 'Pants';
+                } else {
+                    promoCategory = 'Pants';
+                }
+                session.promoCategory = promoCategory;
+
+                session.state = "AWAITING_CATEGORY";
+                session.pendingProduct = null;
+                session.selectedSize = null;
+                session.isRecommendation = false;
+                session.crossSellShown = true;
+
+                let promoEmoji = '🛍️';
+                if (promoCategory === 'Shirts') promoEmoji = '👕';
+                if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
+                if (promoCategory === 'T-Shirts') promoEmoji = '👕';
+                if (promoCategory === 'Shorts') promoEmoji = '🩳';
+
+                const promoKeyword = promoCategory.toUpperCase();
+                
+                let bodyText = `🔥 Special Offer!\n`;
+                bodyText += `Matching Collection Available`;
+
+                return {
+                    sendButtons: {
+                        body: bodyText,
+                        buttons: [
+                            { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
+                            { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
+                        ]
+                    },
+                    sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
+                    cart: session.cart
+                };
+            } else {
+                session.state = "AWAITING_ORDER_CONFIRMATION";
+
+                let summaryText = `Order Summary\n\n`;
+                let total = 0;
+                session.cart.forEach(item => {
+                    const itemTotal = Number(item.price) * item.qty;
+                    total += itemTotal;
+                    summaryText += `${item.product || item.name}\nSize: ${item.size}\nQty: ${item.qty}\nPrice: ₹${itemTotal}\n\n`;
+                });
+                summaryText += `Total: ₹${total}\n\nConfirm Order?\n1. Confirm\n2. Modify\n3. Cancel`;
+
+                return {
+                    replyText: summaryText,
+                    sendImages: [],
+                    sendButtons: {
+                        body: `Confirm Order?`,
+                        buttons: [
+                            { id: 'confirm_order_yes', title: '1. Confirm' },
+                            { id: 'confirm_order_modify', title: '2. Modify' },
+                            { id: 'confirm_order_cancel', title: '3. Cancel' }
+                        ]
+                    },
+                    cart: session.cart
+                };
+            }
         }
     }
 
