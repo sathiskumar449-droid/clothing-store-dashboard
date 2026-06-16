@@ -2025,7 +2025,7 @@ function getShortProductName(p) {
 }
 
 async function prepareProductsPageResponse(session, productsPool, queryLabel) {
-    const pageSize = 10;
+    const pageSize = 9;
     const currentPage = session.currentPage || 0;
     const startIndex = currentPage * pageSize;
     const pageProducts = session.searchProducts.slice(startIndex, startIndex + pageSize);
@@ -2917,7 +2917,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const isPrev = /^(prev|previous|prev page|previous page|prev_page|⬅ prev page)$/i.test(textLower);
 
         if (isNext || isPrev) {
-            const pageSize = 10;
+            const pageSize = 9;
             const totalProducts = session.searchProducts?.length || 0;
             const totalPages = Math.ceil(totalProducts / pageSize);
             let page = session.currentPage || 0;
