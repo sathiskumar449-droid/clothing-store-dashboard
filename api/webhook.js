@@ -410,17 +410,18 @@ async function sendRequest(payload) {
     }
 }
 
-async function sendList(to, bodyText, buttonText, sections, headerText = null, footerText = null) {
+async function sendList(to, bodyText, buttonText, sections, headerText = null, footerText = null, options = {}) {
+    const { skipAutoCancel = false } = options;
     let finalSections = sections ? JSON.parse(JSON.stringify(sections)) : [];
-    const hasCancel = finalSections.some(sec => 
-        sec.rows && sec.rows.some(r => 
-            r.id === 'cancel_shopping' || 
-            r.id.toLowerCase().includes('cancel') || 
+    const hasCancel = finalSections.some(sec =>
+        sec.rows && sec.rows.some(r =>
+            r.id === 'cancel_shopping' ||
+            r.id.toLowerCase().includes('cancel') ||
             r.title.toLowerCase().includes('cancel') ||
             ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(r.id)
         )
     );
-    if (!hasCancel) {
+    if (!skipAutoCancel && !hasCancel) {
         finalSections = [...finalSections, {
             title: "Actions",
             rows: [
@@ -1875,7 +1876,12 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
     }
 
     const response = {
-        sendList: { body, buttonText, sections },
+        sendList: {
+            body,
+            buttonText,
+            sections,
+            skipAutoCancel: buttons.length > 0
+        },
         sendImages: collageUrl ? [{ url: collageUrl, caption: `${queryLabel} - Page ${pageNum}` }] : [],
         searchProducts: session.searchProducts
     };
@@ -4019,7 +4025,8 @@ async function handleMessage(msg) {
                 listData.buttonText,
                 listData.sections,
                 listData.headerText,
-                listData.footerText
+                listData.footerText,
+                { skipAutoCancel: !!listData.skipAutoCancel }
             );
             const listMsgId = apiRes?.messages?.[0]?.id;
             if (listMsgId) {
