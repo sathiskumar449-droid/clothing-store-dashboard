@@ -259,7 +259,9 @@ export async function getSession(phone) {
         pendingProduct: null,
         orderingQueue: [],
         orderingIndex: 0,
-        orderingCart: []
+        orderingCart: [],
+        fromCrossSell: false,
+        crossSellShown: false
     };
 }
 
@@ -1813,6 +1815,7 @@ async function handleIntent(intentResult, session, products, from) {
             session.searchProducts = [];
             session.isRecommendation = false;
             session.crossSellShown = false;
+            session.fromCrossSell = false;
 
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
@@ -1847,6 +1850,7 @@ async function handleIntent(intentResult, session, products, from) {
                 }
                 return { replyText, sendImages: [] };
             }
+            session.fromCrossSell = false;
             return await startCheckout(session, from);
         }
         case 'FAQ': {
@@ -1869,6 +1873,8 @@ async function handleIntent(intentResult, session, products, from) {
             return { replyText, sendImages: [] };
         }
         case 'GREETING': {
+            session.fromCrossSell = false;
+            session.crossSellShown = false;
             if (session.cart && session.cart.length > 0) {
                 session.state = "AWAITING_PENDING_CART_DECISION";
                 return await getStatePrompt(session, products);
@@ -1907,6 +1913,8 @@ async function handleIntent(intentResult, session, products, from) {
                 session.searchProducts = [];
                 session.lastRecommendation = null;
                 session.isRecommendation = false;
+                session.fromCrossSell = false;
+                session.crossSellShown = false;
 
                 const subcategoryCounts = {};
                 products.forEach(p => {
@@ -1964,6 +1972,8 @@ async function handleIntent(intentResult, session, products, from) {
                 session.pendingProduct = null;
                 session.selectedSize = null;
                 session.isRecommendation = false;
+                session.fromCrossSell = false;
+                session.crossSellShown = false;
 
                 return await prepareProductsPageResponse(session, products, `Search: ${query}`);
             } else {
@@ -2049,6 +2059,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             return await startCheckout(session, from);
         } else if (isContinue) {
             session.state = "AWAITING_CATEGORY";
+            session.fromCrossSell = false;
+            session.crossSellShown = false;
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
@@ -2062,6 +2074,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.searchProducts = [];
             session.isRecommendation = false;
             session.crossSellShown = false;
+            session.fromCrossSell = false;
 
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
@@ -2089,12 +2102,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         if (choice === "choose_same_cat" || choice.includes("same") || choice === "1") {
             session.state = "AWAITING_MODEL_SELECTION";
             session.currentPage = 0;
+            session.fromCrossSell = false;
+            session.crossSellShown = false;
             const label = session.selectedSubCategory || "Products";
             return await prepareProductsPageResponse(session, products, label);
         } else if (choice === "continue_diff_cat" || choice.includes("other") || choice.includes("diff") || choice === "2") {
             session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
+            session.fromCrossSell = false;
+            session.crossSellShown = false;
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
@@ -2140,6 +2157,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 return await startCheckout(session, from);
             }
         } else if (choice === "continue_checkout" || choice.includes("checkout") || choice.includes("continue") || choice === "2") {
+            session.fromCrossSell = false;
             return await startCheckout(session, from);
         } else if (choice === "cancel_order" || choice.includes("cancel") || choice === "3") {
             session.cart = [];
@@ -2148,6 +2166,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
+            session.fromCrossSell = false;
+            session.crossSellShown = false;
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
@@ -2353,6 +2373,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 session.orderingIndex = 0;
                 session.orderingCart = [...(session.cart || [])];
                 session.state = "AWAITING_PRODUCT_SIZE";
+                session.fromCrossSell = false;
 
                 return await getStatePrompt(session, products);
             } else {
@@ -2594,6 +2615,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     session.orderingIndex = 0;
                     session.orderingCart = [...(session.cart || [])];
                     session.state = "AWAITING_PRODUCT_SIZE";
+                    session.isRecommendation = true;
                     return await getStatePrompt(session, products);
                 }
             }
@@ -2604,17 +2626,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.pendingProduct = null;
             session.selectedSize = null;
             session.isRecommendation = false;
-            session.state = "AWAITING_MORE_ITEMS";
-            return {
-                sendButtons: {
-                    body: `Would you like to continue shopping?`,
-                    buttons: [
-                        { id: 'yes', title: '🛍️ YES' },
-                        { id: 'no_checkout', title: '🛒 NO - Checkout' }
-                    ]
-                },
-                sendImages: []
-            };
+            session.fromCrossSell = false;
+            return await showCartSummaryWithCrossSell(session, products);
         }
 
         const idx = session.recommendationIndex || 0;
