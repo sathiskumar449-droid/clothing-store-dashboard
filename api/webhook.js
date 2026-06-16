@@ -1377,17 +1377,36 @@ async function getStatePrompt(session, products) {
 
             let recBlock = `Selected:\n${product.name}\n\n`;
             if (recommendations.length > 0) {
-                recBlock += `Recommended:\n`;
                 recommendations.forEach((rec, idx) => {
                     recBlock += `${idx + 1}. ${rec.name}\n`;
                 });
                 recBlock += `\n`;
             }
 
-            const replyText = `${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+            const isPant = isPantOrJeansCategory(product.category, product.name);
+            const formatHint = isPant 
+                ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)` 
+                : `Reply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+
+            const replyText = `${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\n${formatHint}`;
+            let sendImages = [];
+            if (currentIndex === 0) {
+                if (queue.length > 1) {
+                    const collageUrl = await createPromoCollage(queue.map(item => item.product), products);
+                    if (collageUrl) {
+                        sendImages = [{ url: collageUrl, caption: "Selected items" }];
+                    }
+                } else {
+                    const imgUri = getProductImageUri(product, products);
+                    if (imgUri) {
+                        sendImages = [{ url: imgUri, caption: product.name }];
+                    }
+                }
+            }
+
             return {
                 replyText,
-                sendImages: [{ url: getProductImageUri(product, products), caption: product.name }]
+                sendImages
             };
         }
         case "AWAITING_ORDER_CONFIRMATION": {
@@ -1954,18 +1973,35 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
                 let recBlock = `Selected:\n${product.name}\n\n`;
                 if (recommendations.length > 0) {
-                    recBlock += `Recommended:\n`;
                     recommendations.forEach((rec, idx) => {
                         recBlock += `${idx + 1}. ${rec.name}\n`;
                     });
                     recBlock += `\n`;
                 }
 
-                const replyText = `${youSelectedText}\n${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+                const isPant = isPantOrJeansCategory(product.category, product.name);
+                const formatHint = isPant 
+                    ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)` 
+                    : `Reply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+
+                const replyText = `${youSelectedText}\n${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\n${formatHint}`;
+
+                let sendImages = [];
+                if (queue.length > 1) {
+                    const collageUrl = await createPromoCollage(queue.map(item => item.product), products);
+                    if (collageUrl) {
+                        sendImages = [{ url: collageUrl, caption: "Selected items" }];
+                    }
+                } else {
+                    const imgUri = getProductImageUri(product, products);
+                    if (imgUri) {
+                        sendImages = [{ url: imgUri, caption: product.name }];
+                    }
+                }
 
                 return {
                     replyText,
-                    sendImages: [{ url: getProductImageUri(product, products), caption: product.name }],
+                    sendImages,
                     orderingQueue: session.orderingQueue,
                     orderingIndex: session.orderingIndex,
                     orderingCart: session.orderingCart
@@ -1985,8 +2021,14 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const input = textLower.trim();
         const match = input.match(/^([a-z0-9]+)\s*-\s*([0-9]+)$/i);
         if (!match) {
+            const queue = session.orderingQueue || [];
+            const currentIndex = session.orderingIndex || 0;
+            const currentItem = queue[currentIndex];
+            const product = currentItem ? currentItem.product : null;
+            const isPant = product ? isPantOrJeansCategory(product.category, product.name) : false;
+            const example = isPant ? '28-2' : 'M-2';
             return {
-                replyText: `⚠️ Invalid format. Please reply in this format: Size-Quantity (e.g., M-2).`,
+                replyText: `⚠️ Invalid format. Please reply in this format: Size-Quantity (e.g., ${example}).`,
                 sendImages: []
             };
         }
@@ -2025,15 +2067,17 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 ? product.sizes
                 : String(product.sizes).split(',').map(s => s.trim())
             ).filter(Boolean).map(s => s.toUpperCase());
+            const example = isPantOrJeansCategory(product.category, product.name) ? '28-2' : 'M-2';
             return {
-                replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${rawSizes.join(', ')}\n\nPlease reply in this format: Size-Quantity (e.g. M-2)`,
+                replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${rawSizes.join(', ')}\n\nPlease reply in this format: Size-Quantity (e.g. ${example})`,
                 sendImages: []
             };
         }
 
         if (qtyInput <= 0) {
+            const example = isPantOrJeansCategory(product.category, product.name) ? '28-2' : 'M-2';
             return {
-                replyText: `❌ Invalid quantity. Only positive quantity values are allowed.\n\nPlease reply in this format: Size-Quantity (e.g. M-2)`,
+                replyText: `❌ Invalid quantity. Only positive quantity values are allowed.\n\nPlease reply in this format: Size-Quantity (e.g. ${example})`,
                 sendImages: []
             };
         }
@@ -2066,16 +2110,19 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             let nextRecBlock = `Selected:\n${nextProduct.name}\n\n`;
             if (nextRecs.length > 0) {
-                nextRecBlock += `Recommended:\n`;
                 nextRecs.forEach((rec, idx) => {
                     nextRecBlock += `${idx + 1}. ${rec.name}\n`;
                 });
                 nextRecBlock += `\n`;
             }
 
+            const isNextPant = isPantOrJeansCategory(nextProduct.category, nextProduct.name);
+            const rawNextSize = nextSizeList[0] || (isNextPant ? '28' : 'M');
+            const nextExampleSize = normalizeSize(rawNextSize).toUpperCase();
+
             return {
-                replyText: `${nextRecBlock}For ${nextProduct.name} select size and quantity.\n\nAvailable Sizes:\n${nextSizeList.join(', ')}\n\nReply:\n${nextSizeList[0] || 'M'}-1`,
-                sendImages: [{ url: getProductImageUri(nextProduct, products), caption: nextProduct.name }],
+                replyText: `${nextRecBlock}For ${nextProduct.name} select size and quantity.\n\nAvailable Sizes:\n${nextSizeList.join(', ')}\n\nReply:\n${nextExampleSize}-1`,
+                sendImages: [],
                 orderingQueue: session.orderingQueue,
                 orderingIndex: session.orderingIndex,
                 orderingCart: session.orderingCart
@@ -2284,7 +2331,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     ).filter(Boolean);
                     const sizesText = sizeList.map(s => s.toUpperCase()).join(', ');
 
-                    const replyText = `For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+                    const isPant = isPantOrJeansCategory(product.category, product.name);
+                    const formatHint = isPant 
+                        ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)` 
+                        : `Reply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+
+                    const replyText = `For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\n${formatHint}`;
 
                     return {
                         replyText,
@@ -2907,8 +2959,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const currentItem = queue[currentIndex];
         const product = currentItem ? currentItem.product : null;
         const sizeList = product ? (Array.isArray(product.sizes) ? product.sizes : String(product.sizes).split(',')).map(s => s.trim().toUpperCase()) : ['S', 'M', 'L', 'XL'];
+        const example = (product && isPantOrJeansCategory(product.category, product.name)) ? '28-2' : 'M-2';
         return {
-            replyText: `Please reply in this format: Size-Quantity (e.g. M-2). Available sizes: ${sizeList.join(', ')}`,
+            replyText: `Please reply in this format: Size-Quantity (e.g. ${example}). Available sizes: ${sizeList.join(', ')}`,
             sendImages: []
         };
     }
