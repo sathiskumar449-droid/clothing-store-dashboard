@@ -3171,6 +3171,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     session.selectedSize = null;
                     session.isRecommendation = false;
                     session.crossSellShown = true;
+                    session.cartCrossSellShown = true;
 
                     const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
 
@@ -3518,6 +3519,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.selectedSize = null;
             session.isRecommendation = false;
             session.crossSellShown = true;
+            session.cartCrossSellShown = true;
 
             const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
 
