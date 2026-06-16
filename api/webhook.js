@@ -2984,7 +2984,93 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 return await showCartSummaryWithCrossSell(session, products);
             }
 
-            // Otherwise, normal post add-to-cart flow
+            // Otherwise, normal post add-to-cart flow: check for matching deals using existing cross-sell logic
+            if (!session.crossSellShown) {
+                const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
+                const excludedIds = session.cart.map(item => item.id);
+                const offer = getCrossSellOffer(product, uniqueProducts, excludedIds);
+                const candidates = offer?.candidates || [];
+
+                if (candidates.length > 0) {
+                    let promoCategory = offer?.promoCategory || 'Pants';
+                    const firstCand = candidates[0];
+                    if (isShirtCategory(firstCand.category, firstCand.name)) {
+                        promoCategory = 'Shirts';
+                    } else if (isTShirtCategory(firstCand.category, firstCand.name)) {
+                        promoCategory = 'T-Shirts';
+                    } else if (isBottomWearProduct(firstCand)) {
+                        promoCategory = 'Pants';
+                    }
+
+                    session.promoCategory = promoCategory;
+
+                    // Score and sort candidates by color and style compatibility
+                    const sortedCandidates = candidates
+                        .map(p => ({ product: p, score: getRecommendationScore(product, p, uniqueProducts) }))
+                        .sort((a, b) => b.score - a.score)
+                        .map(item => item.product);
+
+                    // Slice top 4 recommendations
+                    let promoCandidates = sortedCandidates.slice(0, 4);
+
+                    // Validation: Ensure unique product IDs inside collage
+                    if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
+                        const uniquePromoCandidates = [];
+                        const seenIds = new Set();
+                        for (const p of promoCandidates) {
+                            if (!seenIds.has(p.id)) {
+                                seenIds.add(p.id);
+                                uniquePromoCandidates.push(p);
+                            }
+                        }
+                        promoCandidates = uniquePromoCandidates;
+                    }
+
+                    let collageUrl = null;
+                    if (promoCandidates.length > 1) {
+                        collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
+                    } else if (promoCandidates.length === 1) {
+                        collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
+                    }
+
+                    const categoryCounts = getCategoryCounts(products);
+                    const parents = getSortedParents(categoryCounts);
+
+                    session.parentCategories = parents;
+                    session.state = "AWAITING_CATEGORY";
+                    session.pendingProduct = null;
+                    session.selectedSize = null;
+                    session.isRecommendation = false;
+                    session.crossSellShown = true;
+
+                    const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
+
+                    let promoEmoji = '🛍️';
+                    if (promoCategory === 'Shirts') promoEmoji = '👕';
+                    if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
+                    if (promoCategory === 'T-Shirts') promoEmoji = '👕';
+                    if (promoCategory === 'Shorts') promoEmoji = '🩳';
+
+                    const promoKeyword = promoCategory.toUpperCase();
+
+                    let bodyText = `✅ *${addedName}* added to cart.\n\n`;
+                    bodyText += `🔥 Special Offer!\n`;
+                    bodyText += `Matching Collection Available`;
+
+                    return {
+                        sendButtons: {
+                            body: bodyText,
+                            buttons: [
+                                { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
+                                { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
+                            ]
+                        },
+                        sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
+                        cart: session.cart
+                    };
+                }
+            }
+
             session.state = "AWAITING_POST_ADD_TO_CART_DECISION";
             return await getStatePrompt(session, products);
         }
