@@ -263,7 +263,8 @@ export async function getSession(phone) {
         orderingIndex: 0,
         orderingCart: [],
         fromCrossSell: false,
-        crossSellShown: false
+        crossSellShown: false,
+        cartCrossSellShown: false
     };
 }
 
@@ -1544,7 +1545,7 @@ async function showCartSummaryWithCrossSell(session, products) {
     cartSummary += `\n📦 *Total Quantity:* ${totalQty}`;
     cartSummary += `\n💰 *Total Amount:* ₹${totalAmount}\n\n`;
 
-    if (session.crossSellShown) {
+    if (session.cartCrossSellShown) {
         session.state = "AWAITING_CART_SUMMARY_DECISION";
         session.crossSellOptionAvailable = false;
         return {
@@ -1623,6 +1624,7 @@ async function showCartSummaryWithCrossSell(session, products) {
     session.crossSellOfferLabel = offerLabel;
     session.crossSellProductIds = related.slice(0, 20).map(p => p.id);
     session.crossSellOptionAvailable = true;
+    session.cartCrossSellShown = true;
 
     const shopBtnLabel = `🛍️ Shop ${promoCategory}`;
 
@@ -2076,6 +2078,7 @@ async function handleIntent(intentResult, session, products, from) {
                 session.searchProducts = [];
                 session.isRecommendation = false;
                 session.crossSellShown = false;
+                session.cartCrossSellShown = false;
                 session.fromCrossSell = false;
                 session.orderingQueue = [];
                 session.orderingIndex = 0;
@@ -2107,6 +2110,7 @@ async function handleIntent(intentResult, session, products, from) {
             session.searchProducts = [];
             session.isRecommendation = false;
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
             session.fromCrossSell = false;
 
             const categoryCounts = getCategoryCounts(products);
@@ -2167,6 +2171,7 @@ async function handleIntent(intentResult, session, products, from) {
         case 'GREETING': {
             session.fromCrossSell = false;
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
             if (session.cart && session.cart.length > 0) {
                 session.state = "AWAITING_PENDING_CART_DECISION";
                 return await getStatePrompt(session, products);
@@ -2207,6 +2212,7 @@ async function handleIntent(intentResult, session, products, from) {
                 session.isRecommendation = false;
                 session.fromCrossSell = false;
                 session.crossSellShown = false;
+                session.cartCrossSellShown = false;
 
                 const subcategoryCounts = {};
                 products.forEach(p => {
@@ -2266,6 +2272,7 @@ async function handleIntent(intentResult, session, products, from) {
                 session.isRecommendation = false;
                 session.fromCrossSell = false;
                 session.crossSellShown = false;
+                session.cartCrossSellShown = false;
 
                 return await prepareProductsPageResponse(session, products, `Search: ${query}`);
             } else {
@@ -2355,6 +2362,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.searchProducts = [];
             session.isRecommendation = false;
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
             session.fromCrossSell = false;
             session.subCategories = null;
             session.selectedParentCategory = null;
@@ -2402,6 +2410,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.searchProducts = [];
             session.isRecommendation = false;
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
             session.fromCrossSell = false;
             session.subCategories = null;
             session.selectedParentCategory = null;
@@ -2463,6 +2472,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.state = "AWAITING_CATEGORY";
             session.fromCrossSell = false;
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
@@ -2476,6 +2486,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.searchProducts = [];
             session.isRecommendation = false;
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
             session.fromCrossSell = false;
 
             const categoryCounts = getCategoryCounts(products);
@@ -2506,6 +2517,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.currentPage = 0;
             session.fromCrossSell = false;
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
             const label = session.selectedSubCategory || "Products";
             return await prepareProductsPageResponse(session, products, label);
         } else if (choice === "continue_diff_cat" || choice.includes("other") || choice.includes("diff") || choice === "2") {
@@ -2514,6 +2526,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.selectedSize = null;
             session.fromCrossSell = false;
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
@@ -2548,6 +2561,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             
             // Mark crossSellShown as true so they won't see recommendations again
             session.crossSellShown = true;
+            session.cartCrossSellShown = true;
             session.crossSellOptionAvailable = false;
 
             const subcategoryCounts = {};
@@ -2607,6 +2621,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.selectedSize = null;
             session.fromCrossSell = false;
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
@@ -2996,6 +3011,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.orderingIndex = 0;
             session.state = "AWAITING_CATEGORY";
             session.crossSellShown = false;
+            session.cartCrossSellShown = false;
 
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
@@ -3492,6 +3508,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         session.pendingProduct = null;
         session.selectedSize = null;
         session.crossSellShown = false;
+        session.cartCrossSellShown = false;
         return {
             replyText: "Feel free to message us anytime for your future shopping needs. Thank you for choosing Super Collections! 😊",
             sendImages: []
