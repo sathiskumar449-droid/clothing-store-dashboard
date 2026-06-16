@@ -410,26 +410,8 @@ async function sendRequest(payload) {
     }
 }
 
-async function sendList(to, bodyText, buttonText, sections, headerText = null, footerText = null, options = {}) {
-    const { skipAutoCancel = false } = options;
-    let finalSections = sections ? JSON.parse(JSON.stringify(sections)) : [];
-    const hasCancel = finalSections.some(sec =>
-        sec.rows && sec.rows.some(r =>
-            r.id === 'cancel_shopping' ||
-            r.id.toLowerCase().includes('cancel') ||
-            r.title.toLowerCase().includes('cancel') ||
-            ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(r.id)
-        )
-    );
-    if (!skipAutoCancel && !hasCancel) {
-        finalSections = [...finalSections, {
-            title: "Actions",
-            rows: [
-                { id: "cancel_shopping", title: "❌ Cancel", description: "Cancel shopping session" }
-            ]
-        }];
-    }
-
+async function sendList(to, bodyText, buttonText, sections, headerText = null, footerText = null) {
+    const finalSections = sections ? JSON.parse(JSON.stringify(sections)) : [];
     const interactive = {
         type: 'list',
         body: { text: bodyText },
@@ -1879,8 +1861,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
         sendList: {
             body,
             buttonText,
-            sections,
-            skipAutoCancel: buttons.length > 0
+            sections
         },
         sendImages: collageUrl ? [{ url: collageUrl, caption: `${queryLabel} - Page ${pageNum}` }] : [],
         searchProducts: session.searchProducts
@@ -3738,25 +3719,6 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
                 buttons.push({ id: 'cancel_shopping', title: '❌ Cancel' });
             }
         }
-        if (res.sendList && res.sendList.sections) {
-            const sections = res.sendList.sections;
-            const hasCancel = sections.some(sec => 
-                sec.rows && sec.rows.some(r => 
-                    r.id === 'cancel_shopping' || 
-                    r.id.toLowerCase().includes('cancel') || 
-                    r.title.toLowerCase().includes('cancel') ||
-                    ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(r.id)
-                )
-            );
-            if (!hasCancel) {
-                sections.push({
-                    title: "Actions",
-                    rows: [
-                        { id: "cancel_shopping", title: "❌ Cancel", description: "Cancel shopping session" }
-                    ]
-                });
-            }
-        }
     }
     return res;
 }
@@ -4025,8 +3987,7 @@ async function handleMessage(msg) {
                 listData.buttonText,
                 listData.sections,
                 listData.headerText,
-                listData.footerText,
-                { skipAutoCancel: !!listData.skipAutoCancel }
+                listData.footerText
             );
             const listMsgId = apiRes?.messages?.[0]?.id;
             if (listMsgId) {
@@ -4055,6 +4016,9 @@ async function handleMessage(msg) {
                 buttonMsg += '\n' + aiResponse.sendButtons.buttons.map(b => `[${b.title}]`).join(' ');
             }
             await logChatMessage(from, 'bot', buttonMsg);
+        } else if (aiResponse.sendList) {
+            await sendButtons(from, 'Options:', [{ id: 'cancel_shopping', title: '❌ Cancel' }]);
+            await logChatMessage(from, 'bot', 'Options:\n[❌ Cancel]');
         }
 
     } catch (err) {
