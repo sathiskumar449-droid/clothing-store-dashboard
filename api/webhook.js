@@ -411,12 +411,30 @@ async function sendRequest(payload) {
 }
 
 async function sendList(to, bodyText, buttonText, sections, headerText = null, footerText = null) {
+    let finalSections = sections ? JSON.parse(JSON.stringify(sections)) : [];
+    const hasCancel = finalSections.some(sec => 
+        sec.rows && sec.rows.some(r => 
+            r.id === 'cancel_shopping' || 
+            r.id.toLowerCase().includes('cancel') || 
+            r.title.toLowerCase().includes('cancel') ||
+            ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(r.id)
+        )
+    );
+    if (!hasCancel) {
+        finalSections = [...finalSections, {
+            title: "Actions",
+            rows: [
+                { id: "cancel_shopping", title: "❌ Cancel", description: "Cancel shopping session" }
+            ]
+        }];
+    }
+
     const interactive = {
         type: 'list',
         body: { text: bodyText },
         action: {
             button: buttonText,
-            sections: sections
+            sections: finalSections
         }
     };
     if (headerText) {
@@ -528,20 +546,46 @@ export async function sendImage(to, imageUrl, caption = '') {
 }
 
 async function sendButtons(to, bodyText, buttons) {
-    return await sendRequest({
-        to,
-        type: 'interactive',
-        interactive: {
-            type: 'button',
-            body: { text: bodyText },
-            action: {
-                buttons: buttons.map(b => ({
-                    type: 'reply',
-                    reply: { id: b.id, title: b.title }
+    const finalButtons = buttons ? [...buttons] : [];
+    const hasCancel = finalButtons.some(b => 
+        b.id === 'cancel_shopping' || 
+        b.id.toLowerCase().includes('cancel') || 
+        b.title.toLowerCase().includes('cancel') ||
+        ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(b.id)
+    );
+    if (!hasCancel) {
+        finalButtons.push({ id: 'cancel_shopping', title: '❌ Cancel' });
+    }
+
+    if (finalButtons.length <= 3) {
+        return await sendRequest({
+            to,
+            type: 'interactive',
+            interactive: {
+                type: 'button',
+                body: { text: bodyText },
+                action: {
+                    buttons: finalButtons.map(b => ({
+                        type: 'reply',
+                        reply: { id: b.id, title: b.title }
+                    }))
+                }
+            }
+        });
+    } else {
+        // Fallback: convert to list message
+        const sections = [
+            {
+                title: "Options",
+                rows: finalButtons.map((b, idx) => ({
+                    id: b.id,
+                    title: b.title.substring(0, 24),
+                    description: `Select option: ${b.title}`
                 }))
             }
-        }
-    });
+        ];
+        return await sendList(to, bodyText, "Select Option", sections);
+    }
 }
 
 // =============================
@@ -1150,6 +1194,12 @@ const startCheckout = async (session, from = null) => {
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
 
+    // Global Cancel trigger
+    const excludeIntents = ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'];
+    if (!excludeIntents.includes(t) && (t === 'cancel' || t === '❌ cancel' || t === 'cancel_shopping' || t === 'cancel_order' || t === 'confirm_order_cancel')) {
+        return { type: 'CANCEL_SHOPPING' };
+    }
+
     // 0. CATEGORY keyword routing when a promo category exists
     if (session && session.promoCategory && (t === 'category' || t === 'view category' || t === 'show category' || t.includes('view collection') || t.includes('show collection'))) {
         return { type: 'CATEGORY', category: session.promoCategory };
@@ -1594,7 +1644,15 @@ async function getStatePrompt(session, products) {
             };
         }
         case "AWAITING_CHECKOUT_NAME": {
-            return { replyText: "👤 Please enter your *Full Name*:", sendImages: [] };
+            return {
+                sendButtons: {
+                    body: "👤 Please enter your *Full Name*:",
+                    buttons: [
+                        { id: 'cancel_shopping', title: '❌ Cancel' }
+                    ]
+                },
+                sendImages: []
+            };
         }
         case "AWAITING_CHECKOUT_PHONE": {
             return {
@@ -1608,10 +1666,26 @@ async function getStatePrompt(session, products) {
             };
         }
         case "AWAITING_CHECKOUT_PINCODE": {
-            return { replyText: "📍 Please enter your 6-digit *Delivery Pincode* (e.g. 642126):", sendImages: [] };
+            return {
+                sendButtons: {
+                    body: "📍 Please enter your 6-digit *Delivery Pincode* (e.g. 642126):",
+                    buttons: [
+                        { id: 'cancel_shopping', title: '❌ Cancel' }
+                    ]
+                },
+                sendImages: []
+            };
         }
         case "AWAITING_CHECKOUT_ADDRESS": {
-            return { replyText: "🏠 Please enter your *Delivery Address* (Door No, Street Name, Area/City):", sendImages: [] };
+            return {
+                sendButtons: {
+                    body: "🏠 Please enter your *Delivery Address* (Door No, Street Name, Area/City):",
+                    buttons: [
+                        { id: 'cancel_shopping', title: '❌ Cancel' }
+                    ]
+                },
+                sendImages: []
+            };
         }
         case "AWAITING_PRODUCT_SIZE": {
             const queue = session.orderingQueue || [];
@@ -1826,6 +1900,60 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
 
 async function handleIntent(intentResult, session, products, from) {
     switch (intentResult.type) {
+        case 'CANCEL_SHOPPING': {
+            if (session.cart && session.cart.length > 0) {
+                // Change 2: You have items pending in your cart
+                session.state = "AWAITING_CANCEL_PENDING_DECISION";
+                let cartSummary = `🛒 *Pending Items in Cart:*\n\n`;
+                session.cart.forEach((item, i) => {
+                    cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
+                });
+                const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
+                cartSummary += `\n💰 Total: ₹${cartTotal}\n\n`;
+
+                return {
+                    sendButtons: {
+                        body: `⚠️ *You have items pending in your cart.*\n\n${cartSummary}Would you like to checkout, continue shopping, or clear the cart and exit?`,
+                        buttons: [
+                            { id: 'cancel_continue_shopping', title: '🛍️ Continue Shopping' },
+                            { id: 'cancel_checkout', title: '🛒 Checkout' },
+                            { id: 'cancel_clear_exit', title: '❌ Clear Cart & Exit' }
+                        ]
+                    },
+                    sendImages: []
+                };
+            } else {
+                // Change 1: Shopping cancelled.
+                session.state = "AWAITING_CANCEL_NO_CART_DECISION";
+                session.pendingProduct = null;
+                session.selectedSize = null;
+                session.selectedColor = null;
+                session.searchProducts = [];
+                session.isRecommendation = false;
+                session.crossSellShown = false;
+                session.fromCrossSell = false;
+                session.orderingQueue = [];
+                session.orderingIndex = 0;
+                session.orderingCart = [];
+                session.subCategories = null;
+                session.selectedParentCategory = null;
+                session.selectedSubCategory = null;
+                session.lastRecommendation = null;
+                session.awaitingRecommendationResponse = false;
+                session.awaitingCartAdditionConfirmation = false;
+
+                return {
+                    sendButtons: {
+                        body: `Shopping cancelled.`,
+                        buttons: [
+                            { id: 'cancel_continue_shopping', title: '🛍️ Continue Shopping' },
+                            { id: 'cancel_exit_shopping', title: '❌ Exit' }
+                        ]
+                    },
+                    sendImages: []
+                };
+            }
+        }
         case 'CLEAR_CART': {
             session.cart = [];
             session.state = "AWAITING_CATEGORY";
@@ -2066,6 +2194,116 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     const isGreeting = false;
 
     // 2. STATE-SPECIFIC HANDLERS
+
+    // STATE: AWAITING_CANCEL_NO_CART_DECISION
+    if (session.state === "AWAITING_CANCEL_NO_CART_DECISION") {
+        const choice = textLower.trim();
+        if (choice === 'cancel_continue_shopping' || choice.includes('continue') || choice === '1') {
+            session.state = "AWAITING_CATEGORY";
+            session.cart = [];
+            session.orderingCart = [];
+            session.orderingQueue = [];
+            session.orderingIndex = 0;
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.selectedColor = null;
+            session.searchProducts = [];
+            session.isRecommendation = false;
+            session.crossSellShown = false;
+            session.fromCrossSell = false;
+            session.subCategories = null;
+            session.selectedParentCategory = null;
+            session.selectedSubCategory = null;
+            session.lastRecommendation = null;
+            session.awaitingRecommendationResponse = false;
+            session.awaitingCartAdditionConfirmation = false;
+
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            return makeCategoriesListResponse(parents, categoryCounts, "👋 Welcome back! Please select a category to start shopping:");
+        } else if (choice === 'cancel_exit_shopping' || choice.includes('exit') || choice === '2') {
+            return {
+                replyText: "Thank you for visiting! Have a great day! 😊",
+                sendImages: [],
+                shouldDeleteSession: true
+            };
+        } else {
+            return {
+                sendButtons: {
+                    body: `Shopping cancelled.`,
+                    buttons: [
+                        { id: 'cancel_continue_shopping', title: '🛍️ Continue Shopping' },
+                        { id: 'cancel_exit_shopping', title: '❌ Exit' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+    }
+
+    // STATE: AWAITING_CANCEL_PENDING_DECISION
+    if (session.state === "AWAITING_CANCEL_PENDING_DECISION") {
+        const choice = textLower.trim();
+        if (choice === 'cancel_continue_shopping' || choice.includes('continue') || choice === '1') {
+            session.state = "AWAITING_CATEGORY";
+            session.orderingCart = [...(session.cart || [])];
+            session.orderingQueue = [];
+            session.orderingIndex = 0;
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.selectedColor = null;
+            session.searchProducts = [];
+            session.isRecommendation = false;
+            session.crossSellShown = false;
+            session.fromCrossSell = false;
+            session.subCategories = null;
+            session.selectedParentCategory = null;
+            session.selectedSubCategory = null;
+            session.lastRecommendation = null;
+            session.awaitingRecommendationResponse = false;
+            session.awaitingCartAdditionConfirmation = false;
+
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            return makeCategoriesListResponse(parents, categoryCounts, "Sure! 😊 Keep shopping and add more items to your cart:");
+        } else if (choice === 'cancel_checkout' || choice.includes('checkout') || choice === '2') {
+            session.fromCrossSell = false;
+            return await startCheckout(session, from);
+        } else if (choice === 'cancel_clear_exit' || choice.includes('clear') || choice === '3') {
+            session.cart = [];
+            session.orderingCart = [];
+            session.orderingQueue = [];
+            session.orderingIndex = 0;
+            return {
+                replyText: "Your cart has been cleared. Goodbye! 😊",
+                sendImages: [],
+                shouldDeleteSession: true
+            };
+        } else {
+            let cartSummary = `🛒 *Pending Items in Cart:*\n\n`;
+            session.cart.forEach((item, i) => {
+                cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
+            });
+            const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
+            cartSummary += `\n💰 Total: ₹${cartTotal}\n\n`;
+
+            return {
+                sendButtons: {
+                    body: `⚠️ *You have items pending in your cart.*\n\n${cartSummary}Would you like to checkout, continue shopping, or clear the cart and exit?`,
+                    buttons: [
+                        { id: 'cancel_continue_shopping', title: '🛍️ Continue Shopping' },
+                        { id: 'cancel_checkout', title: '🛒 Checkout' },
+                        { id: 'cancel_clear_exit', title: '❌ Clear Cart & Exit' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+    }
 
     // STATE: AWAITING_PENDING_CART_DECISION
     if (session.state === "AWAITING_PENDING_CART_DECISION") {
@@ -3379,7 +3617,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
     if (session.state === "AWAITING_CHECKOUT_NAME") {
         return {
-            replyText: "👤 Please enter your *Full Name*:",
+            sendButtons: {
+                body: "👤 Please enter your *Full Name*:",
+                buttons: [
+                    { id: 'cancel_shopping', title: '❌ Cancel' }
+                ]
+            },
             sendImages: []
         };
     }
@@ -3391,13 +3634,23 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
     if (session.state === "AWAITING_CHECKOUT_PINCODE") {
         return {
-            replyText: "⚠️ Please enter your 6-digit *Delivery Pincode*:",
+            sendButtons: {
+                body: "⚠️ Please enter your 6-digit *Delivery Pincode*:",
+                buttons: [
+                    { id: 'cancel_shopping', title: '❌ Cancel' }
+                ]
+            },
             sendImages: []
         };
     }
     if (session.state === "AWAITING_CHECKOUT_ADDRESS") {
         return {
-            replyText: "🏠 Please enter your *Delivery Address* (Door No, Street Name, Area/City):",
+            sendButtons: {
+                body: "🏠 Please enter your *Delivery Address* (Door No, Street Name, Area/City):",
+                buttons: [
+                    { id: 'cancel_shopping', title: '❌ Cancel' }
+                ]
+            },
             sendImages: []
         };
     }
@@ -3466,6 +3719,37 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
     if (res && typeof res === 'object') {
         if (res.crossSellShown === undefined) {
             res.crossSellShown = session.crossSellShown;
+        }
+        if (res.sendButtons && res.sendButtons.buttons) {
+            const buttons = res.sendButtons.buttons;
+            const hasCancel = buttons.some(b => 
+                b.id === 'cancel_shopping' || 
+                b.id.toLowerCase().includes('cancel') || 
+                b.title.toLowerCase().includes('cancel') ||
+                ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(b.id)
+            );
+            if (!hasCancel) {
+                buttons.push({ id: 'cancel_shopping', title: '❌ Cancel' });
+            }
+        }
+        if (res.sendList && res.sendList.sections) {
+            const sections = res.sendList.sections;
+            const hasCancel = sections.some(sec => 
+                sec.rows && sec.rows.some(r => 
+                    r.id === 'cancel_shopping' || 
+                    r.id.toLowerCase().includes('cancel') || 
+                    r.title.toLowerCase().includes('cancel') ||
+                    ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(r.id)
+                )
+            );
+            if (!hasCancel) {
+                sections.push({
+                    title: "Actions",
+                    rows: [
+                        { id: "cancel_shopping", title: "❌ Cancel", description: "Cancel shopping session" }
+                    ]
+                });
+            }
         }
     }
     return res;
@@ -3608,7 +3892,11 @@ async function handleMessage(msg) {
         if (aiResponse.crossSellShown !== undefined) session.crossSellShown = aiResponse.crossSellShown;
 
         // Save session details to Supabase
-        await saveSession(from, session);
+        if (aiResponse && aiResponse.shouldDeleteSession) {
+            await deleteSession(from);
+        } else {
+            await saveSession(from, session);
+        }
 
         // Order Confirmed — save to Supabase + update stock
         if (aiResponse.isOrderConfirmed && aiResponse.orderDetails) {
@@ -3742,7 +4030,7 @@ async function handleMessage(msg) {
         }
 
         // Store the context for this message
-        if (sentMsgId && aiResponse.listContext) {
+        if (sentMsgId && aiResponse.listContext && (!aiResponse || !aiResponse.shouldDeleteSession)) {
             session.msgContext = session.msgContext || {};
             session.msgContext[sentMsgId] = aiResponse.listContext;
 
