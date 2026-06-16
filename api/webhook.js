@@ -848,8 +848,11 @@ const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => 
         }
 
         if (isAddedTShirt) {
-            // Must be Cargo Track Pant, Trouser, or Jogger
-            return isCandCargo || isCandTrouser || isCandJogger;
+            const candCatLower = (p.category || '').toLowerCase();
+            const candNameLower = (p.name || '').toLowerCase();
+            const isCandTrackPant = candCatLower.includes('track') || candNameLower.includes('track') || candCatLower.includes('trach') || candNameLower.includes('trach');
+            const isCandCargoPant = candCatLower.includes('cargo') || candNameLower.includes('cargo');
+            return isCandCargo || isCandTrouser || isCandJogger || isCandTrackPant || isCandCargoPant;
         }
 
         // For other added products (e.g. Pants/Jeans/Cargos/Trousers/Joggers recommending Tops):
@@ -862,7 +865,11 @@ const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => 
         const isAddedCargo = isCargoTrackPant(addedProduct);
         const isAddedTrouser = isTrouser(addedProduct);
         const isAddedJogger = isJogger(addedProduct);
-        if (isAddedCargo || isAddedTrouser || isAddedJogger) {
+        const addedCatLower = (addedProduct.category || '').toLowerCase();
+        const addedNameLower = (addedProduct.name || '').toLowerCase();
+        const isAddedTrackPant = addedCatLower.includes('track') || addedNameLower.includes('track') || addedCatLower.includes('trach') || addedNameLower.includes('trach');
+        const isAddedCargoPant = addedCatLower.includes('cargo') || addedNameLower.includes('cargo');
+        if (isAddedCargo || isAddedTrouser || isAddedJogger || isAddedTrackPant || isAddedCargoPant) {
             return isTShirtCategory(p.category, p.name);
         }
 
@@ -1159,9 +1166,15 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
     let matcher = () => false;
 
     if (isTShirtCategory(addedProduct.category, addedProduct.name)) {
-        offerLabel = 'Matching Track Pants & Trousers';
+        offerLabel = 'Matching Track Pants & Cargo Pants';
         promoCategory = 'Pants';
-        matcher = (candidate) => isCargoTrackPant(candidate) || isTrouser(candidate);
+        matcher = (candidate) => {
+            const catLower = (candidate.category || '').toLowerCase();
+            const nameLower = (candidate.name || '').toLowerCase();
+            const isTrackPant = catLower.includes('track') || nameLower.includes('track') || catLower.includes('trach') || nameLower.includes('trach');
+            const isCargoPant = catLower.includes('cargo') || nameLower.includes('cargo');
+            return isTrackPant || isCargoPant || isTrouser(candidate) || isJogger(candidate);
+        };
     } else if (isPlainShirtProduct(addedProduct)) {
         offerLabel = 'Matching Formal Pants';
         promoCategory = 'Pants';
@@ -1174,7 +1187,13 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
         offerLabel = 'Matching Pants';
         promoCategory = 'Pants';
         matcher = (candidate) => isBottomWearProduct(candidate) && !isTShirtCategory(candidate.category, candidate.name);
-    } else if (isCargoTrackPant(addedProduct) || isJogger(addedProduct) || isTrouser(addedProduct)) {
+    } else if (isCargoTrackPant(addedProduct) || isJogger(addedProduct) || isTrouser(addedProduct) ||
+               (addedProduct.category || '').toLowerCase().includes('track') ||
+               (addedProduct.name || '').toLowerCase().includes('track') ||
+               (addedProduct.category || '').toLowerCase().includes('trach') ||
+               (addedProduct.name || '').toLowerCase().includes('trach') ||
+               (addedProduct.category || '').toLowerCase().includes('cargo') ||
+               (addedProduct.name || '').toLowerCase().includes('cargo')) {
         offerLabel = 'Matching T-Shirts';
         promoCategory = 'T-Shirts';
         matcher = (candidate) => isTShirtCategory(candidate.category, candidate.name);
