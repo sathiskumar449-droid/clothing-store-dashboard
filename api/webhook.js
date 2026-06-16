@@ -239,7 +239,10 @@ export async function getSession(phone) {
         lastRecommendation: null,
         awaitingRecommendationResponse: false,
         awaitingCartAdditionConfirmation: false,
-        pendingProduct: null
+        pendingProduct: null,
+        orderingQueue: [],
+        orderingIndex: 0,
+        orderingCart: []
     };
 }
 
@@ -537,6 +540,16 @@ const normalizeSize = (s) => {
         .replace(/size/g, '')
         .replace(/[-_]/g, '')
         .trim();
+};
+
+// Parse product selections from user message
+function parseProductSelections(text) {
+    if (text.includes('-')) {
+        return [];
+    }
+    const matches = text.match(/\b\d+\b/g);
+    if (!matches) return [];
+    return [...new Set(matches.map(num => parseInt(num, 10)))];
 };
 
 // Salesperson classification rules based on name and category
@@ -1012,9 +1025,9 @@ const startCheckout = (session) => {
     }
     let cartSummary = `🛒 *Your Cart:*\n\n`;
     session.cart.forEach((item, i) => {
-        cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.name} (${item.size}) - ₹${item.price}\n`;
+        cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
     });
-    const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
+    const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
     cartSummary += `\n💰 Total: ₹${cartTotal}\n\nPlease provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`;
     session.state = "AWAITING_CHECKOUT_DETAILS";
     session.orderDetails = { customerName: '', customerPhone: '', customerAddress: '', paymentMethod: 'UPI' };
@@ -1306,9 +1319,9 @@ async function getStatePrompt(session, products) {
         case "AWAITING_PENDING_CART_DECISION": {
             let cartSummary = `🛒 *Pending Items in Cart:*\n\n`;
             session.cart.forEach((item, i) => {
-                cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.name} (${item.size}) - ₹${item.price}\n`;
+                cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
             });
-            const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
+            const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
             cartSummary += `\n💰 Total: ₹${cartTotal}\n\n🛒 You have an unfinished order in your cart.\n\nPlease choose an option below:\n\n• Continue Checkout\n• Cancel Order`;
             return {
                 sendButtons: {
@@ -1325,11 +1338,51 @@ async function getStatePrompt(session, products) {
         case "AWAITING_CHECKOUT_DETAILS": {
             let cartSummary = `🛒 *Your Cart:*\n\n`;
             session.cart.forEach((item, i) => {
-                cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.name} (${item.size}) - ₹${item.price}\n`;
+                cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
             });
-            const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price), 0);
+            const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
             cartSummary += `\n💰 Total: ₹${cartTotal}\n\nPlease provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`;
             return { replyText: cartSummary, sendImages: [] };
+        }
+        case "AWAITING_PRODUCT_SIZE_QTY": {
+            const queue = session.orderingQueue || [];
+            const currentIndex = session.orderingIndex || 0;
+            const currentItem = queue[currentIndex];
+            if (!currentItem) return { replyText: "Please select a category to start shopping.", sendImages: [] };
+            const product = currentItem.product;
+            const sizeList = (Array.isArray(product.sizes)
+                ? product.sizes
+                : String(product.sizes).split(',').map(s => s.trim())
+            ).filter(Boolean);
+            const sizesText = sizeList.map(s => s.toUpperCase()).join(', ');
+            const replyText = `For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+            return {
+                replyText,
+                sendImages: [{ url: getProductImageUri(product, products), caption: product.name }]
+            };
+        }
+        case "AWAITING_ORDER_CONFIRMATION": {
+            let summaryText = `Order Summary\n\n`;
+            let total = 0;
+            const cartItems = session.cart || [];
+            cartItems.forEach(item => {
+                const itemTotal = Number(item.price) * (item.qty || 1);
+                total += itemTotal;
+                summaryText += `${item.product || item.name}\nSize: ${item.size}\nQty: ${item.qty || 1}\nPrice: ₹${itemTotal}\n\n`;
+            });
+            summaryText += `Total: ₹${total}\n\nConfirm Order?\n1. Confirm\n2. Modify\n3. Cancel`;
+            return {
+                replyText: summaryText,
+                sendImages: [],
+                sendButtons: {
+                    body: `Confirm Order?`,
+                    buttons: [
+                        { id: 'confirm_order_yes', title: '1. Confirm' },
+                        { id: 'confirm_order_modify', title: '2. Modify' },
+                        { id: 'confirm_order_cancel', title: '3. Cancel' }
+                    ]
+                }
+            };
         }
         default: {
             const categoryCounts = getCategoryCounts(products);
@@ -1618,6 +1671,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     session.isRecommendation = session.isRecommendation || false;
     session.crossSellShown = session.crossSellShown || false;
     session.promoCategory = session.promoCategory || null;
+    session.orderingQueue = session.orderingQueue || [];
+    session.orderingIndex = session.orderingIndex || 0;
+    session.orderingCart = session.orderingCart || [];
 
     // Backward compatibility for stale recommendation states
     if (session.state === "AWAITING_RECOMMENDATION_CONFIRM" || session.state === "AWAITING_COMBO_CART_CONFIRM") {
@@ -1826,31 +1882,230 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         }
     }
 
-    // STATE: AWAITING_MODEL_SELECTION (expects a number)
-    if (session.state === "AWAITING_MODEL_SELECTION" && isNumber) {
-        const idx = parseInt(textLower, 10) - 1;
-        if (session.searchProducts && idx >= 0 && idx < session.searchProducts.length) {
-            const product = session.searchProducts[idx];
-            session.pendingProduct = product;
-            session.state = "AWAITING_SIZE_SELECTION";
+    // STATE: AWAITING_MODEL_SELECTION (expects a number or multiple numbers)
+    if (session.state === "AWAITING_MODEL_SELECTION") {
+        const selections = parseProductSelections(textLower);
+        if (selections.length > 0) {
+            const maxVal = session.searchProducts?.length || 0;
+            const validSelections = selections.filter(idx => idx >= 1 && idx <= maxVal);
 
-            const sizeList = (Array.isArray(product.sizes)
-                ? product.sizes
-                : String(product.sizes).split(',').map(s => s.trim())
-            ).filter(Boolean);
-            const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
+            if (validSelections.length > 0) {
+                // Construct ordering queue
+                const queue = validSelections.map(idx => ({
+                    displayNum: idx,
+                    product: session.searchProducts[idx - 1]
+                }));
 
-            const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nPlease select your preferred size.`;
+                session.orderingQueue = queue;
+                session.orderingIndex = 0;
+                session.orderingCart = [...(session.cart || [])];
+                session.state = "AWAITING_PRODUCT_SIZE_QTY";
+
+                // Prompt for the first product in the queue
+                const firstItem = queue[0];
+                const product = firstItem.product;
+
+                // Let's get size list
+                const sizeList = (Array.isArray(product.sizes)
+                    ? product.sizes
+                    : String(product.sizes).split(',').map(s => s.trim())
+                ).filter(Boolean);
+                const sizesText = sizeList.map(s => s.toUpperCase()).join(', ');
+
+                // Build selected list
+                let youSelectedText = "You selected:\n\n";
+                queue.forEach(item => {
+                    youSelectedText += `${item.displayNum}. ${item.product.name}\n`;
+                });
+
+                const replyText = `${youSelectedText}\nFor ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+
+                return {
+                    replyText,
+                    sendImages: [{ url: getProductImageUri(product, products), caption: product.name }],
+                    orderingQueue: session.orderingQueue,
+                    orderingIndex: session.orderingIndex,
+                    orderingCart: session.orderingCart
+                };
+            } else {
+                const max = session.searchProducts?.length || 1;
+                return {
+                    replyText: `⚠️ Invalid selection. Please choose a product number from 1 to ${max}. 😊`,
+                    sendImages: []
+                };
+            }
+        }
+    }
+
+    // STATE: AWAITING_PRODUCT_SIZE_QTY
+    if (session.state === "AWAITING_PRODUCT_SIZE_QTY") {
+        const input = textLower.trim();
+        const match = input.match(/^([a-z0-9]+)\s*-\s*([0-9]+)$/i);
+        if (!match) {
+            return {
+                replyText: `⚠️ Invalid format. Please reply in this format: Size-Quantity (e.g., M-2).`,
+                sendImages: []
+            };
+        }
+
+        const sizeInput = match[1].toUpperCase();
+        const qtyInput = parseInt(match[2], 10);
+
+        const queue = session.orderingQueue || [];
+        const currentIndex = session.orderingIndex || 0;
+
+        if (currentIndex < 0 || currentIndex >= queue.length) {
+            session.state = "AWAITING_CATEGORY";
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            let replyText = "Something went wrong. Let's restart. Please select a category:\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            return { replyText, sendImages: [] };
+        }
+
+        const currentItem = queue[currentIndex];
+        const product = currentItem.product;
+
+        const sizeList = (Array.isArray(product.sizes)
+            ? product.sizes
+            : String(product.sizes).split(',').map(s => s.trim())
+        ).filter(Boolean).map(s => s.toUpperCase());
+
+        if (!sizeList.includes(sizeInput)) {
+            return {
+                replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${sizeList.join(', ')}\n\nPlease reply in this format: Size-Quantity (e.g. M-2)`,
+                sendImages: []
+            };
+        }
+
+        if (qtyInput <= 0) {
+            return {
+                replyText: `❌ Invalid quantity. Only positive quantity values are allowed.\n\nPlease reply in this format: Size-Quantity (e.g. M-2)`,
+                sendImages: []
+            };
+        }
+
+        session.orderingCart = session.orderingCart || [];
+        session.orderingCart.push({
+            id: product.id,
+            name: product.name,
+            product: product.name,
+            size: sizeInput,
+            qty: qtyInput,
+            price: Number(product.price),
+            color: product.color || ''
+        });
+
+        const nextIndex = currentIndex + 1;
+        session.orderingIndex = nextIndex;
+
+        if (nextIndex < queue.length) {
+            const nextItem = queue[nextIndex];
+            const nextProduct = nextItem.product;
+            const nextSizeList = (Array.isArray(nextProduct.sizes)
+                ? nextProduct.sizes
+                : String(nextProduct.sizes).split(',').map(s => s.trim())
+            ).filter(Boolean).map(s => s.toUpperCase());
 
             return {
-                replyText,
-                sendImages: [{ url: getProductImageUri(product, products), caption: product.name }],
-                pendingProduct: product
+                replyText: `For ${nextProduct.name} select size and quantity.\n\nAvailable Sizes:\n${nextSizeList.join(', ')}\n\nReply:\n${nextSizeList[0] || 'M'}-1`,
+                sendImages: [{ url: getProductImageUri(nextProduct, products), caption: nextProduct.name }],
+                orderingQueue: session.orderingQueue,
+                orderingIndex: session.orderingIndex,
+                orderingCart: session.orderingCart
             };
         } else {
-            const max = session.searchProducts?.length || 1;
+            session.cart = session.orderingCart;
+            session.state = "AWAITING_ORDER_CONFIRMATION";
+
+            let summaryText = `Order Summary\n\n`;
+            let total = 0;
+            session.cart.forEach(item => {
+                const itemTotal = Number(item.price) * item.qty;
+                total += itemTotal;
+                summaryText += `${item.product || item.name}\nSize: ${item.size}\nQty: ${item.qty}\nPrice: ₹${itemTotal}\n\n`;
+            });
+            summaryText += `Total: ₹${total}\n\nConfirm Order?\n1. Confirm\n2. Modify\n3. Cancel`;
+
             return {
-                replyText: `⚠️ Invalid selection. Please choose a product number from 1 to ${max}. 😊`,
+                replyText: summaryText,
+                sendImages: [],
+                sendButtons: {
+                    body: `Confirm Order?`,
+                    buttons: [
+                        { id: 'confirm_order_yes', title: '1. Confirm' },
+                        { id: 'confirm_order_modify', title: '2. Modify' },
+                        { id: 'confirm_order_cancel', title: '3. Cancel' }
+                    ]
+                },
+                cart: session.cart
+            };
+        }
+    }
+
+    // STATE: AWAITING_ORDER_CONFIRMATION
+    if (session.state === "AWAITING_ORDER_CONFIRMATION") {
+        const choice = textLower.trim();
+        const isConfirm = choice === "1" || choice === "confirm" || choice === "confirm_order_yes" || choice.includes("confirm");
+        const isModify = choice === "2" || choice === "modify" || choice === "confirm_order_modify" || choice.includes("modify");
+        const isCancel = choice === "3" || choice === "cancel" || choice === "confirm_order_cancel" || choice.includes("cancel");
+
+        if (isConfirm) {
+            return startCheckout(session);
+        } else if (isModify) {
+            session.cart = [];
+            session.orderingCart = [];
+            session.orderingQueue = [];
+            session.orderingIndex = 0;
+            session.state = "AWAITING_CATEGORY";
+
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            let replyText = "Let's modify your order. Please select a category to continue shopping:\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            replyText += "\nPlease reply with the product number.";
+
+            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+        } else if (isCancel) {
+            session.cart = [];
+            session.orderingCart = [];
+            session.orderingQueue = [];
+            session.orderingIndex = 0;
+            session.state = "AWAITING_CATEGORY";
+
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            let replyText = "❌ Order cancelled.\n\nPlease select a category to start shopping again:\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            replyText += "\nPlease reply with the product number.";
+
+            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+        } else {
+            return {
+                replyText: `⚠️ Invalid response. Please choose an option:\n1. Confirm\n2. Modify\n3. Cancel`,
+                sendButtons: {
+                    body: `Confirm Order?`,
+                    buttons: [
+                        { id: 'confirm_order_yes', title: '1. Confirm' },
+                        { id: 'confirm_order_modify', title: '2. Modify' },
+                        { id: 'confirm_order_cancel', title: '3. Cancel' }
+                    ]
+                },
                 sendImages: []
             };
         }
@@ -1882,22 +2137,29 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             if (selectedProductId) {
                 const product = products.find(p => p.id === selectedProductId);
                 if (product) {
-                    session.pendingProduct = product;
-                    session.state = "AWAITING_SIZE_SELECTION";
-                    session.isRecommendation = true;
-                    
+                    const queue = [{
+                        displayNum: selectedNum,
+                        product: product
+                    }];
+                    session.orderingQueue = queue;
+                    session.orderingIndex = 0;
+                    session.orderingCart = [...(session.cart || [])];
+                    session.state = "AWAITING_PRODUCT_SIZE_QTY";
+
                     const sizeList = (Array.isArray(product.sizes)
                         ? product.sizes
                         : String(product.sizes).split(',').map(s => s.trim())
                     ).filter(Boolean);
-                    const sizesText = sizeList.map(s => `* ${s.toUpperCase()}`).join('\n');
-                    
-                    const replyText = `${product.color ? product.color + ' ' : ''}${product.name}\n💰 ₹${product.price}\n📦 Stock: ${product.stock} pcs\n\n📐 Available Sizes:\n${sizesText}\n\nPlease select your preferred size.`;
-                    
+                    const sizesText = sizeList.map(s => s.toUpperCase()).join(', ');
+
+                    const replyText = `For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\nReply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
+
                     return {
                         replyText,
                         sendImages: [{ url: getProductImageUri(product, products), caption: product.name }],
-                        pendingProduct: product
+                        orderingQueue: session.orderingQueue,
+                        orderingIndex: session.orderingIndex,
+                        orderingCart: session.orderingCart
                     };
                 }
             }
@@ -2507,6 +2769,23 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
 
     // SMART FALLBACKS & GENERAL FALLBACKS
+    if (session.state === "AWAITING_PRODUCT_SIZE_QTY") {
+        const queue = session.orderingQueue || [];
+        const currentIndex = session.orderingIndex || 0;
+        const currentItem = queue[currentIndex];
+        const product = currentItem ? currentItem.product : null;
+        const sizeList = product ? (Array.isArray(product.sizes) ? product.sizes : String(product.sizes).split(',')).map(s => s.trim().toUpperCase()) : ['S', 'M', 'L', 'XL'];
+        return {
+            replyText: `Please reply in this format: Size-Quantity (e.g. M-2). Available sizes: ${sizeList.join(', ')}`,
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_ORDER_CONFIRMATION") {
+        return {
+            replyText: `⚠️ Invalid response. Please choose an option:\n1. Confirm\n2. Modify\n3. Cancel`,
+            sendImages: []
+        };
+    }
     if (session.state === "AWAITING_CHECKOUT_DETAILS") {
         return {
             replyText: `Please provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`,
@@ -2729,7 +3008,7 @@ async function handleMessage(msg) {
             const timeStr = orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
             const cartItems = session.cart;
-            const totalPrice = cartItems.reduce((sum, item) => sum + Number(item.price), 0);
+            const totalPrice = cartItems.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
 
             const newOrder = {
                 id: orderId,
@@ -2738,10 +3017,11 @@ async function handleMessage(msg) {
                 customer_address: aiResponse.orderDetails.customerAddress || '',
                 items: cartItems.map(item => ({
                     productId: item.id || item.productId,
-                    product: item.name,
+                    product: item.product || item.name,
                     color: item.color || '',
                     size: item.size || 'N/A',
-                    price: item.price
+                    price: Number(item.price),
+                    qty: item.qty || 1
                 })),
                 total_price: totalPrice,
                 status: 'confirmed',
@@ -2753,9 +3033,9 @@ async function handleMessage(msg) {
 
             // Decrement stock
             for (const item of cartItems) {
-                const product = products.find(p => String(p.id) === String(item.id) || p.code === item.code);
+                const product = products.find(p => String(p.id) === String(item.id || item.productId) || p.code === item.code);
                 if (product) {
-                    const newStock = Math.max(0, Number(product.stock) - 1);
+                    const newStock = Math.max(0, Number(product.stock) - (item.qty || 1));
                     await supabase.from('products').update({ stock: String(newStock) }).eq('id', product.id);
                 }
             }
@@ -2777,8 +3057,8 @@ async function handleMessage(msg) {
             bill += `🛒 *Items Ordered:*\n\n`;
             cartItems.forEach((item, i) => {
                 const colorPrefix = item.color ? `${item.color} ` : '';
-                bill += `${i + 1}. ${colorPrefix}${item.name}\n`;
-                bill += `   Size: ${item.size}  |  ₹${item.price}\n`;
+                bill += `${i + 1}. ${colorPrefix}${item.product || item.name}\n`;
+                bill += `   Size: ${item.size}  |  Qty: ${item.qty || 1}  |  ₹${Number(item.price) * (item.qty || 1)}\n`;
             });
             bill += `${divider}\n`;
             bill += `💰 *Total: ₹${totalPrice}*\n`;

@@ -146,8 +146,9 @@ export default function OrdersPage() {
                                   {item.product || item.name}
                                   {item.color ? ` · ${item.color}` : ''}
                                   {item.size ? ` · Size ${item.size}` : ''}
+                                  {item.qty ? ` · Qty ${item.qty}` : ''}
                                 </span>
-                                <span className="font-semibold text-gray-800">₹{item.price}</span>
+                                <span className="font-semibold text-gray-800">₹{(Number(item.price) * (item.qty || 1)).toLocaleString('en-IN')}</span>
                               </div>
                             ))}
                           </div>
