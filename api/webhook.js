@@ -69,7 +69,7 @@ export async function getProducts() {
                 if (cat.toLowerCase().includes('pant') || cat.toLowerCase().includes('phant') || cat === 'Men' || cat === 'General' || cat === 'Casual Shirt') {
                     cat = 'Casual Shirts';
                 }
-            } else if (nameLower.includes('polofit') || nameLower.includes('polo fit pant') || nameLower.includes('polo fit pants')) {
+            } else if (nameLower.includes('polofit') || nameLower.includes('polo fit pant') || nameLower.includes('polo fit pants') || nameLower.includes('polo fit')) {
                 cat = 'Polo Fit Pant';
             } else if (nameLower.includes('cargo') && (nameLower.includes('pant') || nameLower.includes('track'))) {
                 cat = 'Cargo Pant';
@@ -1057,7 +1057,7 @@ export const getParentCategory = (categoryName) => {
         { keywords: ['new arrival', 'new arrivals'], parent: 'New Arrivals' },
         { keywords: ['t-shirt', 't shirt', 'tshirt', 'polo t'], parent: 'T-Shirts' },
         { keywords: ['shirt', 'linen', 'lenin', 'chava'], parent: 'Shirts' },
-        { keywords: ['pant', 'pants', 'phant', 'trouser', 'jogger'], parent: 'Pants' },
+        { keywords: ['pant', 'pants', 'phant', 'trouser', 'jogger', 'polo fit', 'polofit'], parent: 'Pants' },
         { keywords: ['jeans', 'jean'], parent: 'Jeans' },
         { keywords: ['shorts', 'short'], parent: 'Shorts' },
         { keywords: ['saree'], parent: 'Sarees' },
@@ -2781,10 +2781,22 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             if (matched.length > 0) {
                 session.selectedSubCategory = selectedSub;
-                session.state = "AWAITING_MODEL_SELECTION";
                 session.currentPage = 0;
                 session.searchProducts = matched;
 
+                // Auto-select if only 1 product — skip the product list and go straight to size
+                if (matched.length === 1) {
+                    session.orderingQueue = [{ displayNum: 1, product: matched[0] }];
+                    session.orderingIndex = 0;
+                    session.orderingCart = [...(session.cart || [])];
+                    session.state = "AWAITING_PRODUCT_SIZE";
+                    session.fromCrossSell = false;
+                    session.crossSellShown = false;
+                    session.cartCrossSellShown = false;
+                    return await getStatePrompt(session, products);
+                }
+
+                session.state = "AWAITING_MODEL_SELECTION";
                 const emoji = getCategoryEmoji(session.selectedParentCategory || '');
                 const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 
@@ -3740,10 +3752,22 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 if (matched.length > 0) {
                     session.selectedSubCategory = selectedSub;
                     session.selectedParentCategory = selectedParent;
-                    session.state = "AWAITING_MODEL_SELECTION";
                     session.currentPage = 0;
                     session.searchProducts = matched;
 
+                    // Auto-select if only 1 product — skip the product list and go straight to size
+                    if (matched.length === 1) {
+                        session.orderingQueue = [{ displayNum: 1, product: matched[0] }];
+                        session.orderingIndex = 0;
+                        session.orderingCart = [...(session.cart || [])];
+                        session.state = "AWAITING_PRODUCT_SIZE";
+                        session.fromCrossSell = false;
+                        session.crossSellShown = false;
+                        session.cartCrossSellShown = false;
+                        return await getStatePrompt(session, products);
+                    }
+
+                    session.state = "AWAITING_MODEL_SELECTION";
                     const emoji = getCategoryEmoji(selectedParent);
                     const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 
