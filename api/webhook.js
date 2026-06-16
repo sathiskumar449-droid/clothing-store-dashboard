@@ -2141,24 +2141,45 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_CART_SUMMARY_DECISION") {
         const choice = textLower.trim();
         if (choice === "view_matches" || choice === "shop_matches" || choice.includes("match") || choice === "1") {
-            const lastItem = session.cart[session.cart.length - 1];
-            const matchedProduct = products.find(p => p.id === lastItem.id) || products.find(p => p.name === lastItem.product);
-            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
-            const excludedIds = session.cart.map(item => item.id);
-            const related = getRecommendationsList(matchedProduct, uniqueProducts, excludedIds);
-            const promoCandidates = related.slice(0, 2);
+            // Navigate to subcategory list for the promo category (e.g. Pants → Formal Pant, Cargo Pant...)
+            const promoCategory = session.crossSellPromoCategory || 'Pants';
 
-            if (promoCandidates.length > 0) {
-                session.recommendationPool = promoCandidates.map(p => p.id);
-                session.recommendationIndex = 0;
-                session.originalProductId = matchedProduct ? matchedProduct.id : null;
-                session.fromCrossSell = true;
-                session.state = "AWAITING_RECOMMENDATION_CHOICE";
-                
-                return await prepareRecommendationResponse(session, products);
-            } else {
+            const subcategoryCounts = {};
+            products.forEach(p => {
+                if (Number(p.stock) > 0 && getParentCategory(p.category) === promoCategory) {
+                    const sub = p.category || 'General';
+                    subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
+                }
+            });
+
+            const subs = Object.keys(subcategoryCounts).filter(sub => subcategoryCounts[sub] > 0);
+            subs.sort((a, b) => a.localeCompare(b));
+
+            if (subs.length === 0) {
                 return await startCheckout(session, from);
             }
+
+            session.fromCrossSell = true;
+            session.selectedParentCategory = promoCategory;
+
+            // If only 1 subcategory, skip the list and go directly to products
+            if (subs.length === 1) {
+                const selectedSub = subs[0];
+                const matched = products.filter(p => Number(p.stock) > 0 && p.category === selectedSub);
+                if (matched.length > 0) {
+                    session.selectedSubCategory = selectedSub;
+                    session.state = "AWAITING_MODEL_SELECTION";
+                    session.currentPage = 0;
+                    session.searchProducts = matched;
+                    const emoji = getCategoryEmoji(promoCategory);
+                    const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub} - Available Stock`);
+                }
+            }
+
+            session.subCategories = subs;
+            session.state = "AWAITING_SUBCATEGORY_SELECTION";
+            return makeSubcategoriesListResponse(subs, subcategoryCounts, promoCategory);
         } else if (choice === "continue_checkout" || choice.includes("checkout") || choice.includes("continue") || choice === "2") {
             session.fromCrossSell = false;
             return await startCheckout(session, from);
