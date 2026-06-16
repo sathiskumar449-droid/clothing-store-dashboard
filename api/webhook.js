@@ -2251,10 +2251,6 @@ async function handleIntent(intentResult, session, products, from) {
         case 'SEARCH': {
             const query = intentResult.query || intentResult.category || '';
             const queryClean = query.toLowerCase().replace(/(?:under|below|less than)\s*₹?\s*\d+/, '').trim();
-            const fillerWords = ['show', 'me', 'look', 'for', 'please', 'want', 'need', 'find', 'get', 'display', 'search', 'any', 'some', 'can', 'you', 'give', 'kudu', 'kammi', 'kattunga', 'kaatunga', 'katu', 'iruka', 'irukka'];
-            const keywords = queryClean.split(/\s+/)
-                .filter(word => word.length > 0 && word !== "bro" && word !== "anna" && !fillerWords.includes(word))
-                .map(kw => (kw.endsWith('s') && kw.length > 3) ? kw.slice(0, -1) : kw);
 
             let maxPrice = null;
             const underMatch = query.toLowerCase().match(/(?:under|below|less than)\s*₹?\s*(\d+)/);
@@ -2262,24 +2258,64 @@ async function handleIntent(intentResult, session, products, from) {
                 maxPrice = parseInt(underMatch[1], 10);
             }
 
-            let matched = products.filter(p => Number(p.stock) > 0);
-            matched = matched.filter(p => {
-                if (maxPrice && p.price) {
-                    const parsedPrice = parseFloat(p.price.replace(/[^\d.]/g, ''));
-                    if (isNaN(parsedPrice) || parsedPrice > maxPrice) return false;
+            const applyPriceFilter = (list) => {
+                if (!maxPrice) return list;
+                return list.filter(p => {
+                    const parsed = parseFloat(String(p.price || '').replace(/[^\d.]/g, ''));
+                    return !isNaN(parsed) && parsed <= maxPrice;
+                });
+            };
+
+            const inStock = products.filter(p => Number(p.stock) > 0);
+
+            // ── Priority 1: category-name match ──────────────────────────────────
+            // Collect all unique subcategory names and parent category names
+            const uniqueSubCats = [...new Set(inStock.map(p => p.category).filter(Boolean))];
+
+            // Check if query matches a subcategory (bidirectional partial, case-insensitive)
+            const matchedSubCat = uniqueSubCats.find(cat => {
+                const c = cat.toLowerCase();
+                return c.includes(queryClean) || queryClean.includes(c);
+            });
+
+            let matched = [];
+            if (matchedSubCat) {
+                // Return every in-stock product in that subcategory
+                matched = applyPriceFilter(inStock.filter(p => p.category === matchedSubCat));
+            } else {
+                // Check parent category match ("pants", "shirts", "jeans", etc.)
+                const matchedParent = uniqueSubCats.find(cat => {
+                    const parent = getParentCategory(cat).toLowerCase();
+                    return parent.includes(queryClean) || queryClean.includes(parent);
+                });
+
+                if (matchedParent) {
+                    const parentName = getParentCategory(matchedParent);
+                    matched = applyPriceFilter(
+                        inStock.filter(p => getParentCategory(p.category) === parentName)
+                    );
                 }
-                if (keywords.length > 0) {
-                    return keywords.every(kw => {
-                        return (
+            }
+
+            // ── Priority 2: keyword search (fallback) ────────────────────────────
+            if (matched.length === 0) {
+                const fillerWords = ['show', 'me', 'look', 'for', 'please', 'want', 'need', 'find', 'get', 'display', 'search', 'any', 'some', 'can', 'you', 'give', 'kudu', 'kammi', 'kattunga', 'kaatunga', 'katu', 'iruka', 'irukka'];
+                const keywords = queryClean.split(/\s+/)
+                    .filter(word => word.length > 0 && word !== 'bro' && word !== 'anna' && !fillerWords.includes(word))
+                    .map(kw => (kw.endsWith('s') && kw.length > 3) ? kw.slice(0, -1) : kw);
+
+                matched = applyPriceFilter(
+                    inStock.filter(p => {
+                        if (keywords.length === 0) return true;
+                        return keywords.every(kw =>
                             p.name?.toLowerCase().includes(kw) ||
                             p.category?.toLowerCase().includes(kw) ||
                             (p.color && p.color.toLowerCase().includes(kw)) ||
                             (p.pattern && p.pattern.toLowerCase().includes(kw))
                         );
-                    });
-                }
-                return true;
-            });
+                    })
+                );
+            }
 
             if (matched.length > 0) {
                 session.searchProducts = matched;
