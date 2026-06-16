@@ -1176,13 +1176,13 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
             return isTrackPant || isCargoPant || isTrouser(candidate) || isJogger(candidate);
         };
     } else if (isPlainShirtProduct(addedProduct)) {
-        offerLabel = 'Matching Formal Pants';
+        offerLabel = 'Matching Pants';
         promoCategory = 'Pants';
-        matcher = (candidate) => isFormalPantProduct(candidate);
+        matcher = (candidate) => isBottomWearProduct(candidate);
     } else if (isCasualShirtProduct(addedProduct)) {
-        offerLabel = 'Matching Jeans & Cotton Pants';
+        offerLabel = 'Matching Pants';
         promoCategory = 'Pants';
-        matcher = (candidate) => isJeans(candidate) || isCottonPantProduct(candidate);
+        matcher = (candidate) => isBottomWearProduct(candidate);
     } else if (isShirtCategory(addedProduct.category, addedProduct.name)) {
         offerLabel = 'Matching Pants';
         promoCategory = 'Pants';
@@ -2851,6 +2851,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 session.orderingCart = [...(session.cart || [])];
                 session.state = "AWAITING_PRODUCT_SIZE";
                 session.fromCrossSell = false;
+                session.crossSellShown = false;
+                session.cartCrossSellShown = false;
 
                 return await getStatePrompt(session, products);
             } else {
