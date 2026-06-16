@@ -55,7 +55,7 @@ async function runTests() {
     
     // Assert it sends buttons with correct labels matching product sizes
     assert.ok(res.sendButtons, "Pants should send interactive buttons");
-    assert.deepStrictEqual(res.sendButtons.buttons.map(b => b.title), ["28 SIZE", "30 SIZE", "32 SIZE"]);
+    assert.deepStrictEqual(res.sendButtons.buttons.map(b => b.title), ["28 SIZE", "30 SIZE", "32 SIZE", "❌ Cancel"]);
 
     // Test 3: Multiple selections images restriction
     console.log("\nTesting images are shown ONLY for the first configured product...");

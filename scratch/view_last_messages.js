@@ -1,27 +1,19 @@
 import { supabase } from '../lib/supabase.js';
 
 async function run() {
-    const phone = '919942305574';
-    const { data: chat, error } = await supabase
+    const { data: chats, error } = await supabase
         .from('chats')
-        .select('*')
-        .eq('customer_phone', phone)
-        .maybeSingle();
+        .select('customer_phone, customer_name, last_updated, last_message')
+        .order('last_updated', { ascending: false });
 
     if (error) {
-        console.error('Error fetching chat:', error.message);
+        console.error('Error fetching chats:', error.message);
         return;
     }
 
-    if (!chat) {
-        console.log('No chat found for', phone);
-        return;
-    }
-
-    console.log('=== CHAT HISTORY ===');
-    const msgs = chat.messages || [];
-    msgs.slice(-30).forEach((m, idx) => {
-        console.log(`[${idx}] ${m.sender.toUpperCase()} (${m.type}): "${m.text}" | timestamp: ${m.timestamp}`);
+    console.log('=== CHATS IN DB ===');
+    chats.forEach((c, idx) => {
+        console.log(`[${idx}] Phone: "${c.customer_phone}" | Name: "${c.customer_name}" | Msg: "${c.last_message}" | Updated: ${c.last_updated}`);
     });
 }
 

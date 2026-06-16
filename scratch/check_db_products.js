@@ -18,9 +18,9 @@ async function checkProducts() {
 
     console.log(`Total products in database: ${products.length}`);
 
-    // Print all plain shirts
-    const plainShirts = products.filter(p => p.name.toLowerCase().includes('plain shirt'));
-    console.log(`\nFound ${plainShirts.length} products with "plain shirt" in the name:`);
+    // Print all polo fit pants
+    const plainShirts = products.filter(p => p.name.toLowerCase().includes('polofit') || p.name.toLowerCase().includes('polo fit'));
+    console.log(`\nFound ${plainShirts.length} products with "polofit" or "polo fit" in the name:`);
     plainShirts.forEach(p => {
         console.log(`  - ID: ${p.id} | Name: "${p.name}" | Category: "${p.category}" | Stock: ${p.stock}`);
     });

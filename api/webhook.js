@@ -1002,14 +1002,15 @@ const isPantOrJeansCategory = (cat, name = '') => {
     const catLower = (cat || '').toLowerCase();
     const nameLower = (name || '').toLowerCase();
     return catLower.includes('pant') || catLower.includes('phant') || catLower.includes('jeans') ||
-        nameLower.includes('pant') || nameLower.includes('phant') || nameLower.includes('jeans');
+        nameLower.includes('pant') || nameLower.includes('phant') || nameLower.includes('jeans') ||
+        nameLower.includes('polofit');
 };
 
 const isPoloFitPant = (p) => {
     const nameLower = (p.name || '').toLowerCase();
     const catLower = (p.category || '').toLowerCase();
     const matchesPolo = nameLower.includes('polo fit') || nameLower.includes('polofit') || catLower.includes('polo fit') || catLower.includes('polofit');
-    const matchesPant = nameLower.includes('pant') || nameLower.includes('pants') || catLower.includes('pant') || catLower.includes('pants') || getParentCategory(p.category) === 'Pants';
+    const matchesPant = nameLower.includes('pant') || nameLower.includes('pants') || nameLower.includes('polofit') || catLower.includes('pant') || catLower.includes('pants') || getParentCategory(p.category) === 'Pants';
     return matchesPolo && matchesPant;
 };
 
@@ -1104,6 +1105,104 @@ export const getSortedParents = (categoryCounts) => {
     });
     return parents;
 };
+
+const isPlainShirtProduct = (p) => {
+    const nameLower = (p?.name || '').toLowerCase();
+    const catLower = (p?.category || '').toLowerCase();
+    return nameLower.includes('plain shirt') || catLower.includes('plain shirt');
+};
+
+const isCasualShirtProduct = (p) => {
+    const nameLower = (p?.name || '').toLowerCase();
+    const catLower = (p?.category || '').toLowerCase();
+    return !isPlainShirtProduct(p) && (
+        nameLower.includes('casual shirt') ||
+        catLower.includes('casual shirt') ||
+        nameLower.includes('printed shirt') ||
+        catLower.includes('printed shirt') ||
+        nameLower.includes('linen') ||
+        catLower.includes('linen') ||
+        nameLower.includes('cotton shirt') ||
+        catLower.includes('cotton shirt')
+    );
+};
+
+const isFormalPantProduct = (p) => {
+    const nameLower = (p?.name || '').toLowerCase();
+    const catLower = (p?.category || '').toLowerCase();
+    return nameLower.includes('formal pant') || catLower.includes('formal pant') || isTrouser(p);
+};
+
+const isCottonPantProduct = (p) => {
+    const nameLower = (p?.name || '').toLowerCase();
+    const catLower = (p?.category || '').toLowerCase();
+    return nameLower.includes('cotton pant') || catLower.includes('cotton pant') || nameLower.includes('chinos') || catLower.includes('chinos');
+};
+
+const isBottomWearProduct = (p) => {
+    return isPantOrJeansCategory(p?.category, p?.name) || isPoloFitPant(p) || isJeans(p) || isFormalPantProduct(p) || isCottonPantProduct(p) || isCargoTrackPant(p) || isTrouser(p) || isJogger(p);
+};
+
+function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
+    if (!addedProduct) return null;
+
+    const hasValidImage = (p) => {
+        const img = getProductImageUri(p, allProducts);
+        return img && img.startsWith('http') && img !== 'null' && img !== 'undefined';
+    };
+    const hasValidPrice = (p) => p.price && String(p.price).trim() !== '' && !isNaN(parseFloat(String(p.price).replace(/[^\d.]/g, '')));
+    const isExcluded = (id) => excludedIds.some(eid => String(eid) === String(id));
+
+    let offerLabel = 'Matching Styles';
+    let promoCategory = getParentCategory(addedProduct.category);
+    let matcher = () => false;
+
+    if (isTShirtCategory(addedProduct.category, addedProduct.name)) {
+        offerLabel = 'Matching Track Pants & Trousers';
+        promoCategory = 'Pants';
+        matcher = (candidate) => isCargoTrackPant(candidate) || isTrouser(candidate);
+    } else if (isPlainShirtProduct(addedProduct)) {
+        offerLabel = 'Matching Formal Pants';
+        promoCategory = 'Pants';
+        matcher = (candidate) => isFormalPantProduct(candidate);
+    } else if (isCasualShirtProduct(addedProduct)) {
+        offerLabel = 'Matching Jeans & Cotton Pants';
+        promoCategory = 'Pants';
+        matcher = (candidate) => isJeans(candidate) || isCottonPantProduct(candidate);
+    } else if (isShirtCategory(addedProduct.category, addedProduct.name)) {
+        offerLabel = 'Matching Pants';
+        promoCategory = 'Pants';
+        matcher = (candidate) => isBottomWearProduct(candidate) && !isTShirtCategory(candidate.category, candidate.name);
+    } else if (isCargoTrackPant(addedProduct) || isJogger(addedProduct) || isTrouser(addedProduct)) {
+        offerLabel = 'Matching T-Shirts';
+        promoCategory = 'T-Shirts';
+        matcher = (candidate) => isTShirtCategory(candidate.category, candidate.name);
+    } else if (isPantOrJeansCategory(addedProduct.category, addedProduct.name) || isPoloFitPant(addedProduct) || isJeans(addedProduct) || isFormalPantProduct(addedProduct) || isCottonPantProduct(addedProduct)) {
+        offerLabel = 'Matching Shirts';
+        promoCategory = 'Shirts';
+        matcher = (candidate) => isShirtCategory(candidate.category, candidate.name) && !isTShirtCategory(candidate.category, candidate.name);
+    } else {
+        offerLabel = 'Matching Pants';
+        promoCategory = 'Pants';
+        matcher = (candidate) => isBottomWearProduct(candidate);
+    }
+
+    const candidates = allProducts.filter(candidate => {
+        if (candidate.id === addedProduct.id) return false;
+        if (isExcluded(candidate.id)) return false;
+        if (Number(candidate.stock) <= 0) return false;
+        if (!hasValidPrice(candidate)) return false;
+        if (!hasValidImage(candidate)) return false;
+
+        return matcher(candidate);
+    });
+
+    return {
+        offerLabel,
+        promoCategory,
+        candidates
+    };
+}
 
 // Helper to retrieve customer's last order details
 async function getCustomerLastOrder(phone) {
@@ -1463,26 +1562,52 @@ async function showCartSummaryWithCrossSell(session, products) {
 
     let bodyText = cartSummary + `🔥 *Matching Offers Available!*\n`;
 
-    // Try to find matching recommendations based on the last cart item
     let promoCategory = 'Pants';
+    let offerLabel = 'Matching Styles';
     let related = [];
     if (cart.length > 0) {
         const lastItem = cart[cart.length - 1];
-        const matchedProduct = products.find(p => p.id === lastItem.id) || products.find(p => p.name === lastItem.product);
+        const matchedProduct = products.find(p => String(p.id) === String(lastItem.id))
+            || products.find(p => p.name === lastItem.name)
+            || products.find(p => p.name === lastItem.product);
         if (matchedProduct) {
-            if (isShirtCategory(matchedProduct.category, matchedProduct.name)) {
-                promoCategory = 'Pants';
-            } else if (isPantOrJeansCategory(matchedProduct.category, matchedProduct.name)) {
-                promoCategory = 'Shirts';
-            } else if (isTShirtCategory(matchedProduct.category, matchedProduct.name)) {
-                promoCategory = 'Pants';
-            }
-            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
             const excludedIds = cart.map(item => item.id);
-            related = getRecommendationsList(matchedProduct, uniqueProducts, excludedIds);
+            const offer = getCrossSellOffer(matchedProduct, products, excludedIds);
+            if (offer) {
+                promoCategory = offer.promoCategory;
+                offerLabel = offer.offerLabel;
+                related = offer.candidates;
+            }
         }
     }
-    
+
+    if (related.length > 0) {
+        const firstCandidate = related[0];
+        if (isShirtCategory(firstCandidate.category, firstCandidate.name)) {
+            promoCategory = 'Shirts';
+        } else if (isTShirtCategory(firstCandidate.category, firstCandidate.name)) {
+            promoCategory = 'T-Shirts';
+        } else if (isBottomWearProduct(firstCandidate)) {
+            promoCategory = 'Pants';
+        }
+    }
+
+    if (related.length === 0) {
+        session.state = "AWAITING_CART_SUMMARY_DECISION";
+        session.crossSellOptionAvailable = false;
+        return {
+            sendButtons: {
+                body: cartSummary + `What would you like to do next?`,
+                buttons: [
+                    { id: 'shop_more', title: '🛍️ Shop More' },
+                    { id: 'continue_checkout', title: '🛒 Checkout' },
+                    { id: 'cancel_order', title: '❌ Cancel' }
+                ]
+            },
+            sendImages: []
+        };
+    }
+
     bodyText += `We have special deals on matching *${promoCategory}* matching your selection. Tap "Shop ${promoCategory}" to view and buy them! 👇`;
 
     const promoCandidates = related.slice(0, 2);
@@ -1495,6 +1620,8 @@ async function showCartSummaryWithCrossSell(session, products) {
 
     session.state = "AWAITING_CART_SUMMARY_DECISION";
     session.crossSellPromoCategory = promoCategory;
+    session.crossSellOfferLabel = offerLabel;
+    session.crossSellProductIds = related.slice(0, 20).map(p => p.id);
     session.crossSellOptionAvailable = true;
 
     const shopBtnLabel = `🛍️ Shop ${promoCategory}`;
@@ -3085,69 +3212,25 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 };
             }
 
-            // Cross-sell teaser flow: Suggest other category based on cross-sell mapping rules
-            const addedParent = getParentCategory(product.category);
-            let promoCategory = '';
+            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
+            const excludedIds = session.cart.map(item => item.id);
+            const offer = getCrossSellOffer(product, uniqueProducts, excludedIds);
+            let promoCategory = offer?.promoCategory || 'Pants';
+            const offerLabel = offer?.offerLabel || 'Matching Styles';
+            const candidates = offer?.candidates || [];
 
-            if (isShirtCategory(product.category, product.name)) {
-                promoCategory = 'Pants';
-            } else if (isPantOrJeansCategory(product.category, product.name)) {
-                promoCategory = 'Shirts';
-            } else if (isTShirtCategory(product.category, product.name)) {
-                promoCategory = 'Pants';
-            } else if (addedParent === 'Shorts') {
-                promoCategory = 'T-Shirts';
-            } else {
-                // General fallback
-                const addedParentLower = addedParent.toLowerCase();
-                if (addedParentLower.includes('shirt')) {
-                    promoCategory = 'Pants';
-                } else if (addedParentLower.includes('pant') || addedParentLower.includes('jean') || addedParentLower.includes('short')) {
+            if (candidates.length > 0) {
+                const firstCand = candidates[0];
+                if (isShirtCategory(firstCand.category, firstCand.name)) {
                     promoCategory = 'Shirts';
-                } else {
+                } else if (isTShirtCategory(firstCand.category, firstCand.name)) {
+                    promoCategory = 'T-Shirts';
+                } else if (isBottomWearProduct(firstCand)) {
                     promoCategory = 'Pants';
                 }
             }
 
             session.promoCategory = promoCategory;
-
-            // Create unique product list using productId
-            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
-
-            const candidates = uniqueProducts.filter(p => {
-                if (p.id === product.id) return false;
-                if (Number(p.stock) <= 0) return false;
-
-                const img = getProductImageUri(p, uniqueProducts);
-                if (!img || img === 'null' || img === 'undefined') return false;
-
-                const parent = getParentCategory(p.category);
-                const nameLower = (p.name || '').toLowerCase();
-                const catLower = (p.category || '').toLowerCase();
-
-                if (isShirtCategory(product.category, product.name)) {
-                    // Shirt category -> recommend only Polo Fit Pant or Jeans
-                    const isPoloFit = nameLower.includes('polo fit') || nameLower.includes('polofit') || catLower.includes('polo fit') || catLower.includes('polofit');
-                    const isJ = nameLower.includes('jeans') || nameLower.includes('jean') || catLower.includes('jeans') || catLower.includes('jean') || parent === 'Jeans';
-                    if (!isPoloFit && !isJ) return false;
-
-                    // Exclude Cargo Track Pant and Trouser explicitly
-                    const isCargoTrack = nameLower.includes('cargo track') || nameLower.includes('track pant') || catLower.includes('cargo track') || catLower.includes('track pant') || (nameLower.includes('cargo') && nameLower.includes('track'));
-                    const isTr = nameLower.includes('trouser') || catLower.includes('trouser');
-                    if (isCargoTrack || isTr) return false;
-                } else if (isTShirtCategory(product.category, product.name)) {
-                    // T-Shirt category -> recommend only Cargo Track Pant, Trouser, or Jogger
-                    const isCargoTrack = nameLower.includes('cargo track') || nameLower.includes('track pant') || catLower.includes('cargo track') || catLower.includes('track pant') || (nameLower.includes('cargo') && nameLower.includes('track'));
-                    const isTr = nameLower.includes('trouser') || catLower.includes('trouser');
-                    const isJog = nameLower.includes('jogger') || catLower.includes('jogger');
-                    if (!isCargoTrack && !isTr && !isJog) return false;
-                } else {
-                    // Fallback to general category matching (e.g. Pants -> Shirts, Shorts -> T-Shirts)
-                    if (parent !== promoCategory) return false;
-                }
-
-                return true;
-            });
 
             if (candidates.length === 0) {
                 session.state = "AWAITING_MORE_ITEMS";
