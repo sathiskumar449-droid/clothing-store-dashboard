@@ -1413,7 +1413,7 @@ async function getStatePrompt(session, products) {
                 total += itemTotal;
                 summaryText += `${item.product || item.name}\nSize: ${item.size}\nQty: ${item.qty || 1}\nPrice: ₹${itemTotal}\n\n`;
             });
-            summaryText += `Total: ₹${total}\n\nConfirm Order?\n1. Confirm\n2. Modify\n3. Cancel`;
+            summaryText += `Total: ₹${total}`;
             return {
                 replyText: summaryText,
                 sendImages: [],
@@ -1421,8 +1421,7 @@ async function getStatePrompt(session, products) {
                     body: `Confirm Order?`,
                     buttons: [
                         { id: 'confirm_order_yes', title: '1. Confirm' },
-                        { id: 'confirm_order_modify', title: '2. Modify' },
-                        { id: 'confirm_order_cancel', title: '3. Cancel' }
+                        { id: 'confirm_order_cancel', title: '2. Cancel' }
                     ]
                 }
             };
@@ -2191,7 +2190,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     total += itemTotal;
                     summaryText += `${item.product || item.name}\nSize: ${item.size}\nQty: ${item.qty}\nPrice: ₹${itemTotal}\n\n`;
                 });
-                summaryText += `Total: ₹${total}\n\nConfirm Order?\n1. Confirm\n2. Modify\n3. Cancel`;
+                summaryText += `Total: ₹${total}`;
 
                 return {
                     replyText: summaryText,
@@ -2200,8 +2199,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                         body: `Confirm Order?`,
                         buttons: [
                             { id: 'confirm_order_yes', title: '1. Confirm' },
-                            { id: 'confirm_order_modify', title: '2. Modify' },
-                            { id: 'confirm_order_cancel', title: '3. Cancel' }
+                            { id: 'confirm_order_cancel', title: '2. Cancel' }
                         ]
                     },
                     cart: session.cart
@@ -2214,8 +2212,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_ORDER_CONFIRMATION") {
         const choice = textLower.trim();
         const isConfirm = choice === "1" || choice === "confirm" || choice === "confirm_order_yes" || choice.includes("confirm");
-        const isModify = choice === "2" || choice === "modify" || choice === "confirm_order_modify" || choice.includes("modify");
-        const isCancel = choice === "3" || choice === "cancel" || choice === "confirm_order_cancel" || choice.includes("cancel");
+        const isModify = choice === "modify" || choice === "confirm_order_modify" || choice.includes("modify");
+        const isCancel = choice === "2" || choice === "cancel" || choice === "confirm_order_cancel" || choice.includes("cancel") || choice === "3";
 
         if (isConfirm) {
             return startCheckout(session);
@@ -2245,27 +2243,15 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.orderingIndex = 0;
             session.state = "AWAITING_CATEGORY";
 
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            let replyText = "❌ Order cancelled.\n\nPlease select a category to start shopping again:\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
-
-            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+            return { replyText: "Your order is cancelled", sendImages: [] };
         } else {
             return {
-                replyText: `⚠️ Invalid response. Please choose an option:\n1. Confirm\n2. Modify\n3. Cancel`,
+                replyText: `⚠️ Invalid response. Please confirm or cancel your order using the buttons below.`,
                 sendButtons: {
                     body: `Confirm Order?`,
                     buttons: [
                         { id: 'confirm_order_yes', title: '1. Confirm' },
-                        { id: 'confirm_order_modify', title: '2. Modify' },
-                        { id: 'confirm_order_cancel', title: '3. Cancel' }
+                        { id: 'confirm_order_cancel', title: '2. Cancel' }
                     ]
                 },
                 sendImages: []
