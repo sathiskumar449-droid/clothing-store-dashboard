@@ -162,6 +162,16 @@ function dbRowToProduct(row) {
     };
 }
 
+const selectBestCategory = (categories) => {
+    if (!Array.isArray(categories) || categories.length === 0) return 'General';
+    const genericList = ['men', 'new arrival', 'new arrivals', 'general', 'uncategorized', 'kids'];
+    const specificCat = categories.find(c => {
+        const name = (c.name || '').toLowerCase().trim();
+        return !genericList.includes(name);
+    });
+    return specificCat ? specificCat.name : categories[0].name;
+};
+
 // ✅ Batch Sync products from WooCommerce
 export const syncProducts = async (req, res) => {
     try {
@@ -191,7 +201,7 @@ export const syncProducts = async (req, res) => {
                 id:          p.id, // WooCommerce numeric ID
                 name:        p.name,
                 code:        p.sku || String(p.id),
-                category:    p.categories?.[0]?.name || 'General',
+                category:    selectBestCategory(p.categories),
                 pattern:     p.pattern || null,
                 color:       color || p.color || null,
                 price:       p.price !== undefined ? String(p.price) : '0',
@@ -236,7 +246,7 @@ const mapWooProductToDb = (p) => {
         id:          p.id,
         name:        p.name,
         code:        p.sku || String(p.id),
-        category:    p.categories?.[0]?.name || 'General',
+        category:    selectBestCategory(p.categories),
         pattern:     p.pattern || null,
         color:       color || p.color || null,
         price:       p.price !== undefined ? String(p.price) : '0',

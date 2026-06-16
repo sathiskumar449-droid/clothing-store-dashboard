@@ -48,8 +48,8 @@ export async function getProducts() {
                 }
             } else if (nameLower.includes('shirt')) {
                 // If it's a shirt but has wrong category like 'Casual Pant'
-                if (cat.toLowerCase().includes('pant') || cat.toLowerCase().includes('phant') || cat === 'Men' || cat === 'New Arrival' || cat === 'General') {
-                    cat = 'Casual Shirt';
+                if (cat.toLowerCase().includes('pant') || cat.toLowerCase().includes('phant') || cat === 'Men' || cat === 'New Arrival' || cat === 'General' || cat === 'Casual Shirt') {
+                    cat = 'Casual Shirts';
                 }
             } else if (nameLower.includes('polofit') || nameLower.includes('polo fit pant') || nameLower.includes('polo fit pants')) {
                 cat = 'Polo Fit Pant';
