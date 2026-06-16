@@ -1,6 +1,7 @@
 // api/webhook.js  — Supabase version (replaces fs-based implementation)
 import axios from 'axios';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { supabase } from '../lib/supabase.js';
 import { createProductCollage, createRecommendationCollage, createPromoCollage } from '../lib/collage.js';
 
@@ -3191,7 +3192,7 @@ async function handleMessage(msg) {
                     qty: item.qty || 1
                 })),
                 total_price: totalPrice,
-                status: 'confirmed',
+                status: 'pending_payment',
                 date: orderDate.toISOString()
             };
 
@@ -3230,10 +3231,31 @@ async function handleMessage(msg) {
             bill += `${divider}\n`;
             bill += `💰 *Total: ₹${totalPrice}*\n`;
             bill += `${divider}\n`;
-            bill += `💳 *Payment:* GPay / UPI\n`;
-            bill += `📲 yourupi@okaxis\n\n`;
-            bill += `📨 Please share a screenshot of the payment receipt.\n`;
-            bill += `Our representative will contact you shortly! 😊\n`;
+
+            // Try to create Razorpay Payment Link
+            let paymentLink = null;
+            if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+                paymentLink = await createRazorpayPaymentLink(
+                    orderId,
+                    totalPrice,
+                    aiResponse.orderDetails.customerName,
+                    aiResponse.orderDetails.customerPhone || from
+                );
+            }
+
+            if (paymentLink) {
+                bill += `💳 *Payment:* Online Payment (Razorpay)\n`;
+                bill += `🔗 *Pay Link:* ${paymentLink}\n\n`;
+                bill += `⏳ Please click the link above to pay via UPI, GPay, PhonePe, Card, or NetBanking.\n`;
+                bill += `Once paid, your order will be confirmed automatically! 😊\n`;
+            } else {
+                // Fallback to manual UPI
+                bill += `💳 *Payment:* GPay / UPI\n`;
+                bill += `📲 yourupi@okaxis\n\n`;
+                bill += `📨 Please share a screenshot of the payment receipt.\n`;
+                bill += `Our representative will contact you shortly! 😊\n`;
+            }
+
             bill += `${divider}\n`;
             bill += `🙏 Thanks for shopping at\n`;
             bill += `*Super Collections!* ❤️`;
@@ -3360,3 +3382,156 @@ export const handleWhatsAppWebhook = async (req, res) => {
     if (req.method === 'GET') return verifyWebhook(req, res);
     return receiveWebhook(req, res);
 };
+
+// =============================
+// Razorpay Payment Integration Helpers
+// =============================
+
+export async function createRazorpayPaymentLink(orderId, totalAmount, customerName, customerPhone) {
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (!keyId || !keySecret) {
+        console.warn('[Razorpay] Missing RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET. Skipping Razorpay link creation.');
+        return null;
+    }
+
+    try {
+        const authHeader = Buffer.from(`${keyId}:${keySecret}`).toString('base64');
+        const payload = {
+            amount: Math.round(totalAmount * 100), // convert to paise
+            currency: 'INR',
+            accept_partial: false,
+            description: `Payment for Order ${orderId}`,
+            customer: {
+                name: customerName || 'Customer',
+                contact: customerPhone || ''
+            },
+            notify: {
+                sms: false,
+                email: false
+            },
+            reminder_enable: false,
+            notes: {
+                orderId: orderId
+            }
+        };
+
+        const response = await axios.post('https://api.razorpay.com/v1/payment_links', payload, {
+            headers: {
+                'Authorization': `Basic ${authHeader}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 8000
+        });
+
+        if (response.data && response.data.short_url) {
+            console.log(`[Razorpay] Created payment link successfully: ${response.data.short_url}`);
+            return response.data.short_url;
+        }
+
+        console.error('[Razorpay] Payment link response was missing short_url:', response.data);
+        return null;
+    } catch (error) {
+        console.error('[Razorpay] Error creating payment link:', error.response?.data || error.message);
+        return null;
+    }
+}
+
+export async function handleRazorpayWebhook(req, res) {
+    const signature = req.headers['x-razorpay-signature'];
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+    console.log('[Razorpay Webhook] Received webhook event');
+
+    // 1. Signature Verification
+    if (webhookSecret) {
+        if (!signature) {
+            console.error('[Razorpay Webhook] Missing x-razorpay-signature header');
+            return res.status(400).send('Missing signature');
+        }
+
+        const rawBody = req.rawBody || '';
+        const expectedSignature = crypto
+            .createHmac('sha256', webhookSecret)
+            .update(rawBody)
+            .digest('hex');
+
+        if (signature !== expectedSignature) {
+            console.error('[Razorpay Webhook] Invalid signature mismatch');
+            return res.status(400).send('Invalid signature');
+        }
+        console.log('[Razorpay Webhook] Signature verified successfully');
+    } else {
+        console.warn('[Razorpay Webhook] RAZORPAY_WEBHOOK_SECRET is not configured. Signature verification bypassed.');
+    }
+
+    // 2. Process Event
+    try {
+        const eventData = req.body;
+        console.log(`[Razorpay Webhook] Event type: ${eventData.event}`);
+
+        if (eventData.event === 'payment_link.paid') {
+            const paymentLinkObj = eventData.payload?.payment_link?.entity;
+            if (!paymentLinkObj) {
+                console.error('[Razorpay Webhook] Missing payment link entity in payload');
+                return res.sendStatus(200);
+            }
+
+            // Extract Order ID from notes or description
+            const orderId = paymentLinkObj.notes?.orderId || paymentLinkObj.description?.match(/ORD-\d+/)?.[0];
+            const paymentStatus = paymentLinkObj.status;
+
+            console.log(`[Razorpay Webhook] Payment link for order ${orderId} is ${paymentStatus}`);
+
+            if (orderId && paymentStatus === 'paid') {
+                // Find order in Supabase
+                const { data: order, error: findError } = await supabase
+                    .from('orders')
+                    .select('*')
+                    .eq('id', orderId)
+                    .maybeSingle();
+
+                if (findError) {
+                    console.error('[Razorpay Webhook] Database error finding order:', findError.message);
+                    return res.sendStatus(200);
+                }
+
+                if (!order) {
+                    console.error(`[Razorpay Webhook] Order ${orderId} not found in database`);
+                    return res.sendStatus(200);
+                }
+
+                // If not already confirmed/paid, update status
+                if (order.status === 'pending_payment') {
+                    const { error: updateError } = await supabase
+                        .from('orders')
+                        .update({ status: 'confirmed' })
+                        .eq('id', orderId);
+
+                    if (updateError) {
+                        console.error('[Razorpay Webhook] Database error updating status:', updateError.message);
+                        return res.sendStatus(200);
+                    }
+                    console.log(`[Razorpay Webhook] Successfully updated order ${orderId} status to 'confirmed'`);
+
+                    // Send WhatsApp success message to customer
+                    const customerPhone = order.customer_phone;
+                    if (customerPhone) {
+                        const successMsg = `✅ *Payment Received!*\n\nYour Order *${orderId}* has been paid successfully and is now confirmed! 🛍️\n\nWe are preparing your items for delivery. Thank you for shopping with us! ❤️`;
+                        await sendText(customerPhone, successMsg);
+                        await logChatMessage(customerPhone, 'bot', successMsg);
+                        console.log(`[Razorpay Webhook] Sent payment confirmation WhatsApp message to ${customerPhone}`);
+                    }
+                } else {
+                    console.log(`[Razorpay Webhook] Order ${orderId} was already in status: ${order.status}`);
+                }
+            }
+        }
+
+        res.sendStatus(200); // Always return 200 to acknowledge webhook receipt
+    } catch (err) {
+        console.error('[Razorpay Webhook] Processing error:', err);
+        res.sendStatus(200);
+    }
+}

@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 
 import { getOutfitMatches } from './api/matchOutfit.js';
-import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook } from './api/webhook.js';
+import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook, handleRazorpayWebhook } from './api/webhook.js';
 import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook } from './api/products.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
 import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat } from './api/chats.js';
@@ -18,7 +18,12 @@ const app = express();
 // ✅ Middleware
 // =============================
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({
+    limit: '50mb',
+    verify: (req, res, buf) => {
+        req.rawBody = buf.toString();
+    }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 
@@ -80,6 +85,9 @@ app.get('/webhook', verifyWebhook);
 
 // 👉 Incoming WhatsApp messages (POST)
 app.post('/webhook', receiveWebhook);
+
+// 👉 Razorpay Payment Webhook (POST)
+app.post('/api/webhook/razorpay', handleRazorpayWebhook);
 
 
 // =============================
