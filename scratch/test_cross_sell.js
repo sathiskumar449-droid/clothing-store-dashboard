@@ -15,7 +15,8 @@ const mockProducts = [
     { id: 1, name: 'Premium Plain Shirt', price: '699', stock: '10', sizes: 'M,L,XL', category: 'Casual Shirt', color: 'Black', imageUri: 'https://supercollections.in/plain_shirt.jpg' },
     { id: 2, name: 'Premium Printed Shirt', price: '799', stock: '5', sizes: 'S,M,L', category: 'Casual Shirt', color: 'White', imageUri: 'https://supercollections.in/printed_shirt.jpg' },
     { id: 3, name: 'Polo Fit Pant', price: '999', stock: '8', sizes: '30,32,34', category: 'Pants', color: 'Blue', imageUri: 'https://supercollections.in/navy_pant.jpg' },
-    { id: 4, name: 'Cargo Track Pant', price: '599', stock: '12', sizes: 'M,L,XL', category: 'Cargo Pant', color: 'Green', imageUri: 'https://supercollections.in/cargo_pant.jpg' }
+    { id: 4, name: 'Cargo Track Pant', price: '599', stock: '12', sizes: 'M,L,XL', category: 'Cargo Pant', color: 'Green', imageUri: 'https://supercollections.in/cargo_pant.jpg' },
+    { id: 5, name: 'Premium Linen Shirt', price: '899', stock: '10', sizes: 'M,L,XL', category: 'Casual Shirt', color: 'White', imageUri: 'https://supercollections.in/linen_shirt.jpg' }
 ];
 
 async function runFlow() {
@@ -39,12 +40,18 @@ async function runFlow() {
         { msg: "1", desc: "Select product 1 (Premium Plain Shirt)" },
         { msg: "M", desc: "Select size M" },
         { msg: "qty_2", desc: "Select quantity 2" },
-        { msg: "PANTS", desc: "Browse pants" },
+        { msg: "continue_diff_cat", desc: "Select Other Category" },
+        { msg: "2", desc: "Select category 2 (Pants)" },
         { msg: "2", desc: "Select subcategory 2 (Pants)" },
         { msg: "1", desc: "Select product 1 (Polo Fit Pant)" },
         { msg: "32", desc: "Select size 32" },
         { msg: "qty_1", desc: "Select quantity 1" },
-        { msg: "no_checkout", desc: "Decline continue shopping, go to checkout" },
+        { msg: "cart_summary", desc: "Select Checkout" },
+        { msg: "view_suggestions", desc: "View Suggestions" },
+        { msg: "1", desc: "Select suggestion product 1" },
+        { msg: "M", desc: "Select size M" },
+        { msg: "qty_1", desc: "Select quantity 1" },
+        { msg: "continue_checkout", desc: "Select Continue Checkout" },
         { msg: "Ravi", desc: "Enter name" },
         { msg: "use_current_phone", desc: "Select use current phone number" },
         { msg: "642126", desc: "Enter pincode" },

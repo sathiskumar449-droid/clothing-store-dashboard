@@ -1365,6 +1365,55 @@ function makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent) 
     };
 }
 
+async function showCartSummaryWithCrossSell(session, products) {
+    let cartSummary = `🛒 *Your Cart Summary:*\n\n`;
+    let totalQty = 0;
+    let totalAmount = 0;
+    
+    const cart = session.cart || [];
+    cart.forEach((item, i) => {
+        const itemTotal = Number(item.price) * (item.qty || 1);
+        cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${itemTotal}\n`;
+        totalQty += (item.qty || 1);
+        totalAmount += itemTotal;
+    });
+    cartSummary += `\n📦 *Total Quantity:* ${totalQty}`;
+    cartSummary += `\n💰 *Total Amount:* ₹${totalAmount}\n\n`;
+
+    let bodyText = cartSummary + `🔥 *You may also like*\n`;
+
+    // Try to find matching recommendations based on the last cart item
+    let promoCategory = 'Pants';
+    if (cart.length > 0) {
+        const lastItem = cart[cart.length - 1];
+        const matchedProduct = products.find(p => p.id === lastItem.id) || products.find(p => p.name === lastItem.product);
+        if (matchedProduct) {
+            if (isShirtCategory(matchedProduct.category, matchedProduct.name)) {
+                promoCategory = 'Pants';
+            } else if (isPantOrJeansCategory(matchedProduct.category, matchedProduct.name)) {
+                promoCategory = 'Shirts';
+            } else if (isTShirtCategory(matchedProduct.category, matchedProduct.name)) {
+                promoCategory = 'Pants';
+            }
+        }
+    }
+    
+    bodyText += `We have trending *${promoCategory}* matching your selection. Tap "View Suggestions" to check them out! 👇`;
+
+    session.state = "AWAITING_CART_SUMMARY_DECISION";
+
+    return {
+        sendButtons: {
+            body: bodyText,
+            buttons: [
+                { id: 'view_suggestions', title: '💡 View Suggestions' },
+                { id: 'continue_checkout', title: '➡️ Continue' }
+            ]
+        },
+        sendImages: []
+    };
+}
+
 async function getStatePrompt(session, products) {
     switch (session.state) {
         case "AWAITING_CATEGORY": {
@@ -1443,6 +1492,22 @@ async function getStatePrompt(session, products) {
                 },
                 sendImages: []
             };
+        }
+        case "AWAITING_POST_ADD_TO_CART_DECISION": {
+            return {
+                sendButtons: {
+                    body: `✅ *Item added to cart.*\n\nWhat would you like to do next?`,
+                    buttons: [
+                        { id: 'choose_same_cat', title: '🔄 Same Category' },
+                        { id: 'continue_diff_cat', title: '🛍️ Other Category' },
+                        { id: 'cart_summary', title: '🛒 Checkout' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+        case "AWAITING_CART_SUMMARY_DECISION": {
+            return await showCartSummaryWithCrossSell(session, products);
         }
         case "AWAITING_MORE_ITEMS": {
             return {
@@ -2005,6 +2070,78 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         }
     }
 
+    // STATE: AWAITING_POST_ADD_TO_CART_DECISION
+    if (session.state === "AWAITING_POST_ADD_TO_CART_DECISION") {
+        const choice = textLower.trim();
+        if (choice === "choose_same_cat" || choice.includes("same") || choice === "1") {
+            session.state = "AWAITING_MODEL_SELECTION";
+            session.currentPage = 0;
+            const label = session.selectedSubCategory || "Products";
+            return await prepareProductsPageResponse(session, products, label);
+        } else if (choice === "continue_diff_cat" || choice.includes("other") || choice.includes("diff") || choice === "2") {
+            session.state = "AWAITING_CATEGORY";
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+            return makeCategoriesListResponse(parents, categoryCounts);
+        } else if (choice === "cart_summary" || choice.includes("checkout") || choice === "3") {
+            return await showCartSummaryWithCrossSell(session, products);
+        } else {
+            return {
+                replyText: `⚠️ Invalid option. Please choose one of the options below:`,
+                sendButtons: {
+                    body: `What would you like to do next?`,
+                    buttons: [
+                        { id: 'choose_same_cat', title: '🔄 Same Category' },
+                        { id: 'continue_diff_cat', title: '🛍️ Other Category' },
+                        { id: 'cart_summary', title: '🛒 Checkout' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+    }
+
+    // STATE: AWAITING_CART_SUMMARY_DECISION
+    if (session.state === "AWAITING_CART_SUMMARY_DECISION") {
+        const choice = textLower.trim();
+        if (choice === "view_suggestions" || choice.includes("suggestion") || choice === "1") {
+            const lastItem = session.cart[session.cart.length - 1];
+            const matchedProduct = products.find(p => p.id === lastItem.id) || products.find(p => p.name === lastItem.product);
+            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
+            const excludedIds = session.cart.map(item => item.id);
+            const related = getRecommendationsList(matchedProduct, uniqueProducts, excludedIds);
+
+            if (related.length > 0) {
+                session.recommendationPool = related.map(p => p.id);
+                session.recommendationIndex = 0;
+                session.originalProductId = matchedProduct ? matchedProduct.id : null;
+                session.fromCrossSell = true;
+                session.state = "AWAITING_RECOMMENDATION_CHOICE";
+                
+                return await prepareRecommendationResponse(session, products);
+            } else {
+                return await startCheckout(session, from);
+            }
+        } else if (choice === "continue_checkout" || choice.includes("continue") || choice === "2") {
+            return await startCheckout(session, from);
+        } else {
+            return {
+                replyText: `⚠️ Invalid option. Please select an option:`,
+                sendButtons: {
+                    body: `Select option:`,
+                    buttons: [
+                        { id: 'view_suggestions', title: '💡 View Suggestions' },
+                        { id: 'continue_checkout', title: '➡️ Continue' }
+                    ]
+                },
+                sendImages: []
+            };
+        }
+    }
+
     // STATE: AWAITING_HELP_CONFIRM
     if (session.state === "AWAITING_HELP_CONFIRM") {
         const yesKeywords = ['yes', 'aama', 'help_yes', 'y', 'aam', 'ok', 'okay', 'sari', 'sari bro', 'saree', 'sari da', 'seri', 'seri bro', 'seri da', 'aama bro'];
@@ -2334,88 +2471,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         } else {
             session.cart = session.orderingCart;
 
-            // Fetch recommendations for the last configured product
-            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
-            const excludedIds = session.cart.map(item => item.id);
-            const related = getRecommendationsList(product, uniqueProducts, excludedIds);
-
-            if (related.length > 0 && !session.crossSellShown) {
-                let promoCandidates = related.slice(0, 4);
-
-                // Ensure unique product IDs inside collage
-                if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
-                    const uniquePromoCandidates = [];
-                    const seenIds = new Set();
-                    for (const p of promoCandidates) {
-                        if (!seenIds.has(p.id)) {
-                            seenIds.add(p.id);
-                            uniquePromoCandidates.push(p);
-                        }
-                    }
-                    promoCandidates = uniquePromoCandidates;
-                }
-
-                let collageUrl = null;
-                if (promoCandidates.length > 1) {
-                    collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
-                } else if (promoCandidates.length === 1) {
-                    collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
-                }
-
-                let promoCategory = '';
-                if (isShirtCategory(product.category, product.name)) {
-                    promoCategory = 'Pants';
-                } else if (isPantOrJeansCategory(product.category, product.name)) {
-                    promoCategory = 'Shirts';
-                } else if (isTShirtCategory(product.category, product.name)) {
-                    promoCategory = 'Pants';
-                } else {
-                    promoCategory = 'Pants';
-                }
-                session.promoCategory = promoCategory;
-
-                session.state = "AWAITING_CATEGORY";
-                session.pendingProduct = null;
-                session.selectedSize = null;
-                session.isRecommendation = false;
-                session.crossSellShown = true;
-
-                let promoEmoji = '🛍️';
-                if (promoCategory === 'Shirts') promoEmoji = '👕';
-                if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
-                if (promoCategory === 'T-Shirts') promoEmoji = '👕';
-                if (promoCategory === 'Shorts') promoEmoji = '🩳';
-
-                const promoKeyword = promoCategory.toUpperCase();
-
-                let bodyText = `🔥 Special Offer!\n`;
-                bodyText += `Matching Collection Available`;
-
-                return {
-                    sendButtons: {
-                        body: bodyText,
-                        buttons: [
-                            { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
-                            { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
-                        ]
-                    },
-                    sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
-                    cart: session.cart
-                };
-            } else {
-                session.state = "AWAITING_MORE_ITEMS";
-                return {
-                    sendButtons: {
-                        body: `✅ Item added to cart successfully.\n\nWould you like to continue shopping?`,
-                        buttons: [
-                            { id: 'yes', title: '🛍️ YES' },
-                            { id: 'no_checkout', title: '🛒 NO - Checkout' }
-                        ]
-                    },
-                    sendImages: [],
-                    cart: session.cart
-                };
+            // Check if this addition came from a cross-sell suggestion
+            if (session.fromCrossSell) {
+                session.fromCrossSell = false;
+                // Transition directly to AWAITING_CART_SUMMARY_DECISION
+                return await showCartSummaryWithCrossSell(session, products);
             }
+
+            // Otherwise, normal post add-to-cart flow
+            session.state = "AWAITING_POST_ADD_TO_CART_DECISION";
+            return await getStatePrompt(session, products);
         }
     }
 
@@ -3162,6 +3227,33 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 sendImages: []
             };
         }
+    }
+    if (session.state === "AWAITING_POST_ADD_TO_CART_DECISION") {
+        return {
+            replyText: `⚠️ Invalid option. Please choose one of the options below:`,
+            sendButtons: {
+                body: `What would you like to do next?`,
+                buttons: [
+                    { id: 'choose_same_cat', title: '🔄 Same Category' },
+                    { id: 'continue_diff_cat', title: '🛍️ Other Category' },
+                    { id: 'cart_summary', title: '🛒 Checkout' }
+                ]
+            },
+            sendImages: []
+        };
+    }
+    if (session.state === "AWAITING_CART_SUMMARY_DECISION") {
+        return {
+            replyText: `⚠️ Invalid option. Please choose:`,
+            sendButtons: {
+                body: `Select option:`,
+                buttons: [
+                    { id: 'view_suggestions', title: '💡 View Suggestions' },
+                    { id: 'continue_checkout', title: '➡️ Continue' }
+                ]
+            },
+            sendImages: []
+        };
     }
     if (session.state === "AWAITING_ORDER_CONFIRMATION") {
         return {
