@@ -47,7 +47,7 @@ async function runFlow() {
         { msg: "32", desc: "Select size 32" },
         { msg: "qty_1", desc: "Select quantity 1" },
         { msg: "cart_summary", desc: "Select Checkout" },
-        { msg: "view_suggestions", desc: "View Suggestions" },
+        { msg: "view_matches", desc: "View Suggestions" },
         { msg: "1", desc: "Select suggestion product 1" },
         { msg: "M", desc: "Select size M" },
         { msg: "qty_1", desc: "Select quantity 1" },

@@ -1380,10 +1380,11 @@ async function showCartSummaryWithCrossSell(session, products) {
     cartSummary += `\n📦 *Total Quantity:* ${totalQty}`;
     cartSummary += `\n💰 *Total Amount:* ₹${totalAmount}\n\n`;
 
-    let bodyText = cartSummary + `🔥 *You may also like*\n`;
+    let bodyText = cartSummary + `🔥 *Matching Offers Available!*\n`;
 
     // Try to find matching recommendations based on the last cart item
     let promoCategory = 'Pants';
+    let related = [];
     if (cart.length > 0) {
         const lastItem = cart[cart.length - 1];
         const matchedProduct = products.find(p => p.id === lastItem.id) || products.find(p => p.name === lastItem.product);
@@ -1395,10 +1396,21 @@ async function showCartSummaryWithCrossSell(session, products) {
             } else if (isTShirtCategory(matchedProduct.category, matchedProduct.name)) {
                 promoCategory = 'Pants';
             }
+            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
+            const excludedIds = cart.map(item => item.id);
+            related = getRecommendationsList(matchedProduct, uniqueProducts, excludedIds);
         }
     }
     
-    bodyText += `We have trending *${promoCategory}* matching your selection. Tap "View Suggestions" to check them out! 👇`;
+    bodyText += `We have special deals on matching *${promoCategory}* matching your selection. Tap "Shop Matches" to view and buy them! 👇`;
+
+    const promoCandidates = related.slice(0, 2);
+    let collageUrl = null;
+    if (promoCandidates.length >= 2) {
+        collageUrl = await createRecommendationCollage(promoCandidates[0], promoCandidates[1], 1, products);
+    } else if (promoCandidates.length === 1) {
+        collageUrl = getProductImageUri(promoCandidates[0], products);
+    }
 
     session.state = "AWAITING_CART_SUMMARY_DECISION";
 
@@ -1406,11 +1418,12 @@ async function showCartSummaryWithCrossSell(session, products) {
         sendButtons: {
             body: bodyText,
             buttons: [
-                { id: 'view_suggestions', title: '💡 View Suggestions' },
-                { id: 'continue_checkout', title: '➡️ Continue' }
+                { id: 'view_matches', title: '🛍️ Shop Matches' },
+                { id: 'continue_checkout', title: '🛒 Checkout' },
+                { id: 'cancel_order', title: '❌ Cancel' }
             ]
         },
-        sendImages: []
+        sendImages: collageUrl ? [{ url: collageUrl, caption: `Matching Pants Deals` }] : []
     };
 }
 
@@ -2107,15 +2120,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // STATE: AWAITING_CART_SUMMARY_DECISION
     if (session.state === "AWAITING_CART_SUMMARY_DECISION") {
         const choice = textLower.trim();
-        if (choice === "view_suggestions" || choice.includes("suggestion") || choice === "1") {
+        if (choice === "view_matches" || choice === "shop_matches" || choice.includes("match") || choice === "1") {
             const lastItem = session.cart[session.cart.length - 1];
             const matchedProduct = products.find(p => p.id === lastItem.id) || products.find(p => p.name === lastItem.product);
             const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
             const excludedIds = session.cart.map(item => item.id);
             const related = getRecommendationsList(matchedProduct, uniqueProducts, excludedIds);
+            const promoCandidates = related.slice(0, 2);
 
-            if (related.length > 0) {
-                session.recommendationPool = related.map(p => p.id);
+            if (promoCandidates.length > 0) {
+                session.recommendationPool = promoCandidates.map(p => p.id);
                 session.recommendationIndex = 0;
                 session.originalProductId = matchedProduct ? matchedProduct.id : null;
                 session.fromCrossSell = true;
@@ -2125,16 +2139,28 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             } else {
                 return await startCheckout(session, from);
             }
-        } else if (choice === "continue_checkout" || choice.includes("continue") || choice === "2") {
+        } else if (choice === "continue_checkout" || choice.includes("checkout") || choice.includes("continue") || choice === "2") {
             return await startCheckout(session, from);
+        } else if (choice === "cancel_order" || choice.includes("cancel") || choice === "3") {
+            session.cart = [];
+            session.orderingCart = [];
+            session.orderingIndex = 0;
+            session.state = "AWAITING_CATEGORY";
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+            return makeCategoriesListResponse(parents, categoryCounts, "Your order has been cancelled. Please select a category to continue shopping:");
         } else {
             return {
                 replyText: `⚠️ Invalid option. Please select an option:`,
                 sendButtons: {
                     body: `Select option:`,
                     buttons: [
-                        { id: 'view_suggestions', title: '💡 View Suggestions' },
-                        { id: 'continue_checkout', title: '➡️ Continue' }
+                        { id: 'view_matches', title: '🛍️ Shop Matches' },
+                        { id: 'continue_checkout', title: '🛒 Checkout' },
+                        { id: 'cancel_order', title: '❌ Cancel' }
                     ]
                 },
                 sendImages: []
@@ -3248,8 +3274,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             sendButtons: {
                 body: `Select option:`,
                 buttons: [
-                    { id: 'view_suggestions', title: '💡 View Suggestions' },
-                    { id: 'continue_checkout', title: '➡️ Continue' }
+                    { id: 'view_matches', title: '🛍️ Shop Matches' },
+                    { id: 'continue_checkout', title: '🛒 Checkout' },
+                    { id: 'cancel_order', title: '❌ Cancel' }
                 ]
             },
             sendImages: []
