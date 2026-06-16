@@ -1562,7 +1562,7 @@ function makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent) 
     const sections = withInlineCancelSection([
         {
             title: "Subcategories",
-            rows: subs.map((sub, sIdx) => {
+            rows: subs.slice(0, 9).map((sub, sIdx) => {
                 const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
                 return {
                     id: String(sIdx + 1),
