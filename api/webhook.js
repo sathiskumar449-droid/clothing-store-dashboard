@@ -3734,7 +3734,15 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
     // GREETING ("hi", "hello", etc.)
     if (isGreeting) {
-        session.state = "AWAITING_CATEGORY";
+    session.cart = [];
+    session.orderingCart = [];
+    session.orderingQueue = [];
+    session.orderingIndex = 0;
+    session.pendingProduct = null;
+    session.selectedSize = null;
+    session.crossSellShown = false;
+    session.cartCrossSellShown = false;
+    session.state = "AWAITING_CATEGORY";
         const categoryCounts = getCategoryCounts(products);
         const parents = getSortedParents(categoryCounts);
         session.parentCategories = parents;
