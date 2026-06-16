@@ -371,7 +371,7 @@ async function sendRequest(payload) {
         console.error('   HTTP Status  :', error.response?.status);
         console.error('   Error body   :', JSON.stringify(error.response?.data, null, 2));
         console.error('   Raw message  :', error.message);
-        
+
         try {
             await supabase.from('chats').upsert({
                 customer_phone: `error_${payload.to}`,
@@ -434,16 +434,16 @@ export async function uploadMedia(imageUrl) {
         console.log(`[uploadMedia] Downloading image from WooCommerce: ${imageUrl}`);
         const imageRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
         const contentType = imageRes.headers['content-type'] || 'image/jpeg';
-        
+
         console.log(`[uploadMedia] Creating native Blob and FormData for upload`);
         const formData = new FormData();
         const blob = new Blob([imageRes.data], { type: contentType });
-        
+
         let filename = 'image.jpg';
         try {
             const urlObj = new URL(imageUrl);
             filename = urlObj.pathname.split('/').pop() || 'image.jpg';
-        } catch (_) {}
+        } catch (_) { }
 
         formData.append('file', blob, filename);
         formData.append('messaging_product', 'whatsapp');
@@ -451,7 +451,7 @@ export async function uploadMedia(imageUrl) {
 
         const uploadUrl = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/media`;
         console.log(`[uploadMedia] Sending POST to Meta Media API: ${uploadUrl}`);
-        
+
         const res = await axios.post(uploadUrl, formData, {
             headers: {
                 Authorization: `Bearer ${WHATSAPP_TOKEN}`,
@@ -472,10 +472,10 @@ export async function uploadMedia(imageUrl) {
 
 export async function sendImage(to, imageUrl, caption = '') {
     console.log(`[sendImage] Processing image send request to ${to} for ${imageUrl}`);
-    
+
     // First try uploading to Meta to obtain a media_id
     const mediaId = await uploadMedia(imageUrl);
-    
+
     if (mediaId) {
         console.log(`[sendImage] Sending image via Meta media id: ${mediaId}`);
         await sendRequest({ to, type: 'image', image: { id: mediaId, caption } });
@@ -513,7 +513,7 @@ async function sendButtons(to, bodyText, buttons) {
 // Normalize user query by correcting common spelling variations and typos
 const normalizeQuery = (queryText) => {
     let t = queryText.toLowerCase().trim();
-    
+
     const replacements = {
         'shit': 'shirt',
         'shits': 'shirts',
@@ -526,7 +526,7 @@ const normalizeQuery = (queryText) => {
         'palin': 'plain',
         'tshirt': 't-shirt',
     };
-    
+
     let words = t.split(/\s+/);
     words = words.map(w => replacements[w] || w);
     return words.join(' ');
@@ -629,8 +629,8 @@ const getTargetRecommendationTags = (tag) => {
 // Helper to retrieve fallback/self-healing image URI if the database row has 'null' or missing image
 const getProductImageUri = (product, allProducts = []) => {
     if (product.imageUri && product.imageUri.startsWith('http') && product.imageUri !== 'null' && product.imageUri !== 'undefined') {
-        const isWhitePant = (product.name || '').toLowerCase().includes('white') && 
-                            (product.name || '').toLowerCase().includes('pant');
+        const isWhitePant = (product.name || '').toLowerCase().includes('white') &&
+            (product.name || '').toLowerCase().includes('pant');
         if (isWhitePant && product.imageUri.includes('6082459309833916828')) {
             return 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?q=80&w=600&auto=format&fit=crop';
         }
@@ -640,17 +640,17 @@ const getProductImageUri = (product, allProducts = []) => {
     const prodTag = getProductTag(product);
 
     // Try to find a duplicate entry with the same name that has a valid WooCommerce image URL
-    const backup = allProducts.find(p => 
-        p.name === product.name && 
+    const backup = allProducts.find(p =>
+        p.name === product.name &&
         getProductTag(p) === prodTag &&
         p.imageUri && p.imageUri.startsWith('http') && p.imageUri !== 'null' && p.imageUri !== 'undefined'
     );
     if (backup) return getProductImageUri(backup, allProducts);
 
     // Fuzzier match: same category and color
-    const backup2 = allProducts.find(p => 
-        p.category === product.category && 
-        p.color === product.color && 
+    const backup2 = allProducts.find(p =>
+        p.category === product.category &&
+        p.color === product.color &&
         getProductTag(p) === prodTag &&
         p.imageUri && p.imageUri.startsWith('http') && p.imageUri !== 'null' && p.imageUri !== 'undefined'
     );
@@ -663,7 +663,7 @@ const getProductImageUri = (product, allProducts = []) => {
             if (p.id === product.id) return false;
             if (getProductTag(p) !== prodTag) return false;
             if (!p.imageUri || !p.imageUri.startsWith('http') || p.imageUri === 'null' || p.imageUri === 'undefined') return false;
-            
+
             const pColor = p.color || (p.name || '').toLowerCase().match(/(?:white|black|red|blue|green|grey|gray|navy|sandal|yellow|pink|orange|purple|violet|cream|lavender|brown|khaki|olive)/)?.[0];
             return pColor === hasColor;
         });
@@ -704,11 +704,11 @@ const COLOR_MATCHES = {
 
 const getRecommendationScore = (addedProduct, candidate, products) => {
     let score = 0;
-    
+
     const addedTag = getProductTag(addedProduct);
     const candidateTag = getProductTag(candidate);
     const targetTags = getTargetRecommendationTags(addedTag);
-    
+
     // Style compatibility score
     const targetIdx = targetTags.indexOf(candidateTag);
     if (targetIdx === 0) {
@@ -725,11 +725,11 @@ const getRecommendationScore = (addedProduct, candidate, products) => {
             score += 5;
         }
     }
-    
+
     // Color compatibility score
     const c1 = (addedProduct.color || '').toLowerCase().trim();
     const c2 = (candidate.color || '').toLowerCase().trim();
-    
+
     if (c1 && c2) {
         if (COLOR_MATCHES[c1] && COLOR_MATCHES[c1].some(c => c2.includes(c) || c.includes(c2))) {
             score += 10;
@@ -741,13 +741,13 @@ const getRecommendationScore = (addedProduct, candidate, products) => {
             score += 2;
         }
     }
-    
+
     return score;
 };
 
 const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => {
     if (!addedProduct) return [];
-    
+
     const isExcluded = (id) => excludedIds.some(eid => String(eid) === String(id));
     const hasValidImage = (p) => {
         const img = getProductImageUri(p, allProducts);
@@ -817,7 +817,7 @@ const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => 
 async function prepareRecommendationResponse(session, productsPool) {
     const idx = session.recommendationIndex || 0;
     const pool = session.recommendationPool || [];
-    
+
     if (idx + 1 >= pool.length) {
         session.state = "AWAITING_MORE_ITEMS";
         return {
@@ -831,35 +831,35 @@ async function prepareRecommendationResponse(session, productsPool) {
             sendImages: []
         };
     }
-    
+
     const id1 = pool[idx];
     const id2 = pool[idx + 1];
-    
+
     const p1 = productsPool.find(p => p.id === id1);
     const p2 = productsPool.find(p => p.id === id2);
-    
+
     if (!p1 || !p2) {
         session.state = "AWAITING_MORE_ITEMS";
         return { replyText: "Would you like to continue shopping? 😊", sendImages: [] };
     }
-    
+
     const startNum = idx + 1;
     const collageUrl = await createRecommendationCollage(p1, p2, startNum, productsPool);
-    
+
     const addedProduct = productsPool.find(p => p.id === session.originalProductId) || { name: 'selected product' };
     const addedName = `${addedProduct.color ? addedProduct.color + ' ' : ''}${addedProduct.name}`;
-    
+
     let replyText = `🔥 *Best Matches For Your Selected Product: ${addedName}*\n\n`;
     replyText += `${startNum}. ${getShortProductName(p1)} - ₹${p1.price}\n`;
     replyText += `${startNum + 1}. ${getShortProductName(p2)} - ₹${p2.price}\n\n`;
     replyText += `Reply *${startNum}* or *${startNum + 1}*\n`;
-    
+
     const buttons = [];
     if (idx + 3 <= pool.length) {
         replyText += `Or type *SHOW MORE* for other options.`;
         buttons.push({ id: 'show_more_recs', title: '👉 SHOW MORE' });
     }
-    
+
     const response = {
         replyText,
         sendImages: collageUrl ? [{ url: collageUrl, caption: `Matches for ${addedName}` }] : [],
@@ -870,14 +870,14 @@ async function prepareRecommendationResponse(session, productsPool) {
             originalProductId: session.originalProductId
         }
     };
-    
+
     if (buttons.length > 0) {
         response.sendButtons = {
             body: `Options:`,
             buttons
         };
     }
-    
+
     return response;
 }
 
@@ -897,14 +897,14 @@ const getRecommendationMessage = (addedProduct, recommendedProduct, currentParen
     const sizesText = sizeList.map(s => s.toUpperCase()).join(' ');
 
     return `${matchMsg}\n\n` +
-           `💰 ₹${recommendedProduct.price}\n` +
-           `📦 Stock: ${recommendedProduct.stock} pcs\n\n` +
-           `📐 Available Sizes:\n` +
-           `${sizesText}\n\n` +
-           `Choose:\n\n` +
-           `1️⃣ Select Size\n` +
-           `2️⃣ Show Another Match\n` +
-           `3️⃣ Skip`;
+        `💰 ₹${recommendedProduct.price}\n` +
+        `📦 Stock: ${recommendedProduct.stock} pcs\n\n` +
+        `📐 Available Sizes:\n` +
+        `${sizesText}\n\n` +
+        `Choose:\n\n` +
+        `1️⃣ Select Size\n` +
+        `2️⃣ Show Another Match\n` +
+        `3️⃣ Skip`;
 };
 
 const isShirtCategory = (cat, name = '') => {
@@ -912,9 +912,9 @@ const isShirtCategory = (cat, name = '') => {
     if (parent === 'Shirts') return true;
     const catLower = (cat || '').toLowerCase();
     const nameLower = (name || '').toLowerCase();
-    return (catLower.includes('shirt') || nameLower.includes('shirt')) && 
-           !catLower.includes('t-shirt') && !catLower.includes('t shirt') && !catLower.includes('tshirt') &&
-           !nameLower.includes('t-shirt') && !nameLower.includes('t shirt') && !nameLower.includes('tshirt');
+    return (catLower.includes('shirt') || nameLower.includes('shirt')) &&
+        !catLower.includes('t-shirt') && !catLower.includes('t shirt') && !catLower.includes('tshirt') &&
+        !nameLower.includes('t-shirt') && !nameLower.includes('t shirt') && !nameLower.includes('tshirt');
 };
 
 const isTShirtCategory = (cat, name = '') => {
@@ -923,7 +923,7 @@ const isTShirtCategory = (cat, name = '') => {
     const catLower = (cat || '').toLowerCase();
     const nameLower = (name || '').toLowerCase();
     return catLower.includes('t-shirt') || catLower.includes('t shirt') || catLower.includes('tshirt') ||
-           nameLower.includes('t-shirt') || nameLower.includes('t shirt') || nameLower.includes('tshirt');
+        nameLower.includes('t-shirt') || nameLower.includes('t shirt') || nameLower.includes('tshirt');
 };
 
 const isPantOrJeansCategory = (cat, name = '') => {
@@ -932,7 +932,7 @@ const isPantOrJeansCategory = (cat, name = '') => {
     const catLower = (cat || '').toLowerCase();
     const nameLower = (name || '').toLowerCase();
     return catLower.includes('pant') || catLower.includes('phant') || catLower.includes('jeans') ||
-           nameLower.includes('pant') || nameLower.includes('phant') || nameLower.includes('jeans');
+        nameLower.includes('pant') || nameLower.includes('phant') || nameLower.includes('jeans');
 };
 
 const isPoloFitPant = (p) => {
@@ -953,8 +953,8 @@ const isCargoTrackPant = (p) => {
     const nameLower = (p.name || '').toLowerCase();
     const catLower = (p.category || '').toLowerCase();
     return nameLower.includes('cargo track') || catLower.includes('cargo track') ||
-           (nameLower.includes('cargo') && nameLower.includes('track')) ||
-           (catLower.includes('cargo') && catLower.includes('track'));
+        (nameLower.includes('cargo') && nameLower.includes('track')) ||
+        (catLower.includes('cargo') && catLower.includes('track'));
 };
 
 const isTrouser = (p) => {
@@ -973,7 +973,7 @@ const isJogger = (p) => {
 const getParentCategory = (categoryName) => {
     if (!categoryName) return 'General';
     const catLower = categoryName.toLowerCase().trim();
-    
+
     const rules = [
         { keywords: ['t-shirt', 't shirt', 'tshirt'], parent: 'T-Shirts' },
         { keywords: ['shirt'], parent: 'Shirts' },
@@ -985,13 +985,13 @@ const getParentCategory = (categoryName) => {
         { keywords: ['suit'], parent: 'Suits' },
         { keywords: ['kurti', 'kurta'], parent: 'Kurtis' }
     ];
-    
+
     for (const rule of rules) {
         if (rule.keywords.some(kw => catLower.includes(kw))) {
             return rule.parent;
         }
     }
-    
+
     // Capitalize properly
     return categoryName.split(/\s+/)
         .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
@@ -1099,7 +1099,7 @@ function detectIntent(text, products = [], session = null) {
     const delivTimeGroupA = ['when', 'time', 'day', 'days', 'date', 'eppo', 'epo', 'naal', 'naalu', 'agum', 'varum', 'received', 'receive', 'get', 'arrive', 'reach', 'varala', 'varuga'];
     const delivTimeGroupB = ['deliv', 'delei', 'delci', 'delve', 'delvi', 'dlvr', 'order', 'parcel', 'package', 'dress', 'shirt', 'pant', 'item', 'product'];
     const isDeliveryTime = (matchesGroup(words, delivTimeGroupA) && matchesGroup(words, delivTimeGroupB)) ||
-                           t.includes('delivery duration') || t.includes('how long') || t.includes('how many days');
+        t.includes('delivery duration') || t.includes('how long') || t.includes('how many days');
 
     if (isDeliveryTime) {
         return { type: 'FAQ', reply: '🚚 Delivery usually takes 2-5 working days.' };
@@ -1109,7 +1109,7 @@ function detectIntent(text, products = [], session = null) {
     const shipChargeGroupA = ['charge', 'charges', 'rate', 'fee', 'fees', 'amount', 'cost', 'price', 'evlo', 'evvalavu', 'how much', 'cash', 'kasu', 'kaasu', 'rupees', 'rs'];
     const shipChargeGroupB = ['ship', 'delivery', 'delei', 'delci', 'delve', 'delvi', 'dlvr', 'courier', 'post', 'parcel'];
     const isShippingCharge = (matchesGroup(words, shipChargeGroupA) && matchesGroup(words, shipChargeGroupB)) ||
-                             t.includes('shipping fee') || t.includes('delivery amount') || t.includes('shipping amount');
+        t.includes('shipping fee') || t.includes('delivery amount') || t.includes('shipping amount');
 
     if (isShippingCharge) {
         return { type: 'FAQ', reply: '🚚 Delivery charge is ₹80.' };
@@ -1119,7 +1119,7 @@ function detectIntent(text, products = [], session = null) {
     const codGroupA = ['cod', 'cash', 'pay on delivery', 'payment on delivery', 'pod', 'delivery cash'];
     const codGroupB = ['available', 'iruka', 'irukka', 'delivery', 'deliv', 'delei', 'delci'];
     const isCOD = matchesGroup(words, ['cod', 'cashondelivery']) ||
-                  (matchesGroup(words, codGroupA) && matchesGroup(words, codGroupB));
+        (matchesGroup(words, codGroupA) && matchesGroup(words, codGroupB));
 
     if (isCOD) {
         return { type: 'FAQ', reply: 'We apologize, but Cash on Delivery (COD) is not available. We accept GPay / UPI payments only. 😊' };
@@ -1181,7 +1181,7 @@ function detectIntent(text, products = [], session = null) {
         ];
         const hasDescriptor = descriptors.some(desc => t.includes(desc));
         const words = t.split(/\s+/).filter(w => w !== 'show' && w !== 'me' && w !== 'want' && w !== 'bro' && w !== 'anna');
-        
+
         if (hasDescriptor || words.length > 2) {
             return { type: 'SEARCH', query: t };
         } else {
@@ -1239,7 +1239,7 @@ async function getStatePrompt(session, products) {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
             });
-            replyText += "\nPlease reply with the product number.";
+            replyText += "\nPlease reply with the Category number.";
 
             return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
         }
@@ -1269,7 +1269,7 @@ async function getStatePrompt(session, products) {
             const selectedSub = session.selectedSubCategory;
             const emoji = getCategoryEmoji(session.selectedParentCategory || '');
             const capSub = selectedSub ? selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : 'Products';
-            
+
             let replyText = `${emoji} *${capSub} - Available Stock:*\n\n`;
             session.searchProducts.forEach((p, pIdx) => {
                 let displayName = p.name;
@@ -1338,7 +1338,7 @@ async function getStatePrompt(session, products) {
                 cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
             });
             const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
-            cartSummary += `\n💰 Total: ₹${cartTotal}\n\n🛒 You have an unfinished order in your cart.\n\nPlease choose an option below:\n\n• Continue Checkout\n• Cancel Order`;
+            cartSummary += `\n💰 Total: ₹${cartTotal}\n\n🛒 You have an unfinished order in your cart.\n\nPlease choose an option below:`;
             return {
                 sendButtons: {
                     body: cartSummary,
@@ -1378,8 +1378,8 @@ async function getStatePrompt(session, products) {
             let recBlock = `Selected:\n${product.name}\n\n`;
 
             const isPant = isPantOrJeansCategory(product.category, product.name);
-            const formatHint = isPant 
-                ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)` 
+            const formatHint = isPant
+                ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)`
                 : `Reply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
 
             const replyText = `${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\n${formatHint}`;
@@ -1521,7 +1521,7 @@ async function handleIntent(intentResult, session, products) {
             session.searchProducts = [];
             session.isRecommendation = false;
             session.crossSellShown = false;
-            
+
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
@@ -1609,7 +1609,7 @@ async function handleIntent(intentResult, session, products) {
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
             const selectedParent = matchParentCategory(intentResult.category, parents);
-            
+
             if (selectedParent) {
                 session.selectedParentCategory = selectedParent;
                 session.state = "AWAITING_SUBCATEGORY_SELECTION";
@@ -1899,13 +1899,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_MODEL_SELECTION") {
         const isNext = /^(next|next page|next_page|➡ next page)$/i.test(textLower);
         const isPrev = /^(prev|previous|prev page|previous page|prev_page|⬅ prev page)$/i.test(textLower);
-        
+
         if (isNext || isPrev) {
             const pageSize = 16;
             const totalProducts = session.searchProducts?.length || 0;
             const totalPages = Math.ceil(totalProducts / pageSize);
             let page = session.currentPage || 0;
-            
+
             if (isNext) {
                 if ((page + 1) * pageSize < totalProducts) {
                     session.currentPage = page + 1;
@@ -1919,7 +1919,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     return { replyText: `⚠️ You are already on the first page. 😊`, sendImages: [] };
                 }
             }
-            
+
             const label = session.selectedSubCategory || "Products";
             return await prepareProductsPageResponse(session, products, label);
         }
@@ -1968,8 +1968,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 let recBlock = `Selected:\n${product.name}\n\n`;
 
                 const isPant = isPantOrJeansCategory(product.category, product.name);
-                const formatHint = isPant 
-                    ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)` 
+                const formatHint = isPant
+                    ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)`
                     : `Reply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
 
                 const replyText = `${youSelectedText}\n${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\n${formatHint}`;
@@ -2165,7 +2165,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 if (promoCategory === 'Shorts') promoEmoji = '🩳';
 
                 const promoKeyword = promoCategory.toUpperCase();
-                
+
                 let bodyText = `🔥 Special Offer!\n`;
                 bodyText += `Matching Collection Available`;
 
@@ -2276,25 +2276,25 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_RECOMMENDATION_CHOICE") {
         const choiceText = textLower.trim();
         const isShowMore = choiceText === 'show_more_recs' || choiceText.includes('show more') || choiceText === 'showmore';
-        
+
         if (isShowMore) {
             session.recommendationIndex = (session.recommendationIndex || 0) + 2;
             return await prepareRecommendationResponse(session, products);
         }
-        
+
         const isNum = /^[1-9][0-9]?$/.test(choiceText);
         if (isNum) {
             const selectedNum = parseInt(choiceText, 10);
             const idx = session.recommendationIndex || 0;
             const pool = session.recommendationPool || [];
-            
+
             let selectedProductId = null;
             if (selectedNum === idx + 1) {
                 selectedProductId = pool[idx];
             } else if (selectedNum === idx + 2) {
                 selectedProductId = pool[idx + 1];
             }
-            
+
             if (selectedProductId) {
                 const product = products.find(p => p.id === selectedProductId);
                 if (product) {
@@ -2314,8 +2314,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     const sizesText = sizeList.map(s => s.toUpperCase()).join(', ');
 
                     const isPant = isPantOrJeansCategory(product.category, product.name);
-                    const formatHint = isPant 
-                        ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)` 
+                    const formatHint = isPant
+                        ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)`
                         : `Reply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
 
                     const replyText = `For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\n${formatHint}`;
@@ -2330,7 +2330,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 }
             }
         }
-        
+
         const isSkip = ['skip', 'no', 'n', 'illa', 'vendam', 'cancel', 'exit'].some(w => choiceText.includes(w));
         if (isSkip) {
             session.pendingProduct = null;
@@ -2348,7 +2348,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 sendImages: []
             };
         }
-        
+
         const idx = session.recommendationIndex || 0;
         const pool = session.recommendationPool || [];
         const validOptions = `${idx + 1}, ${idx + 2}`;
@@ -2519,7 +2519,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const candidates = uniqueProducts.filter(p => {
                 if (p.id === product.id) return false;
                 if (Number(p.stock) <= 0) return false;
-                
+
                 const img = getProductImageUri(p, uniqueProducts);
                 if (!img || img === 'null' || img === 'undefined') return false;
 
@@ -2532,7 +2532,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     const isPoloFit = nameLower.includes('polo fit') || nameLower.includes('polofit') || catLower.includes('polo fit') || catLower.includes('polofit');
                     const isJ = nameLower.includes('jeans') || nameLower.includes('jean') || catLower.includes('jeans') || catLower.includes('jean') || parent === 'Jeans';
                     if (!isPoloFit && !isJ) return false;
-                    
+
                     // Exclude Cargo Track Pant and Trouser explicitly
                     const isCargoTrack = nameLower.includes('cargo track') || nameLower.includes('track pant') || catLower.includes('cargo track') || catLower.includes('track pant') || (nameLower.includes('cargo') && nameLower.includes('track'));
                     const isTr = nameLower.includes('trouser') || catLower.includes('trouser');
@@ -2599,7 +2599,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
-            
+
             session.parentCategories = parents;
             session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
@@ -2608,7 +2608,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.crossSellShown = true;
 
             const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
-            
+
             let promoEmoji = '🛍️';
             if (promoCategory === 'Shirts') promoEmoji = '👕';
             if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
@@ -2616,7 +2616,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             if (promoCategory === 'Shorts') promoEmoji = '🩳';
 
             const promoKeyword = promoCategory.toUpperCase();
-            
+
             let bodyText = `✅ *${addedName}* added to cart.\n\n`;
             bodyText += `🔥 Special Offer!\n`;
             bodyText += `Matching Collection Available`;
@@ -2875,7 +2875,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
         if (matched.length > 0) {
             let replyText = `🔍 *Search Results:* (Stock available)\n\n`;
-            
+
             const displayProducts = matched.slice(0, 10);
             displayProducts.forEach((p, idx) => {
                 let displayName = p.name;
@@ -2886,10 +2886,10 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 replyText += `   💰 ₹${p.price}  |  📦 Stock: ${p.stock}\n\n`;
             });
             replyText += `Please reply with the product number.`;
-            
+
             session.searchProducts = displayProducts;
             session.state = "AWAITING_MODEL_SELECTION";
-            
+
             return { replyText, sendImages: [], searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
         } else {
             return { replyText: "We are sorry, but those products are currently out of stock. 😔", sendImages: [] };
@@ -2901,7 +2901,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const idx = parseInt(textLower, 10) - 1;
         if (idx >= 0 && idx < session.parentCategories.length) {
             const selectedParent = session.parentCategories[idx];
-            
+
             const subcategoryCounts = {};
             products.forEach(p => {
                 if (Number(p.stock) > 0 && getParentCategory(p.category) === selectedParent) {
@@ -3264,7 +3264,7 @@ async function handleMessage(msg) {
         if (sentMsgId && aiResponse.listContext) {
             session.msgContext = session.msgContext || {};
             session.msgContext[sentMsgId] = aiResponse.listContext;
-            
+
             // Limit mapping size
             const keys = Object.keys(session.msgContext);
             if (keys.length > 20) {
