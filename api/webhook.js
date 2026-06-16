@@ -971,29 +971,9 @@ const isJogger = (p) => {
 };
 
 // Dynamically group subcategories into top-level parent categories based on noun rules
-const getParentCategory = (categoryName) => {
+export const getParentCategory = (categoryName) => {
     if (!categoryName) return 'General';
-    const catLower = categoryName.toLowerCase().trim();
-
-    const rules = [
-        { keywords: ['t-shirt', 't shirt', 'tshirt'], parent: 'T-Shirts' },
-        { keywords: ['shirt'], parent: 'Shirts' },
-        { keywords: ['pant', 'phant'], parent: 'Pants' },
-        { keywords: ['shorts'], parent: 'Shorts' },
-        { keywords: ['jeans'], parent: 'Jeans' },
-        { keywords: ['saree'], parent: 'Sarees' },
-        { keywords: ['frock'], parent: 'Frocks' },
-        { keywords: ['suit'], parent: 'Suits' },
-        { keywords: ['kurti', 'kurta'], parent: 'Kurtis' }
-    ];
-
-    for (const rule of rules) {
-        if (rule.keywords.some(kw => catLower.includes(kw))) {
-            return rule.parent;
-        }
-    }
-
-    // Capitalize properly
+    // Clean up category casing properly to match exact WooCommerce category name
     return categoryName.split(/\s+/)
         .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
         .join(' ');
@@ -1010,7 +990,7 @@ const getCategoryEmoji = (parentCategory) => {
 };
 
 // Helper to calculate active category counts
-const getCategoryCounts = (products) => {
+export const getCategoryCounts = (products) => {
     const categoryCounts = {};
     products.forEach(p => {
         if (Number(p.stock) > 0) {
@@ -1022,13 +1002,26 @@ const getCategoryCounts = (products) => {
 };
 
 // Helper to sort parent categories
-const getSortedParents = (categoryCounts) => {
+export const getSortedParents = (categoryCounts) => {
     const parents = Object.keys(categoryCounts).filter(cat => categoryCounts[cat] > 0);
     parents.sort((a, b) => {
-        const order = { 'Shirts': 1, 'Pants': 2, 'T-Shirts': 3, 'Jeans': 4, 'Shorts': 5 };
-        const orderA = order[a] || 99;
-        const orderB = order[b] || 99;
-        if (orderA !== orderB) return orderA - orderB;
+        const getOrderScore = (cat) => {
+            const lower = cat.toLowerCase();
+            if (lower.includes('printed shirt')) return 1;
+            if (lower.includes('linen shirt')) return 2;
+            if (lower.includes('plain shirt')) return 3;
+            if (lower.includes('casual shirt')) return 4;
+            if (lower.includes('shirt') && !lower.includes('t-shirt') && !lower.includes('t shirt')) return 5;
+            if (lower.includes('t-shirt') || lower.includes('t shirt') || lower.includes('tshirt')) return 6;
+            if (lower.includes('polo fit') || lower.includes('polofit')) return 7;
+            if (lower.includes('jeans') || lower.includes('jean')) return 8;
+            if (lower.includes('cargo')) return 9;
+            if (lower.includes('pant') || lower.includes('pants')) return 10;
+            return 99;
+        };
+        const scoreA = getOrderScore(a);
+        const scoreB = getOrderScore(b);
+        if (scoreA !== scoreB) return scoreA - scoreB;
         return a.localeCompare(b);
     });
     return parents;
@@ -2913,6 +2906,25 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             const subs = Object.keys(subcategoryCounts).filter(sub => subcategoryCounts[sub] > 0);
             subs.sort((a, b) => a.localeCompare(b));
+
+            // If there is only 1 subcategory, skip subcategory screen!
+            if (subs.length === 1) {
+                const selectedSub = subs[0];
+                const matched = products.filter(p => Number(p.stock) > 0 && p.category === selectedSub);
+
+                if (matched.length > 0) {
+                    session.selectedSubCategory = selectedSub;
+                    session.selectedParentCategory = selectedParent;
+                    session.state = "AWAITING_MODEL_SELECTION";
+                    session.currentPage = 0;
+                    session.searchProducts = matched;
+
+                    const emoji = getCategoryEmoji(selectedParent);
+                    const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+
+                    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub} - Available Stock`);
+                }
+            }
 
             session.subCategories = subs;
             session.selectedParentCategory = selectedParent;
