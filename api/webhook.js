@@ -1432,7 +1432,7 @@ async function getStatePrompt(session, products) {
             cartSummary += `\n💰 Total: ₹${cartTotal}\n\nPlease provide the following details to complete your order:\n\n• Full Name\n• Mobile Number\n• Delivery Address\n\nExample:\nRavi, 9876543210, 12 Anna Nagar, Chennai`;
             return { replyText: cartSummary, sendImages: [] };
         }
-        case "AWAITING_PRODUCT_SIZE_QTY": {
+        case "AWAITING_PRODUCT_SIZE": {
             const queue = session.orderingQueue || [];
             const currentIndex = session.orderingIndex || 0;
             const currentItem = queue[currentIndex];
@@ -1442,19 +1442,9 @@ async function getStatePrompt(session, products) {
                 ? product.sizes
                 : String(product.sizes).split(',').map(s => s.trim())
             ).filter(Boolean);
-            const sizesText = sizeList.map(s => s.toUpperCase()).join(', ');
-            // Fetch recommendations using product ID
-            const related = getRecommendationsList(product, products);
-            const recommendations = related.slice(0, 2);
 
-            let recBlock = `Selected:\n${product.name}\n\n`;
+            const body = `📐 *${product.name}*\n\nPlease select your size:`;
 
-            const isPant = isPantOrJeansCategory(product.category, product.name);
-            const formatHint = isPant
-                ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)`
-                : `Reply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
-
-            const replyText = `${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\n${formatHint}`;
             let sendImages = [];
             if (currentIndex === 0) {
                 if (queue.length > 1) {
@@ -1470,9 +1460,56 @@ async function getStatePrompt(session, products) {
                 }
             }
 
+            if (sizeList.length <= 3) {
+                return {
+                    sendButtons: {
+                        body,
+                        buttons: sizeList.map(s => ({ id: s.toUpperCase(), title: s.toUpperCase() }))
+                    },
+                    sendImages
+                };
+            } else {
+                const sections = [
+                    {
+                        title: "Available Sizes",
+                        rows: sizeList.map(s => ({
+                            id: s.toUpperCase(),
+                            title: s.toUpperCase(),
+                            description: `Select size ${s.toUpperCase()}`
+                        }))
+                    }
+                ];
+                return {
+                    sendList: {
+                        body,
+                        buttonText: "Choose Size",
+                        sections
+                    },
+                    sendImages
+                };
+            }
+        }
+        case "AWAITING_PRODUCT_QTY": {
+            const queue = session.orderingQueue || [];
+            const currentIndex = session.orderingIndex || 0;
+            const currentItem = queue[currentIndex];
+            if (!currentItem) return { replyText: "Please select a category to start shopping.", sendImages: [] };
+            const product = currentItem.product;
+            const size = session.selectedSize || 'N/A';
+            const qty = session.tempQty || 1;
+
+            const body = `📐 *${product.name}*\nSelected Size: *${size}*\nSelected Qty: *${qty}*\n\nUse the buttons below to change quantity or confirm:`;
+
             return {
-                replyText,
-                sendImages
+                sendButtons: {
+                    body,
+                    buttons: [
+                        { id: 'qty_minus', title: '➖ Qty' },
+                        { id: 'qty_plus', title: '➕ Qty' },
+                        { id: 'qty_confirm', title: `✅ Confirm: ${qty}` }
+                    ]
+                },
+                sendImages: []
             };
         }
         case "AWAITING_ORDER_CONFIRMATION": {
@@ -1991,58 +2028,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 session.orderingQueue = queue;
                 session.orderingIndex = 0;
                 session.orderingCart = [...(session.cart || [])];
-                session.state = "AWAITING_PRODUCT_SIZE_QTY";
+                session.state = "AWAITING_PRODUCT_SIZE";
 
-                // Prompt for the first product in the queue
-                const firstItem = queue[0];
-                const product = firstItem.product;
-
-                // Let's get size list
-                const sizeList = (Array.isArray(product.sizes)
-                    ? product.sizes
-                    : String(product.sizes).split(',').map(s => s.trim())
-                ).filter(Boolean);
-                const sizesText = sizeList.map(s => s.toUpperCase()).join(', ');
-
-                // Build selected list
-                let youSelectedText = "You selected:\n\n";
-                queue.forEach(item => {
-                    youSelectedText += `${item.displayNum}. ${item.product.name}\n`;
-                });
-
-                // Fetch recommendations using product ID
-                const related = getRecommendationsList(product, products);
-                const recommendations = related.slice(0, 2);
-
-                let recBlock = `Selected:\n${product.name}\n\n`;
-
-                const isPant = isPantOrJeansCategory(product.category, product.name);
-                const formatHint = isPant
-                    ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)`
-                    : `Reply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
-
-                const replyText = `${youSelectedText}\n${recBlock}For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\n${formatHint}`;
-
-                let sendImages = [];
-                if (queue.length > 1) {
-                    const collageUrl = await createPromoCollage(queue.map(item => item.product), products);
-                    if (collageUrl) {
-                        sendImages = [{ url: collageUrl, caption: "Selected items" }];
-                    }
-                } else {
-                    const imgUri = getProductImageUri(product, products);
-                    if (imgUri) {
-                        sendImages = [{ url: imgUri, caption: product.name }];
-                    }
-                }
-
-                return {
-                    replyText,
-                    sendImages,
-                    orderingQueue: session.orderingQueue,
-                    orderingIndex: session.orderingIndex,
-                    orderingCart: session.orderingCart
-                };
+                return await getStatePrompt(session, products);
             } else {
                 const max = session.searchProducts?.length || 1;
                 return {
@@ -2053,30 +2041,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         }
     }
 
-    // STATE: AWAITING_PRODUCT_SIZE_QTY
-    if (session.state === "AWAITING_PRODUCT_SIZE_QTY") {
-        const input = textLower.trim();
-        const match = input.match(/^([a-z0-9]+)\s*-\s*([0-9]+)$/i);
-        if (!match) {
-            const queue = session.orderingQueue || [];
-            const currentIndex = session.orderingIndex || 0;
-            const currentItem = queue[currentIndex];
-            const product = currentItem ? currentItem.product : null;
-            const isPant = product ? isPantOrJeansCategory(product.category, product.name) : false;
-            const example = isPant ? '28-2' : 'M-2';
-            return {
-                replyText: `⚠️ Invalid format. Please reply in this format: Size-Quantity (e.g., ${example}).`,
-                sendImages: []
-            };
-        }
-
-        const sizeInput = match[1].toUpperCase();
-        const qtyInput = parseInt(match[2], 10);
-
+    // STATE: AWAITING_PRODUCT_SIZE
+    if (session.state === "AWAITING_PRODUCT_SIZE") {
         const queue = session.orderingQueue || [];
         const currentIndex = session.orderingIndex || 0;
+        const currentItem = queue[currentIndex];
 
-        if (currentIndex < 0 || currentIndex >= queue.length) {
+        if (!currentItem) {
             session.state = "AWAITING_CATEGORY";
             const categoryCounts = getCategoryCounts(products);
             const parents = getSortedParents(categoryCounts);
@@ -2090,159 +2061,189 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             return { replyText, sendImages: [] };
         }
 
-        const currentItem = queue[currentIndex];
         const product = currentItem.product;
-
+        const sizeInput = textLower.trim();
         const normalizedInput = normalizeSize(sizeInput);
-        const matchedSize = (Array.isArray(product.sizes)
+        const sizeList = (Array.isArray(product.sizes)
             ? product.sizes
             : String(product.sizes).split(',').map(s => s.trim())
-        ).filter(Boolean).find(s => normalizeSize(s) === normalizedInput);
+        ).filter(Boolean);
+        const matchedSize = sizeList.find(s => normalizeSize(s) === normalizedInput);
 
         if (!matchedSize) {
-            const rawSizes = (Array.isArray(product.sizes)
-                ? product.sizes
-                : String(product.sizes).split(',').map(s => s.trim())
-            ).filter(Boolean).map(s => s.toUpperCase());
-            const example = isPantOrJeansCategory(product.category, product.name) ? '28-2' : 'M-2';
+            const rawSizes = sizeList.map(s => s.toUpperCase());
+            const sizeButtonsOrList = sizeList.length <= 3 ? `Choose from: ${rawSizes.join(', ')}` : `Please select a size from the options below.`;
             return {
-                replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${rawSizes.join(', ')}\n\nPlease reply in this format: Size-Quantity (e.g. ${example})`,
+                replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${rawSizes.join(', ')}\n\n${sizeButtonsOrList}`,
                 sendImages: []
             };
         }
 
-        if (qtyInput <= 0) {
-            const example = isPantOrJeansCategory(product.category, product.name) ? '28-2' : 'M-2';
-            return {
-                replyText: `❌ Invalid quantity. Only positive quantity values are allowed.\n\nPlease reply in this format: Size-Quantity (e.g. ${example})`,
-                sendImages: []
-            };
+        session.selectedSize = matchedSize.toUpperCase();
+        session.tempQty = 1;
+        session.state = "AWAITING_PRODUCT_QTY";
+
+        return await getStatePrompt(session, products);
+    }
+
+    // STATE: AWAITING_PRODUCT_QTY
+    if (session.state === "AWAITING_PRODUCT_QTY") {
+        const queue = session.orderingQueue || [];
+        const currentIndex = session.orderingIndex || 0;
+        const currentItem = queue[currentIndex];
+
+        if (!currentItem) {
+            session.state = "AWAITING_CATEGORY";
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+
+            let replyText = "Something went wrong. Let's restart. Please select a category:\n\n";
+            parents.forEach((cat, idx) => {
+                const emoji = getCategoryEmoji(cat);
+                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
+            });
+            return { replyText, sendImages: [] };
         }
 
-        session.orderingCart = session.orderingCart || [];
-        session.orderingCart.push({
-            id: product.id,
-            name: product.name,
-            product: product.name,
-            size: matchedSize.toUpperCase(),
-            qty: qtyInput,
-            price: Number(product.price),
-            color: product.color || ''
-        });
+        const product = currentItem.product;
+        const currentQty = session.tempQty || 1;
 
-        const nextIndex = currentIndex + 1;
-        session.orderingIndex = nextIndex;
-
-        if (nextIndex < queue.length) {
-            const nextItem = queue[nextIndex];
-            const nextProduct = nextItem.product;
-            const nextSizeList = (Array.isArray(nextProduct.sizes)
-                ? nextProduct.sizes
-                : String(nextProduct.sizes).split(',').map(s => s.trim())
-            ).filter(Boolean).map(s => s.toUpperCase());
-
-            // Fetch recommendations using product ID
-            const nextRelated = getRecommendationsList(nextProduct, products);
-            const nextRecs = nextRelated.slice(0, 2);
-
-            let nextRecBlock = `Selected:\n${nextProduct.name}\n\n`;
-
-            const isNextPant = isPantOrJeansCategory(nextProduct.category, nextProduct.name);
-            const rawNextSize = nextSizeList[0] || (isNextPant ? '28' : 'M');
-            const nextExampleSize = normalizeSize(rawNextSize).toUpperCase();
-
-            return {
-                replyText: `${nextRecBlock}For ${nextProduct.name} select size and quantity.\n\nAvailable Sizes:\n${nextSizeList.join(', ')}\n\nReply:\n${nextExampleSize}-1`,
-                sendImages: [],
-                orderingQueue: session.orderingQueue,
-                orderingIndex: session.orderingIndex,
-                orderingCart: session.orderingCart
-            };
-        } else {
-            session.cart = session.orderingCart;
-
-            // Fetch recommendations for the last configured product
-            const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
-            const excludedIds = session.cart.map(item => item.id);
-            const related = getRecommendationsList(product, uniqueProducts, excludedIds);
-
-            if (related.length > 0 && !session.crossSellShown) {
-                let promoCandidates = related.slice(0, 4);
-
-                // Ensure unique product IDs inside collage
-                if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
-                    const uniquePromoCandidates = [];
-                    const seenIds = new Set();
-                    for (const p of promoCandidates) {
-                        if (!seenIds.has(p.id)) {
-                            seenIds.add(p.id);
-                            uniquePromoCandidates.push(p);
-                        }
-                    }
-                    promoCandidates = uniquePromoCandidates;
-                }
-
-                let collageUrl = null;
-                if (promoCandidates.length > 1) {
-                    collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
-                } else if (promoCandidates.length === 1) {
-                    collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
-                }
-
-                let promoCategory = '';
-                if (isShirtCategory(product.category, product.name)) {
-                    promoCategory = 'Pants';
-                } else if (isPantOrJeansCategory(product.category, product.name)) {
-                    promoCategory = 'Shirts';
-                } else if (isTShirtCategory(product.category, product.name)) {
-                    promoCategory = 'Pants';
-                } else {
-                    promoCategory = 'Pants';
-                }
-                session.promoCategory = promoCategory;
-
-                session.state = "AWAITING_CATEGORY";
-                session.pendingProduct = null;
-                session.selectedSize = null;
-                session.isRecommendation = false;
-                session.crossSellShown = true;
-
-                let promoEmoji = '🛍️';
-                if (promoCategory === 'Shirts') promoEmoji = '👕';
-                if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
-                if (promoCategory === 'T-Shirts') promoEmoji = '👕';
-                if (promoCategory === 'Shorts') promoEmoji = '🩳';
-
-                const promoKeyword = promoCategory.toUpperCase();
-
-                let bodyText = `🔥 Special Offer!\n`;
-                bodyText += `Matching Collection Available`;
-
-                return {
-                    sendButtons: {
-                        body: bodyText,
-                        buttons: [
-                            { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
-                            { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
-                        ]
-                    },
-                    sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
-                    cart: session.cart
-                };
-            } else {
-                session.state = "AWAITING_MORE_ITEMS";
-                return {
-                    sendButtons: {
-                        body: `✅ Item added to cart successfully.\n\nWould you like to continue shopping?`,
-                        buttons: [
-                            { id: 'yes', title: '🛍️ YES' },
-                            { id: 'no_checkout', title: '🛒 NO - Checkout' }
-                        ]
-                    },
-                    sendImages: [],
-                    cart: session.cart
-                };
+        if (textLower === "qty_plus" || textLower.includes("plus") || textLower === "+") {
+            session.tempQty = currentQty + 1;
+            return await getStatePrompt(session, products);
+        } else if (textLower === "qty_minus" || textLower.includes("minus") || textLower === "-") {
+            if (currentQty > 1) {
+                session.tempQty = currentQty - 1;
             }
+            return await getStatePrompt(session, products);
+        } else if (textLower === "qty_confirm" || textLower.includes("confirm") || textLower === "confirm_qty") {
+            session.orderingCart = session.orderingCart || [];
+            session.orderingCart.push({
+                id: product.id,
+                name: product.name,
+                product: product.name,
+                size: session.selectedSize || 'M',
+                qty: currentQty,
+                price: Number(product.price),
+                color: product.color || ''
+            });
+
+            const nextIndex = currentIndex + 1;
+            session.orderingIndex = nextIndex;
+
+            if (nextIndex < queue.length) {
+                session.selectedSize = null;
+                session.tempQty = 1;
+                session.state = "AWAITING_PRODUCT_SIZE";
+                return await getStatePrompt(session, products);
+            } else {
+                session.cart = session.orderingCart;
+
+                // Fetch recommendations for the last configured product
+                const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
+                const excludedIds = session.cart.map(item => item.id);
+                const related = getRecommendationsList(product, uniqueProducts, excludedIds);
+
+                if (related.length > 0 && !session.crossSellShown) {
+                    let promoCandidates = related.slice(0, 4);
+
+                    // Ensure unique product IDs inside collage
+                    if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
+                        const uniquePromoCandidates = [];
+                        const seenIds = new Set();
+                        for (const p of promoCandidates) {
+                            if (!seenIds.has(p.id)) {
+                                seenIds.add(p.id);
+                                uniquePromoCandidates.push(p);
+                            }
+                        }
+                        promoCandidates = uniquePromoCandidates;
+                    }
+
+                    let collageUrl = null;
+                    if (promoCandidates.length > 1) {
+                        collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
+                    } else if (promoCandidates.length === 1) {
+                        collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
+                    }
+
+                    let promoCategory = '';
+                    if (isShirtCategory(product.category, product.name)) {
+                        promoCategory = 'Pants';
+                    } else if (isPantOrJeansCategory(product.category, product.name)) {
+                        promoCategory = 'Shirts';
+                    } else if (isTShirtCategory(product.category, product.name)) {
+                        promoCategory = 'Pants';
+                    } else {
+                        promoCategory = 'Pants';
+                    }
+                    session.promoCategory = promoCategory;
+
+                    session.state = "AWAITING_CATEGORY";
+                    session.pendingProduct = null;
+                    session.selectedSize = null;
+                    session.isRecommendation = false;
+                    session.crossSellShown = true;
+
+                    let promoEmoji = '🛍️';
+                    if (promoCategory === 'Shirts') promoEmoji = '👕';
+                    if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
+                    if (promoCategory === 'T-Shirts') promoEmoji = '👕';
+                    if (promoCategory === 'Shorts') promoEmoji = '🩳';
+
+                    const promoKeyword = promoCategory.toUpperCase();
+
+                    let bodyText = `🔥 Special Offer!\n`;
+                    bodyText += `Matching Collection Available`;
+
+                    return {
+                        sendButtons: {
+                            body: bodyText,
+                            buttons: [
+                                { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
+                                { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
+                            ]
+                        },
+                        sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
+                        cart: session.cart
+                    };
+                } else {
+                    session.state = "AWAITING_MORE_ITEMS";
+                    return {
+                        sendButtons: {
+                            body: `✅ Item added to cart successfully.\n\nWould you like to continue shopping?`,
+                            buttons: [
+                                { id: 'yes', title: '🛍️ YES' },
+                                { id: 'no_checkout', title: '🛒 NO - Checkout' }
+                            ]
+                        },
+                        sendImages: [],
+                        cart: session.cart
+                    };
+                }
+            }
+        } else {
+            // Check if user entered a number directly to change quantity
+            const typedQty = parseInt(textLower.trim(), 10);
+            if (!isNaN(typedQty) && typedQty > 0 && typedQty < 100) {
+                session.tempQty = typedQty;
+                return await getStatePrompt(session, products);
+            }
+
+            // Fallback for invalid input in quantity stage
+            return {
+                replyText: `⚠️ Invalid response. Please use the buttons below to change the quantity or confirm your selection:`,
+                sendButtons: {
+                    body: `📐 *${product.name}*\nSelected Size: *${session.selectedSize || 'N/A'}*\nSelected Qty: *${currentQty}*\n\nUse the buttons below to change quantity or confirm:`,
+                    buttons: [
+                        { id: 'qty_minus', title: '➖ Qty' },
+                        { id: 'qty_plus', title: '➕ Qty' },
+                        { id: 'qty_confirm', title: `✅ Confirm: ${currentQty}` }
+                    ]
+                },
+                sendImages: []
+            };
         }
     }
 
@@ -2324,28 +2325,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     session.orderingQueue = queue;
                     session.orderingIndex = 0;
                     session.orderingCart = [...(session.cart || [])];
-                    session.state = "AWAITING_PRODUCT_SIZE_QTY";
-
-                    const sizeList = (Array.isArray(product.sizes)
-                        ? product.sizes
-                        : String(product.sizes).split(',').map(s => s.trim())
-                    ).filter(Boolean);
-                    const sizesText = sizeList.map(s => s.toUpperCase()).join(', ');
-
-                    const isPant = isPantOrJeansCategory(product.category, product.name);
-                    const formatHint = isPant
-                        ? `Reply in this format:\n\n28-2\n\n(Size 28, Qty 2)`
-                        : `Reply in this format:\n\nM-2\n\n(Size M, Qty 2)`;
-
-                    const replyText = `For ${product.name} select size and quantity.\n\nAvailable Sizes:\n${sizesText}\n\n${formatHint}`;
-
-                    return {
-                        replyText,
-                        sendImages: [{ url: getProductImageUri(product, products), caption: product.name }],
-                        orderingQueue: session.orderingQueue,
-                        orderingIndex: session.orderingIndex,
-                        orderingCart: session.orderingCart
-                    };
+                    session.state = "AWAITING_PRODUCT_SIZE";
+                    return await getStatePrompt(session, products);
                 }
             }
         }
@@ -2971,17 +2952,39 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
 
     // SMART FALLBACKS & GENERAL FALLBACKS
-    if (session.state === "AWAITING_PRODUCT_SIZE_QTY") {
+    if (session.state === "AWAITING_PRODUCT_SIZE") {
         const queue = session.orderingQueue || [];
         const currentIndex = session.orderingIndex || 0;
         const currentItem = queue[currentIndex];
         const product = currentItem ? currentItem.product : null;
-        const sizeList = product ? (Array.isArray(product.sizes) ? product.sizes : String(product.sizes).split(',')).map(s => s.trim().toUpperCase()) : ['S', 'M', 'L', 'XL'];
-        const example = (product && isPantOrJeansCategory(product.category, product.name)) ? '28-2' : 'M-2';
-        return {
-            replyText: `Please reply in this format: Size-Quantity (e.g. ${example}). Available sizes: ${sizeList.join(', ')}`,
-            sendImages: []
-        };
+        if (product) {
+            const sizeList = (Array.isArray(product.sizes) ? product.sizes : String(product.sizes).split(',')).map(s => s.trim().toUpperCase());
+            return {
+                replyText: `❌ Invalid size selection. Please choose a valid size for ${product.name} from the options:\n${sizeList.join(', ')}`,
+                sendImages: []
+            };
+        }
+    }
+    if (session.state === "AWAITING_PRODUCT_QTY") {
+        const queue = session.orderingQueue || [];
+        const currentIndex = session.orderingIndex || 0;
+        const currentItem = queue[currentIndex];
+        const product = currentItem ? currentItem.product : null;
+        const currentQty = session.tempQty || 1;
+        if (product) {
+            return {
+                replyText: `⚠️ Invalid response. Please use the buttons below to change the quantity or confirm your selection:`,
+                sendButtons: {
+                    body: `📐 *${product.name}*\nSelected Size: *${session.selectedSize || 'N/A'}*\nSelected Qty: *${currentQty}*\n\nUse the buttons below to change quantity or confirm:`,
+                    buttons: [
+                        { id: 'qty_minus', title: '➖ Qty' },
+                        { id: 'qty_plus', title: '➕ Qty' },
+                        { id: 'qty_confirm', title: `✅ Confirm: ${currentQty}` }
+                    ]
+                },
+                sendImages: []
+            };
+        }
     }
     if (session.state === "AWAITING_ORDER_CONFIRMATION") {
         return {

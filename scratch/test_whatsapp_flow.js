@@ -33,26 +33,16 @@ async function runTests() {
     };
     
     let res = await handleSalesAssistantJS("12345", "1", mockProducts, session1);
-    console.log("Response text for Shirt selection:\n", res.replyText);
+    const textToCheck = res.replyText || res.sendButtons?.body || res.sendList?.body || "";
+    console.log("Response text for Shirt selection:\n", textToCheck);
     
-    // Check that recommendations are NOT in the replyText
-    assert.ok(!res.replyText.includes("Recommended:"), "Recommended label should be removed");
-    assert.ok(!res.replyText.includes("1. Polo Fit Pant Black"), "Should not display recommended products text in size prompt");
-    assert.ok(!res.replyText.includes("2. Jeans Blue"), "Should not display recommended products text in size prompt");
+    // Check that recommendations are NOT in the prompt body
+    assert.ok(!textToCheck.includes("Recommended:"), "Recommended label should be removed");
+    assert.ok(!textToCheck.includes("1. Polo Fit Pant Black"), "Should not display recommended products text in size prompt");
+    assert.ok(!textToCheck.includes("2. Jeans Blue"), "Should not display recommended products text in size prompt");
 
-    // Test 2: Size Normalization and Dynamic Guide for Pants
-    console.log("\nTesting dynamic guide (e.g. 28-2 format guide for Pants)...");
-    
-    const sessionSize = {
-        state: "AWAITING_PRODUCT_SIZE_QTY",
-        orderingQueue: [
-            { displayNum: 1, product: mockProducts[3] } // Polo Fit Pant Black
-        ],
-        orderingIndex: 0,
-        orderingCart: [],
-        cart: [],
-        crossSellShown: false
-    };
+    // Test 2: Size Interactive Selection
+    console.log("\nTesting size selection interactive prompt (buttons)...");
     
     // Trigger size/qty request from model selection state instead to get first prompt
     const sessionModelPants = {
@@ -61,28 +51,17 @@ async function runTests() {
         cart: []
     };
     res = await handleSalesAssistantJS("12345", "1", mockProducts, sessionModelPants);
-    console.log("Pants size selection prompt:\n", res.replyText);
+    console.log("Pants size selection prompt:", res.sendButtons);
     
-    // Assert it suggests 28-2 format (since it is a pant)
-    assert.ok(res.replyText.includes("Reply in this format:\n\n28-2"), "Pants should suggest 28-2 guide format");
-    assert.ok(res.replyText.includes("(Size 28, Qty 2)"), "Pants should explain size 28, qty 2");
-    
-    // Trigger size/qty request for shirt to check standard guide
-    const sessionModelShirt = {
-        state: "AWAITING_MODEL_SELECTION",
-        searchProducts: [mockProducts[0]], // Printed Shirt Red
-        cart: []
-    };
-    res = await handleSalesAssistantJS("12345", "1", mockProducts, sessionModelShirt);
-    console.log("Shirt size selection prompt:\n", res.replyText);
-    assert.ok(res.replyText.includes("Reply in this format:\n\nM-2"), "Shirts should suggest M-2 guide format");
-    assert.ok(res.replyText.includes("(Size M, Qty 2)"), "Shirts should explain size M, qty 2");
+    // Assert it sends buttons with correct labels matching product sizes
+    assert.ok(res.sendButtons, "Pants should send interactive buttons");
+    assert.deepStrictEqual(res.sendButtons.buttons.map(b => b.title), ["28 SIZE", "30 SIZE", "32 SIZE"]);
 
     // Test 3: Multiple selections images restriction
     console.log("\nTesting images are shown ONLY for the first configured product...");
     
     const sessionMultiple = {
-        state: "AWAITING_PRODUCT_SIZE_QTY",
+        state: "AWAITING_PRODUCT_SIZE",
         orderingQueue: [
             { displayNum: 1, product: mockProducts[0] }, // Printed Shirt Red (1st item)
             { displayNum: 2, product: mockProducts[1] }  // Linen Shirt White (2nd item)
@@ -93,13 +72,18 @@ async function runTests() {
         crossSellShown: false
     };
     
-    // User replies with size/qty for the first product
-    res = await handleSalesAssistantJS("12345", "M-2", mockProducts, sessionMultiple);
+    // User selects size for the first product -> transitions to AWAITING_PRODUCT_QTY
+    res = await handleSalesAssistantJS("12345", "M", mockProducts, sessionMultiple);
+    assert.strictEqual(sessionMultiple.state, "AWAITING_PRODUCT_QTY", "Should transition to AWAITING_PRODUCT_QTY");
+    
+    // User confirms qty -> transitions to AWAITING_PRODUCT_SIZE for the second product
+    res = await handleSalesAssistantJS("12345", "qty_confirm", mockProducts, sessionMultiple);
     console.log("Response prompt for the second product:\n", JSON.stringify(res, null, 2));
     
     // Assert next prompt does NOT send next product images
     assert.strictEqual(sessionMultiple.orderingIndex, 1, "Ordering index should increment to 1");
-    assert.deepStrictEqual(res.sendImages, [], "Should NOT send next next product images");
+    assert.strictEqual(sessionMultiple.state, "AWAITING_PRODUCT_SIZE", "Should transition back to AWAITING_PRODUCT_SIZE");
+    assert.deepStrictEqual(res.sendImages, [], "Should NOT send next product images");
 
     // Test 4: Multiple selections collage generation and size validation
     console.log("\nTesting multiple selections initial collage generation...");
@@ -113,14 +97,14 @@ async function runTests() {
     console.log("Response for multiple selections initial prompt:\n", JSON.stringify(res, null, 2));
     
     // Check that we got a collage image (since queue length > 1)
-    assert.strictEqual(res.orderingQueue.length, 2, "Queue should contain 2 items");
-    assert.strictEqual(res.orderingIndex, 0, "Ordering index should be 0");
+    assert.strictEqual(sessionMultipleInit.orderingQueue.length, 2, "Queue should contain 2 items");
+    assert.strictEqual(sessionMultipleInit.orderingIndex, 0, "Ordering index should be 0");
     assert.strictEqual(res.sendImages.length, 1, "Should send 1 collage image");
     assert.ok(res.sendImages[0].url.includes("collages"), "Should send a collage URL from supabase storage");
 
-    console.log("\nTesting pants size normalization validation (e.g. 28-2 matching 28 SIZE)...");
+    console.log("\nTesting pants size normalization validation (matching 28 SIZE)...");
     const sessionPantValidation = {
-        state: "AWAITING_PRODUCT_SIZE_QTY",
+        state: "AWAITING_PRODUCT_SIZE",
         orderingQueue: [
             { displayNum: 1, product: mockProducts[3] } // Polo Fit Pant Black (has size "28 SIZE")
         ],
@@ -129,14 +113,20 @@ async function runTests() {
         cart: [],
         crossSellShown: false
     };
-    res = await handleSalesAssistantJS("12345", "28-2", mockProducts, sessionPantValidation);
-    console.log("Response for valid pants size:\n", JSON.stringify(res, null, 2));
+    
+    // User inputs size "28" (normalizes to match "28 SIZE")
+    res = await handleSalesAssistantJS("12345", "28", mockProducts, sessionPantValidation);
+    assert.strictEqual(sessionPantValidation.state, "AWAITING_PRODUCT_QTY", "Should transition to AWAITING_PRODUCT_QTY");
+    assert.strictEqual(sessionPantValidation.selectedSize, "28 SIZE", "Normalized size should map back to 28 SIZE");
+    
+    // User confirms qty -> added to cart
+    res = await handleSalesAssistantJS("12345", "qty_confirm", mockProducts, sessionPantValidation);
     assert.strictEqual(sessionPantValidation.orderingCart.length, 1, "Should successfully add 1 item to orderingCart");
-    assert.strictEqual(sessionPantValidation.orderingCart[0].size, "28 SIZE", "Normalized size should map back to 28 SIZE");
+    assert.strictEqual(sessionPantValidation.orderingCart[0].size, "28 SIZE", "Cart item size should be 28 SIZE");
 
-    console.log("\nTesting invalid size format error prompt with dynamic examples...");
-    const sessionInvalidShirt = {
-        state: "AWAITING_PRODUCT_SIZE_QTY",
+    console.log("\nTesting invalid size selection response...");
+    const sessionInvalidSize = {
+        state: "AWAITING_PRODUCT_SIZE",
         orderingQueue: [
             { displayNum: 1, product: mockProducts[0] } // Printed Shirt Red (Shirt)
         ],
@@ -144,20 +134,8 @@ async function runTests() {
         orderingCart: [],
         cart: []
     };
-    res = await handleSalesAssistantJS("12345", "invalid_input", mockProducts, sessionInvalidShirt);
-    assert.ok(res.replyText.includes("e.g., M-2"), "Shirt invalid format error should suggest M-2");
-
-    const sessionInvalidPant = {
-        state: "AWAITING_PRODUCT_SIZE_QTY",
-        orderingQueue: [
-            { displayNum: 1, product: mockProducts[3] } // Polo Fit Pant Black (Pant)
-        ],
-        orderingIndex: 0,
-        orderingCart: [],
-        cart: []
-    };
-    res = await handleSalesAssistantJS("12345", "invalid_input", mockProducts, sessionInvalidPant);
-    assert.ok(res.replyText.includes("e.g., 28-2"), "Pant invalid format error should suggest 28-2");
+    res = await handleSalesAssistantJS("12345", "invalid_input", mockProducts, sessionInvalidSize);
+    assert.ok(res.replyText.includes("❌ This size is currently out of stock or invalid."), "Should return invalid size error");
 
     console.log("\n✅ All recommended label removal, dynamic format guidance, enqueued images restrictions, collage generation, and size validation tests passed successfully!");
 }

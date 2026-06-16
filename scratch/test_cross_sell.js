@@ -36,13 +36,15 @@ async function runFlow() {
     const steps = [
         { msg: "hi", desc: "Start chat" },
         { msg: "1", desc: "Select category 1 (Shirts)" },
-        { msg: "1", desc: "Select subcategory 1 (Casual Shirt)" },
         { msg: "1", desc: "Select product 1 (Premium Plain Shirt)" },
-        { msg: "M-1", desc: "Select size M, qty 1" },
+        { msg: "M", desc: "Select size M" },
+        { msg: "qty_plus", desc: "Increment quantity to 2" },
+        { msg: "qty_confirm", desc: "Confirm quantity of 2" },
         { msg: "PANTS", desc: "Browse pants" },
         { msg: "2", desc: "Select subcategory 2 (Pants)" },
         { msg: "1", desc: "Select product 1 (Polo Fit Pant)" },
-        { msg: "32-1", desc: "Select size 32, qty 1" }
+        { msg: "32", desc: "Select size 32" },
+        { msg: "qty_confirm", desc: "Confirm quantity of 1" }
     ];
 
     const phone = "1234567890";
