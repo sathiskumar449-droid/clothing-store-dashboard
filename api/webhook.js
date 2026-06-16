@@ -1060,7 +1060,7 @@ export const getParentCategory = (categoryName) => {
         { keywords: ['new arrival', 'new arrivals'], parent: 'New Arrivals' },
         { keywords: ['t-shirt', 't shirt', 'tshirt', 'polo t'], parent: 'T-Shirts' },
         { keywords: ['shirt', 'linen', 'lenin', 'chava'], parent: 'Shirts' },
-        { keywords: ['men', 'menu', 'general', 'uncategorized'], parent: 'Shirts' },
+        { keywords: ['men', 'menu', 'general', 'uncategorized'], parent: 'General' },
         { keywords: ['pant', 'pants', 'phant', 'trouser', 'jogger', 'polo fit', 'polofit'], parent: 'Pants' },
         { keywords: ['jeans', 'jean'], parent: 'Jeans' },
         { keywords: ['shorts', 'short'], parent: 'Shorts' },
