@@ -56,7 +56,7 @@ export async function getProducts() {
             let cat = row.category || 'General';
 
             // Self-healing rules based on name keywords:
-            if (nameLower.includes('t-shirt') || nameLower.includes('tshirt') || nameLower.includes('polo t-shirt') || nameLower.includes('five sleeve t shirt') || nameLower.includes('round neck t shirt')) {
+            if (nameLower.includes('t-shirt') || nameLower.includes('tshirt') || nameLower.includes('t shirt') || nameLower.includes('polo t-shirt') || nameLower.includes('five sleeve t shirt') || nameLower.includes('round neck t shirt')) {
                 if (nameLower.includes('polo')) {
                     cat = 'Polo T-Shirts';
                 } else {
