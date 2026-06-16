@@ -35,9 +35,10 @@ async function runTests() {
     let res = await handleSalesAssistantJS("12345", "1", mockProducts, session1);
     console.log("Response text for Shirt selection:\n", res.replyText);
     
-    // Check that "Recommended:" string is NOT in the replyText
+    // Check that recommendations are NOT in the replyText
     assert.ok(!res.replyText.includes("Recommended:"), "Recommended label should be removed");
-    assert.ok(res.replyText.includes("1. Polo Fit Pant Black") || res.replyText.includes("2. Jeans Blue"), "Should display recommended products directly");
+    assert.ok(!res.replyText.includes("1. Polo Fit Pant Black"), "Should not display recommended products text in size prompt");
+    assert.ok(!res.replyText.includes("2. Jeans Blue"), "Should not display recommended products text in size prompt");
 
     // Test 2: Size Normalization and Dynamic Guide for Pants
     console.log("\nTesting dynamic guide (e.g. 28-2 format guide for Pants)...");

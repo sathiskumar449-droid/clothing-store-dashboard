@@ -1376,12 +1376,6 @@ async function getStatePrompt(session, products) {
             const recommendations = related.slice(0, 2);
 
             let recBlock = `Selected:\n${product.name}\n\n`;
-            if (recommendations.length > 0) {
-                recommendations.forEach((rec, idx) => {
-                    recBlock += `${idx + 1}. ${rec.name}\n`;
-                });
-                recBlock += `\n`;
-            }
 
             const isPant = isPantOrJeansCategory(product.category, product.name);
             const formatHint = isPant 
@@ -1972,12 +1966,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 const recommendations = related.slice(0, 2);
 
                 let recBlock = `Selected:\n${product.name}\n\n`;
-                if (recommendations.length > 0) {
-                    recommendations.forEach((rec, idx) => {
-                        recBlock += `${idx + 1}. ${rec.name}\n`;
-                    });
-                    recBlock += `\n`;
-                }
 
                 const isPant = isPantOrJeansCategory(product.category, product.name);
                 const formatHint = isPant 
@@ -2109,12 +2097,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const nextRecs = nextRelated.slice(0, 2);
 
             let nextRecBlock = `Selected:\n${nextProduct.name}\n\n`;
-            if (nextRecs.length > 0) {
-                nextRecs.forEach((rec, idx) => {
-                    nextRecBlock += `${idx + 1}. ${rec.name}\n`;
-                });
-                nextRecBlock += `\n`;
-            }
 
             const isNextPant = isPantOrJeansCategory(nextProduct.category, nextProduct.name);
             const rawNextSize = nextSizeList[0] || (isNextPant ? '28' : 'M');
