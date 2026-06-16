@@ -2014,14 +2014,19 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const currentItem = queue[currentIndex];
         const product = currentItem.product;
 
-        const sizeList = (Array.isArray(product.sizes)
+        const normalizedInput = normalizeSize(sizeInput);
+        const matchedSize = (Array.isArray(product.sizes)
             ? product.sizes
             : String(product.sizes).split(',').map(s => s.trim())
-        ).filter(Boolean).map(s => s.toUpperCase());
+        ).filter(Boolean).find(s => normalizeSize(s) === normalizedInput);
 
-        if (!sizeList.includes(sizeInput)) {
+        if (!matchedSize) {
+            const rawSizes = (Array.isArray(product.sizes)
+                ? product.sizes
+                : String(product.sizes).split(',').map(s => s.trim())
+            ).filter(Boolean).map(s => s.toUpperCase());
             return {
-                replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${sizeList.join(', ')}\n\nPlease reply in this format: Size-Quantity (e.g. M-2)`,
+                replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${rawSizes.join(', ')}\n\nPlease reply in this format: Size-Quantity (e.g. M-2)`,
                 sendImages: []
             };
         }
@@ -2038,7 +2043,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             id: product.id,
             name: product.name,
             product: product.name,
-            size: sizeInput,
+            size: matchedSize.toUpperCase(),
             qty: qtyInput,
             price: Number(product.price),
             color: product.color || ''
@@ -2083,7 +2088,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const excludedIds = session.cart.map(item => item.id);
             const related = getRecommendationsList(product, uniqueProducts, excludedIds);
 
-            if (related.length > 0) {
+            if (related.length > 0 && !session.crossSellShown) {
                 let promoCandidates = related.slice(0, 4);
 
                 // Ensure unique product IDs inside collage
