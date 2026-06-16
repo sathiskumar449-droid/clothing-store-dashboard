@@ -50,11 +50,24 @@ export default function SettingsPage() {
   const [savedWoo, setSavedWoo] = useState(false);
 
   useEffect(() => {
-    // 1. Load store settings from localStorage
-    try {
-      const s = localStorage.getItem(STORE_KEY);
-      if (s) setStoreSettings({ ...defaultStore, ...JSON.parse(s) });
-    } catch {/* ignore */}
+    // 1. Load store settings from database (fallback to local storage)
+    const loadStore = async () => {
+      try {
+        const response = await api.get('/settings/store');
+        if (response.data && response.data.storeName) {
+          setStoreSettings(response.data);
+          localStorage.setItem(STORE_KEY, JSON.stringify(response.data));
+        } else {
+          const s = localStorage.getItem(STORE_KEY);
+          if (s) setStoreSettings({ ...defaultStore, ...JSON.parse(s) });
+        }
+      } catch (err) {
+        console.error('Failed to load store settings from database', err);
+        const s = localStorage.getItem(STORE_KEY);
+        if (s) setStoreSettings({ ...defaultStore, ...JSON.parse(s) });
+      }
+    };
+    loadStore();
 
     // 2. Load WooCommerce settings from database (fallback to local storage)
     const loadWoo = async () => {
@@ -78,10 +91,24 @@ export default function SettingsPage() {
     loadWoo();
   }, []);
 
-  const saveStore = () => {
-    localStorage.setItem(STORE_KEY, JSON.stringify(storeSettings));
-    setSavedStore(true);
-    setTimeout(() => setSavedStore(false), 2000);
+  const saveStore = async () => {
+    try {
+      // Save to localStorage
+      localStorage.setItem(STORE_KEY, JSON.stringify(storeSettings));
+
+      // Save to database
+      const response = await api.post('/settings/store', storeSettings);
+      if (response.data.success) {
+        setSavedStore(true);
+        setTimeout(() => setSavedStore(false), 2000);
+      } else {
+        alert(response.data.message || 'Failed to save store settings to database');
+      }
+    } catch (err) {
+      console.error(err);
+      const msg = err.response?.data?.message || 'Failed to save store settings to database';
+      alert(msg);
+    }
   };
 
   const saveWoo = async () => {
@@ -183,7 +210,7 @@ export default function SettingsPage() {
                   placeholder="Welcome message sent to new customers"
                 />
               </div>
-              <p className="text-xs text-gray-400 mt-1">This is a reference field. Update the actual message in your WhatsApp bot code.</p>
+              <p className="text-xs text-gray-400 mt-1">This message is sent automatically to customers when they greet the bot (e.g. saying "hi").</p>
             </Field>
             <button
               onClick={saveStore}

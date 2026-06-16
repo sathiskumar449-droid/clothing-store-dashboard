@@ -7,7 +7,7 @@ import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook, handleRazorpayWeb
 import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook } from './api/products.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
 import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat, editChatMessage, deleteChatMessage } from './api/chats.js';
-import { getWooSettings, saveWooSettings } from './api/settings.js';
+import { getWooSettings, saveWooSettings, getStoreSettings, saveStoreSettings } from './api/settings.js';
 
 dotenv.config();
 
@@ -76,6 +76,8 @@ app.delete('/api/chats/:phone/messages/:index', deleteChatMessage);
 // =============================
 app.get('/api/settings/woo', getWooSettings);
 app.post('/api/settings/woo', saveWooSettings);
+app.get('/api/settings/store', getStoreSettings);
+app.post('/api/settings/store', saveStoreSettings);
 
 
 // =============================

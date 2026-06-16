@@ -25,6 +25,22 @@ export const userSessions = {}; // In-memory per-user conversation state
 // Database Helpers  (all async — Supabase)
 // =============================
 
+export async function getWelcomeMessagePrefix() {
+    try {
+        const { data, error } = await supabase
+            .from('settings')
+            .select('value')
+            .eq('key', 'welcome_message')
+            .single();
+        if (data && data.value && data.value.trim()) {
+            return data.value.trim() + "\n\n";
+        }
+    } catch (err) {
+        console.error("Failed to load welcome message from database:", err);
+    }
+    return "";
+}
+
 export async function getProducts() {
     try {
         const { data, error } = await supabase
@@ -1596,7 +1612,8 @@ async function handleIntent(intentResult, session, products) {
             const parents = getSortedParents(categoryCounts);
             session.parentCategories = parents;
 
-            let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
+            const welcomePrefix = await getWelcomeMessagePrefix();
+            let replyText = `${welcomePrefix}👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n`;
             parents.forEach((cat, idx) => {
                 const emoji = getCategoryEmoji(cat);
                 replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
@@ -2811,7 +2828,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const parents = getSortedParents(categoryCounts);
         session.parentCategories = parents;
 
-        let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
+        const welcomePrefix = await getWelcomeMessagePrefix();
+        let replyText = `${welcomePrefix}👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n`;
         parents.forEach((cat, idx) => {
             const emoji = getCategoryEmoji(cat);
             replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
