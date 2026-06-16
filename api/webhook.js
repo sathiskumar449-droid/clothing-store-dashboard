@@ -707,11 +707,7 @@ const getTargetRecommendationTags = (tag) => {
 // Helper to retrieve fallback/self-healing image URI if the database row has 'null' or missing image
 const getProductImageUri = (product, allProducts = []) => {
     if (product.imageUri && product.imageUri.startsWith('http') && product.imageUri !== 'null' && product.imageUri !== 'undefined') {
-        const isWhitePant = (product.name || '').toLowerCase().includes('white') &&
-            (product.name || '').toLowerCase().includes('pant');
-        if (isWhitePant && product.imageUri.includes('6082459309833916828')) {
-            return 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?q=80&w=600&auto=format&fit=crop';
-        }
+        
         return product.imageUri;
     }
 
