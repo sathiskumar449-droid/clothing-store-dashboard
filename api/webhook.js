@@ -1689,9 +1689,12 @@ async function getStatePrompt(session, products) {
             const selectedParent = session.selectedParentCategory;
             const subcategoryCounts = {};
             products.forEach(p => {
-                if (Number(p.stock) > 0 && getParentCategory(p.category) === selectedParent) {
-                    const sub = p.category || 'General';
-                    subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
+                if (Number(p.stock) > 0) {
+                    const cats = Array.isArray(p.categories) && p.categories.length > 0 ? p.categories : [p.category];
+                    if (cats.some(c => getParentCategory(c) === selectedParent)) {
+                        const sub = p.category || 'General';
+                        subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
+                    }
                 }
             });
             const subs = Object.keys(subcategoryCounts).filter(sub => subcategoryCounts[sub] > 0);
@@ -3815,9 +3818,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             const subcategoryCounts = {};
             products.forEach(p => {
-                if (Number(p.stock) > 0 && getParentCategory(p.category) === selectedParent) {
-                    const sub = p.category || 'General';
-                    subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
+                if (Number(p.stock) > 0) {
+                    const cats = Array.isArray(p.categories) && p.categories.length > 0 ? p.categories : [p.category];
+                    if (cats.some(c => getParentCategory(c) === selectedParent)) {
+                        const sub = p.category || 'General';
+                        subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
+                    }
                 }
             });
 
