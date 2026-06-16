@@ -206,7 +206,7 @@ export default function ChatsPage() {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f0f2f5]">
+    <div className="fixed top-0 bottom-20 left-0 right-0 md:static md:w-full md:h-screen flex overflow-hidden bg-[#f0f2f5]">
       {/* Chat List Panel */}
       <div className={`
         ${activeChat ? 'hidden md:flex' : 'flex'}
