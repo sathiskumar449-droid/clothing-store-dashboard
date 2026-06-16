@@ -3716,6 +3716,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const idx = parseInt(textLower, 10) - 1;
         if (idx >= 0 && idx < session.parentCategories.length) {
             const selectedParent = session.parentCategories[idx];
+            session.crossSellShown = false;
+            session.cartCrossSellShown = false;
 
             const subcategoryCounts = {};
             products.forEach(p => {
