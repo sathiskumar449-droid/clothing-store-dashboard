@@ -1102,8 +1102,17 @@ export const getCategoryCounts = (products) => {
     const categoryCounts = {};
     products.forEach(p => {
         if (Number(p.stock) > 0) {
-            const parent = getParentCategory(p.category);
-            categoryCounts[parent] = (categoryCounts[parent] || 0) + 1;
+            const cats = Array.isArray(p.categories) && p.categories.length > 0
+                ? p.categories
+                : [p.category];
+            const seenParents = new Set();
+            cats.forEach(c => {
+                const parent = getParentCategory(c);
+                if (!seenParents.has(parent)) {
+                    seenParents.add(parent);
+                    categoryCounts[parent] = (categoryCounts[parent] || 0) + 1;
+                }
+            });
         }
     });
     return categoryCounts;
