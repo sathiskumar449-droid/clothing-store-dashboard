@@ -12,9 +12,14 @@
   --color-brand-800: #3730a3;
   --color-brand-900: #312e81;
 
-  --color-sidebar: #1e1b4b;
-  --color-sidebar-hover: #2d2a63;
-  --color-sidebar-active: #4f46e5;
+  --color-sidebar: #111b21;
+  --color-sidebar-hover: #202c33;
+  --color-sidebar-active: #2a3942;
+
+  --color-brand-green: #00a884;
+  --color-chat-bg: #efeae2;
+  --color-chat-sent: #d9fdd3;
+  --color-chat-received: #ffffff;
 
   --color-success: #10b981;
   --color-warning: #f59e0b;

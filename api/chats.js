@@ -238,3 +238,126 @@ export const renameChat = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+// PUT /chats/:phone/messages/:index — edit a message at index
+export const editChatMessage = async (req, res) => {
+    try {
+        const { phone, index } = req.params;
+        const { text } = req.body;
+        const idx = parseInt(index);
+
+        const { data: chatRow, error: findError } = await supabase
+            .from('chats')
+            .select('*')
+            .eq('customer_phone', phone)
+            .maybeSingle();
+
+        if (findError || !chatRow) {
+            return res.status(404).json({ success: false, message: 'Chat not found' });
+        }
+
+        const messages = chatRow.messages || [];
+        if (isNaN(idx) || idx < 0 || idx >= messages.length) {
+            return res.status(400).json({ success: false, message: 'Invalid message index' });
+        }
+
+        // Edit the message
+        messages[idx].text = text;
+        messages[idx].edited = true;
+
+        // If it was the last message, update the last_message column
+        let lastMessage = chatRow.last_message;
+        if (idx === messages.length - 1) {
+            lastMessage = messages[idx].type === 'image' ? `📷 Image${text ? ': ' + text : ''}` : text;
+        }
+
+        const { data, error } = await supabase
+            .from('chats')
+            .update({
+                messages,
+                last_message: lastMessage,
+                last_updated: new Date().toISOString()
+            })
+            .eq('customer_phone', phone)
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        res.json({
+            success: true,
+            chat: {
+                customerPhone: data.customer_phone,
+                customerName:  data.customer_name,
+                lastMessage:   data.last_message,
+                lastUpdated:   data.last_updated,
+                botPaused:     data.bot_paused,
+                messages:      (data.messages || []).filter(m => m.type !== 'session_state')
+            }
+        });
+    } catch (error) {
+        console.error(`❌ Error editing message for ${req.params.phone}:`, error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// DELETE /chats/:phone/messages/:index — delete a message at index
+export const deleteChatMessage = async (req, res) => {
+    try {
+        const { phone, index } = req.params;
+        const idx = parseInt(index);
+
+        const { data: chatRow, error: findError } = await supabase
+            .from('chats')
+            .select('*')
+            .eq('customer_phone', phone)
+            .maybeSingle();
+
+        if (findError || !chatRow) {
+            return res.status(404).json({ success: false, message: 'Chat not found' });
+        }
+
+        const messages = chatRow.messages || [];
+        if (isNaN(idx) || idx < 0 || idx >= messages.length) {
+            return res.status(400).json({ success: false, message: 'Invalid message index' });
+        }
+
+        // Delete the message
+        messages.splice(idx, 1);
+
+        // Update the last_message column to the new last message
+        let lastMessage = '';
+        if (messages.length > 0) {
+            const lastMsg = messages[messages.length - 1];
+            lastMessage = lastMsg.type === 'image' ? `📷 Image${lastMsg.text ? ': ' + lastMsg.text : ''}` : lastMsg.text;
+        }
+
+        const { data, error } = await supabase
+            .from('chats')
+            .update({
+                messages,
+                last_message: lastMessage,
+                last_updated: new Date().toISOString()
+            })
+            .eq('customer_phone', phone)
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        res.json({
+            success: true,
+            chat: {
+                customerPhone: data.customer_phone,
+                customerName:  data.customer_name,
+                lastMessage:   data.last_message,
+                lastUpdated:   data.last_updated,
+                botPaused:     data.bot_paused,
+                messages:      (data.messages || []).filter(m => m.type !== 'session_state')
+            }
+        });
+    } catch (error) {
+        console.error(`❌ Error deleting message for ${req.params.phone}:`, error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

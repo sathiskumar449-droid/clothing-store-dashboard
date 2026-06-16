@@ -6,7 +6,7 @@ import { getOutfitMatches } from './api/matchOutfit.js';
 import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook, handleRazorpayWebhook } from './api/webhook.js';
 import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook } from './api/products.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
-import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat } from './api/chats.js';
+import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat, editChatMessage, deleteChatMessage } from './api/chats.js';
 import { getWooSettings, saveWooSettings } from './api/settings.js';
 
 dotenv.config();
@@ -67,6 +67,8 @@ app.post('/api/chats/:phone/message', sendChatMessage);
 app.post('/api/chats/:phone/toggle-bot', toggleBot);
 app.delete('/api/chats/:phone', deleteChat);
 app.put('/api/chats/:phone/rename', renameChat);
+app.put('/api/chats/:phone/messages/:index', editChatMessage);
+app.delete('/api/chats/:phone/messages/:index', deleteChatMessage);
 
 
 // =============================
