@@ -1212,7 +1212,6 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
         if (isExcluded(candidate.id)) return false;
         if (Number(candidate.stock) <= 0) return false;
         if (!hasValidPrice(candidate)) return false;
-        if (!hasValidImage(candidate)) return false;
 
         return matcher(candidate);
     });
