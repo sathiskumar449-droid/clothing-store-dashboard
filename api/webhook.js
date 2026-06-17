@@ -2183,6 +2183,16 @@ async function handleIntent(intentResult, session, products, from) {
                 };
             }
         }
+        case 'SHOP_MORE': {
+            session.state = "AWAITING_CATEGORY";
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.fromCrossSell = false;
+            const shopMoreCounts = getCategoryCounts(products);
+            const shopMoreParents = getSortedParents(shopMoreCounts);
+            session.parentCategories = shopMoreParents;
+            return makeCategoriesListResponse(shopMoreParents, shopMoreCounts);
+        }
         case 'CLEAR_CART': {
             session.cart = [];
             session.state = "AWAITING_CATEGORY";
