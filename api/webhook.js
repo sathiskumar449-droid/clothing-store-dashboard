@@ -2604,6 +2604,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const isClear = lowerInput === "clear" || lowerInput === "cancel" || lowerInput === "delete" || lowerInput === "3" || lowerInput === "3️⃣" || lowerInput.includes("clear") || lowerInput.includes("cancel") || lowerInput.includes("delete");
 
         if (isCheckout) {
+            session.crossSellShown = true;
+            session.cartCrossSellShown = true;
             return await startCheckout(session, from);
         } else if (isContinue) {
             session.state = "AWAITING_CATEGORY";
