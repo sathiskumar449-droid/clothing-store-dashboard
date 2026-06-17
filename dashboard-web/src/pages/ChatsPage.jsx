@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Send, Bot, BotOff, Trash2, ArrowLeft, RefreshCw, MessageSquare,
-  CheckCheck, ChevronDown, Pencil, X, Check, Menu
+  CheckCheck, ChevronDown, Pencil, X, Check
 } from 'lucide-react';
 import {
   getAllChats, getChatHistory, sendMessage, toggleBot, deleteChat,
@@ -25,7 +25,6 @@ function formatDate(ts) {
 export default function ChatsPage() {
   const { phone: phoneParam } = useParams();
   const navigate = useNavigate();
-  const { openMobileNav } = useOutletContext() ?? {};
 
   const [chats, setChats] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
@@ -210,7 +209,7 @@ export default function ChatsPage() {
   );
 
   return (
-    <div className="fixed top-0 bottom-0 left-0 right-0 md:static md:w-full md:h-screen flex overflow-hidden bg-[#f0f2f5]">
+    <div className="fixed top-0 bottom-20 left-0 right-0 md:static md:w-full md:h-screen flex overflow-hidden bg-[#f0f2f5]">
       {/* Chat List Panel */}
       <div className={`
         ${activeChat ? 'hidden md:flex' : 'flex'}
@@ -219,13 +218,6 @@ export default function ChatsPage() {
         {/* List Header */}
         <div className="px-3 py-3 bg-[#f0f2f5] flex items-center justify-between border-b border-[#d1d7db]">
           <div className="flex items-center gap-2">
-            <button
-              onClick={openMobileNav}
-              aria-label="Open menu"
-              className="md:hidden min-w-11 min-h-11 flex items-center justify-center rounded-full hover:bg-[#eaebeb] text-[#54656f] active:scale-90 transition-all duration-200"
-            >
-              <Menu size={20} />
-            </button>
             <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-white font-bold shrink-0">
               SC
             </div>
