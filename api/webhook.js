@@ -2279,13 +2279,11 @@ async function handleIntent(intentResult, session, products, from) {
         }
         case 'SEARCH': {
             const query = intentResult.query || intentResult.category || '';
-            const queryClean = query.toLowerCase().replace(/(?:under|below|less than)\s*₹?\s*\d+/, '').trim();
 
+            // Extract price ceiling before cleaning
             let maxPrice = null;
             const underMatch = query.toLowerCase().match(/(?:under|below|less than)\s*₹?\s*(\d+)/);
-            if (underMatch) {
-                maxPrice = parseInt(underMatch[1], 10);
-            }
+            if (underMatch) maxPrice = parseInt(underMatch[1], 10);
 
             const applyPriceFilter = (list) => {
                 if (!maxPrice) return list;
@@ -2295,82 +2293,64 @@ async function handleIntent(intentResult, session, products, from) {
                 });
             };
 
+            // Step 1 — Remove English and Tamil/Tanglish stop words
+            const EN_STOP = new Set(['is', 'are', 'available', 'do', 'you', 'have', 'any', 'the', 'a', 'an',
+                'in', 'stock', 'please', 'send', 'show', 'get', 'got', 'what', 'which', 'want', 'need',
+                'looking', 'for', 'tell', 'me', 'price', 'cost', 'how', 'much', 'under', 'below', 'less',
+                'than', 'find', 'display', 'search', 'some', 'can', 'give', 'look']);
+            const TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku', 'iruke', 'pakanum',
+                'vaikanum', 'panunga', 'sollu', 'kodu', 'da', 'bro', 'anna', 'sir', 'madam', 'la', 'ku',
+                'ah', 'ha', 'na', 'tharinga', 'kudunga', 'venum', 'vendum', 'வேணும்', 'இருக்கா', 'பாருங்க']);
+
+            // Step 2 — Normalize common spelling variants (applied to query AND product fields)
+            const normalizeSpelling = (s) => s
+                .replace(/\bt[\s-]?shirts?\b/g, 'tshirt')
+                .replace(/\bphants?\b/g, 'pant')
+                .replace(/\bpants?\b/g, 'pant')
+                .replace(/\bfoot\s*bal+s?\b/g, 'football')
+                .replace(/\bjeans?\b/g, 'jeans')
+                .replace(/\bjens\b/g, 'jeans')
+                .replace(/\bshrt\b/g, 'shirt')
+                .replace(/\bshir\b/g, 'shirt')
+                .replace(/\btrousers?\b/g, 'trouser');
+
+            const cleaned = normalizeSpelling(
+                query.toLowerCase()
+                    .replace(/(?:under|below|less than)\s*₹?\s*\d+/g, '')
+                    .replace(/[?!.,'"]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+            );
+
+            // Step 3 — Build search terms (stop words removed)
+            const terms = cleaned.split(/\s+/)
+                .filter(w => w.length > 0 && !EN_STOP.has(w) && !TA_STOP.has(w));
+
             const inStock = products.filter(p => Number(p.stock) > 0);
 
-            // Helper: does a product's full category list contain the query?
-            // Checks every WooCommerce category the product belongs to (p.categories array)
-            // so products like ["New Arrival","POLO FIT PANT"] match BOTH queries.
-            const productHasCategoryMatch = (p, catQuery) => {
+            const termMatches = (p, term) => {
                 const cats = Array.isArray(p.categories) && p.categories.length > 0
-                    ? p.categories
-                    : [p.category];
-                return cats.some(c => {
-                    const cl = (c || '').toLowerCase();
-                    return cl.includes(catQuery) || catQuery.includes(cl);
-                });
+                    ? p.categories : [p.category];
+                return normalizeSpelling((p.name || '').toLowerCase()).includes(term) ||
+                       cats.some(c => normalizeSpelling((c || '').toLowerCase()).includes(term)) ||
+                       (p.color || '').toLowerCase().includes(term) ||
+                       (p.pattern || '').toLowerCase().includes(term);
             };
 
-            // ── Priority 1: category-name match ──────────────────────────────────
-            // Collect all unique subcategory names across ALL categories of all products
-            const uniqueSubCats = [...new Set(
-                inStock.flatMap(p => Array.isArray(p.categories) && p.categories.length > 0
-                    ? p.categories
-                    : [p.category]
-                ).filter(Boolean)
-            )];
-
-            // Check if query matches any category (bidirectional partial, case-insensitive)
-            const matchedSubCat = uniqueSubCats.find(cat => {
-                const c = cat.toLowerCase();
-                return c.includes(queryClean) || queryClean.includes(c);
-            });
-
             let matched = [];
-            if (matchedSubCat) {
-                // Return every in-stock product that belongs to that category
-                // (checking ALL WooCommerce categories, not just the primary one)
-                matched = applyPriceFilter(
-                    inStock.filter(p => productHasCategoryMatch(p, matchedSubCat.toLowerCase()))
-                );
-            } else {
-                // Check parent category match ("pants", "shirts", "jeans", etc.)
-                const matchedParent = uniqueSubCats.find(cat => {
-                    const parent = getParentCategory(cat).toLowerCase();
-                    return parent.includes(queryClean) || queryClean.includes(parent);
-                });
 
-                if (matchedParent) {
-                    const parentName = getParentCategory(matchedParent);
+            if (terms.length > 0) {
+                // AND logic: every term must match
+                matched = applyPriceFilter(
+                    inStock.filter(p => terms.every(term => termMatches(p, term)))
+                );
+
+                // Step 4 — OR fallback: at least one term matches
+                if (matched.length === 0) {
                     matched = applyPriceFilter(
-                        inStock.filter(p => {
-                            const cats = Array.isArray(p.categories) && p.categories.length > 0
-                                ? p.categories : [p.category];
-                            return cats.some(c => getParentCategory(c) === parentName);
-                        })
+                        inStock.filter(p => terms.some(term => termMatches(p, term)))
                     );
                 }
-            }
-
-            // ── Priority 2: keyword search (fallback) ────────────────────────────
-            if (matched.length === 0) {
-                const fillerWords = ['show', 'me', 'look', 'for', 'please', 'want', 'need', 'find', 'get', 'display', 'search', 'any', 'some', 'can', 'you', 'give', 'kudu', 'kammi', 'kattunga', 'kaatunga', 'katu', 'iruka', 'irukka'];
-                const keywords = queryClean.split(/\s+/)
-                    .filter(word => word.length > 0 && word !== 'bro' && word !== 'anna' && !fillerWords.includes(word))
-                    .map(kw => (kw.endsWith('s') && kw.length > 3) ? kw.slice(0, -1) : kw);
-
-                matched = applyPriceFilter(
-                    inStock.filter(p => {
-                        if (keywords.length === 0) return true;
-                        const cats = Array.isArray(p.categories) && p.categories.length > 0
-                            ? p.categories : [p.category];
-                        return keywords.every(kw =>
-                            p.name?.toLowerCase().includes(kw) ||
-                            cats.some(c => (c || '').toLowerCase().includes(kw)) ||
-                            (p.color && p.color.toLowerCase().includes(kw)) ||
-                            (p.pattern && p.pattern.toLowerCase().includes(kw))
-                        );
-                    })
-                );
             }
 
             if (matched.length > 0) {
