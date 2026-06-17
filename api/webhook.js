@@ -2346,11 +2346,10 @@ async function handleIntent(intentResult, session, products, from) {
                     inStock.filter(p => terms.every(term => termMatches(p, term)))
                 );
 
-                // Step 4 — Partial AND fallback: require at least 70% of terms to match (not pure OR)
-                if (matched.length === 0 && terms.length > 1) {
-                    const minMatches = Math.max(1, terms.length - 1);
+                // Step 4 — Fallback: only if single term search
+                if (matched.length === 0 && terms.length === 1) {
                     matched = applyPriceFilter(
-                        inStock.filter(p => terms.filter(term => termMatches(p, term)).length >= minMatches)
+                        inStock.filter(p => termMatches(p, terms[0]))
                     );
                 }
             }
