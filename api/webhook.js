@@ -2306,6 +2306,7 @@ async function handleIntent(intentResult, session, products, from) {
             // Step 1 — Remove English and Tamil/Tanglish stop words
             const EN_STOP = new Set(['is', 'are', 'available', 'do', 'you', 'have', 'any', 'the', 'a', 'an',
                 'in', 'stock', 'please', 'send', 'show', 'get', 'got', 'what', 'which', 'want', 'need',
+                'needed', 'wanted', 'wants', 'i', 'my', 'me', 'us', 'we', 'this', 'that', 'one', 'ones',
                 'looking', 'for', 'tell', 'me', 'price', 'cost', 'how', 'much', 'under', 'below', 'less',
                 'than', 'find', 'display', 'search', 'some', 'can', 'give', 'look']);
             const TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku', 'iruke', 'pakanum',
