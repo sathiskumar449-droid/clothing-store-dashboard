@@ -2304,6 +2304,7 @@ async function handleIntent(intentResult, session, products, from) {
 
             // Step 2 — Normalize common spelling variants (applied to query AND product fields)
             const normalizeSpelling = (s) => s
+                .replace(/\blinen\b/g, 'lenin')
                 .replace(/\bt[\s-]?shirts?\b/g, 'tshirt')
                 .replace(/\bphants?\b/g, 'pant')
                 .replace(/\bpants?\b/g, 'pant')
@@ -2347,7 +2348,7 @@ async function handleIntent(intentResult, session, products, from) {
 
                 // Step 4 — Partial AND fallback: require at least 70% of terms to match (not pure OR)
                 if (matched.length === 0 && terms.length > 1) {
-                    const minMatches = Math.ceil(terms.length * 0.7);
+                    const minMatches = Math.max(1, terms.length - 1);
                     matched = applyPriceFilter(
                         inStock.filter(p => terms.filter(term => termMatches(p, term)).length >= minMatches)
                     );
