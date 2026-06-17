@@ -1,6 +1,5 @@
 // api/products.js  — Supabase version (replaces fs-based implementation)
 import { supabase } from '../lib/supabase.js';
-import { createProductCollage } from '../lib/collage.js';
 
 // ✅ Get all products
 export const getProducts = async (req, res) => {
@@ -238,42 +237,6 @@ export const syncProducts = async (req, res) => {
         if (error) throw error;
 
         console.log(`✅ Successfully synced ${dbProducts.length} products to database!`);
-
-        // Pre-generate collage cache for each category page (non-fatal)
-        try {
-            console.log('🖼️ Pre-generating collage cache...');
-            const inStockProducts = dbProducts.filter(p => Number(p.stock) > 0);
-
-            const categoryMap = {};
-            for (const p of inStockProducts) {
-                const cat = p.category || 'General';
-                if (!categoryMap[cat]) categoryMap[cat] = [];
-                categoryMap[cat].push(p);
-            }
-
-            const PAGE_SIZE = 9;
-            let cacheCount = 0;
-
-            for (const [category, catProducts] of Object.entries(categoryMap)) {
-                const totalPages = Math.ceil(catProducts.length / PAGE_SIZE);
-                for (let page = 0; page < totalPages; page++) {
-                    const pageProducts = catProducts.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-                    const startNumber = page * PAGE_SIZE + 1;
-                    const collageUrl = await createProductCollage(pageProducts, startNumber, dbProducts);
-                    if (collageUrl) {
-                        const cacheKey = category.toLowerCase().replace(/\s+/g, '_') + '_page_' + page;
-                        await supabase.from('collage_cache').upsert(
-                            { cache_key: cacheKey, collage_url: collageUrl },
-                            { onConflict: 'cache_key' }
-                        );
-                        cacheCount++;
-                    }
-                }
-            }
-            console.log(`✅ Pre-generated ${cacheCount} collage cache entries`);
-        } catch (cacheErr) {
-            console.error('⚠️ Collage cache pre-generation failed (non-fatal):', cacheErr.message);
-        }
 
         res.json({
             success: true,
