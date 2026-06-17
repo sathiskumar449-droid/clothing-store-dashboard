@@ -324,7 +324,7 @@ export async function logChatMessage(customerPhone, sender, text, type = 'text',
             customerName = dbSession.orderDetails.customerName;
         }
 
-        // Trim messages to last 100
+        // Append message to history (no truncation to preserve complete chat history)
         const messages = Array.isArray(existing.messages) ? existing.messages : [];
         messages.push({
             sender,
@@ -334,7 +334,6 @@ export async function logChatMessage(customerPhone, sender, text, type = 'text',
             messageId,
             timestamp: new Date().toISOString()
         });
-        if (messages.length > 100) messages.shift();
 
         const lastMessage = type === 'image' ? `📷 Image${text ? ': ' + text : ''}` : text;
 
@@ -1382,6 +1381,22 @@ async function showCartSummaryWithCrossSell(session, products) {
     cartSummary += `\n📦 *Total Quantity:* ${totalQty}`;
     cartSummary += `\n💰 *Total Amount:* ₹${totalAmount}\n\n`;
 
+    if (session.crossSellShown) {
+        session.state = "AWAITING_CART_SUMMARY_DECISION";
+        session.crossSellOptionAvailable = false;
+        return {
+            sendButtons: {
+                body: cartSummary + `What would you like to do next?`,
+                buttons: [
+                    { id: 'shop_more', title: '🛍️ Shop More' },
+                    { id: 'continue_checkout', title: '🛒 Checkout' },
+                    { id: 'cancel_order', title: '❌ Cancel' }
+                ]
+            },
+            sendImages: []
+        };
+    }
+
     let bodyText = cartSummary + `🔥 *Matching Offers Available!*\n`;
 
     // Try to find matching recommendations based on the last cart item
@@ -1416,6 +1431,7 @@ async function showCartSummaryWithCrossSell(session, products) {
 
     session.state = "AWAITING_CART_SUMMARY_DECISION";
     session.crossSellPromoCategory = promoCategory;
+    session.crossSellOptionAvailable = true;
 
     const shopBtnLabel = `🛍️ Shop ${promoCategory}`;
 
@@ -2140,9 +2156,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // STATE: AWAITING_CART_SUMMARY_DECISION
     if (session.state === "AWAITING_CART_SUMMARY_DECISION") {
         const choice = textLower.trim();
-        if (choice === "view_matches" || choice === "shop_matches" || choice.includes("match") || choice === "1") {
+        const isShopMatches = choice === "view_matches" || choice === "shop_matches" || choice.includes("match") || (session.crossSellOptionAvailable && choice === "1");
+        const isShopMore = choice === "shop_more" || choice.includes("more") || (!session.crossSellOptionAvailable && choice === "1") || choice === "shop more";
+
+        if (isShopMatches) {
             // Navigate to subcategory list for the promo category (e.g. Pants → Formal Pant, Cargo Pant...)
             const promoCategory = session.crossSellPromoCategory || 'Pants';
+            
+            // Mark crossSellShown as true so they won't see recommendations again
+            session.crossSellShown = true;
+            session.crossSellOptionAvailable = false;
 
             const subcategoryCounts = {};
             products.forEach(p => {
@@ -2180,6 +2203,15 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.subCategories = subs;
             session.state = "AWAITING_SUBCATEGORY_SELECTION";
             return makeSubcategoriesListResponse(subs, subcategoryCounts, promoCategory);
+        } else if (isShopMore) {
+            session.state = "AWAITING_CATEGORY";
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.fromCrossSell = false;
+            const categoryCounts = getCategoryCounts(products);
+            const parents = getSortedParents(categoryCounts);
+            session.parentCategories = parents;
+            return makeCategoriesListResponse(parents, categoryCounts);
         } else if (choice === "continue_checkout" || choice.includes("checkout") || choice.includes("continue") || choice === "2") {
             session.fromCrossSell = false;
             return await startCheckout(session, from);
@@ -2197,16 +2229,20 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.parentCategories = parents;
             return makeCategoriesListResponse(parents, categoryCounts, "Your order has been cancelled. Please select a category to continue shopping:");
         } else {
-            const promoLbl = `🛍️ Shop ${session.crossSellPromoCategory || 'Pants'}`;
+            const buttons = session.crossSellShown ? [
+                { id: 'shop_more', title: '🛍️ Shop More' },
+                { id: 'continue_checkout', title: '🛒 Checkout' },
+                { id: 'cancel_order', title: '❌ Cancel' }
+            ] : [
+                { id: 'view_matches', title: `🛍️ Shop ${session.crossSellPromoCategory || 'Pants'}` },
+                { id: 'continue_checkout', title: '🛒 Checkout' },
+                { id: 'cancel_order', title: '❌ Cancel' }
+            ];
             return {
                 replyText: `⚠️ Invalid option. Please select an option:`,
                 sendButtons: {
                     body: `Select option:`,
-                    buttons: [
-                        { id: 'view_matches', title: promoLbl },
-                        { id: 'continue_checkout', title: '🛒 Checkout' },
-                        { id: 'cancel_order', title: '❌ Cancel' }
-                    ]
+                    buttons
                 },
                 sendImages: []
             };
