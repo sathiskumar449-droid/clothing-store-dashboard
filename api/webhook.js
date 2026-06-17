@@ -2671,6 +2671,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.parentCategories = parents;
             return makeCategoriesListResponse(parents, categoryCounts);
         } else if (choice === "cart_summary" || choice.includes("checkout") || choice === "3") {
+            session.cartCrossSellShown = true;
             return await showCartSummaryWithCrossSell(session, products);
         } else {
             return {
