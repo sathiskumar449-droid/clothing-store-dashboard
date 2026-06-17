@@ -1594,7 +1594,7 @@ async function showCartSummaryWithCrossSell(session, products) {
     cartSummary += `\n📦 *Total Quantity:* ${totalQty}`;
     cartSummary += `\n💰 *Total Amount:* ₹${totalAmount}\n\n`;
 
-    if (session.cartCrossSellShown) {
+    if (session.crossSellShown || session.cartCrossSellShown) {
         session.state = "AWAITING_CART_SUMMARY_DECISION";
         session.crossSellOptionAvailable = false;
         return {
