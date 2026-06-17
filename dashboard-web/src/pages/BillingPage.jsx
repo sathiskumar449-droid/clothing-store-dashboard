@@ -13,16 +13,19 @@ function formatDate(ts) {
 export default function BillingPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [search, setSearch] = useState('');
   const invoiceRef = useRef(null);
 
   const fetchOrders = useCallback(async () => {
+    setRefreshing(true);
     try {
       const res = await getOrders();
       setOrders(res.data || []);
     } catch {/* silent */} finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -68,8 +71,8 @@ export default function BillingPage() {
           <h1 className="text-2xl font-bold text-gray-900">Billing</h1>
           <p className="text-sm text-gray-500 mt-0.5">Generate and print invoices</p>
         </div>
-        <button onClick={fetchOrders} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 shadow-sm no-print">
-          <RefreshCw size={14} />
+        <button onClick={fetchOrders} className="flex items-center gap-1.5 px-3 py-2 min-h-11 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 active:scale-95 shadow-sm transition-all duration-200 no-print">
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
           Refresh
         </button>
       </div>
@@ -84,17 +87,17 @@ export default function BillingPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handlePrint}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 min-h-11 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 transition-all duration-200"
                 >
                   <Printer size={13} /> Print
                 </button>
                 <button
                   onClick={handleDownloadPDF}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 min-h-11 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 transition-all duration-200"
                 >
                   <Download size={13} /> Save PDF
                 </button>
-                <button onClick={() => setSelectedOrder(null)} className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-500">
+                <button onClick={() => setSelectedOrder(null)} className="min-w-11 min-h-11 flex items-center justify-center rounded-lg hover:bg-gray-200 active:scale-90 text-gray-500 transition-all duration-200">
                   <X size={16} />
                 </button>
               </div>
@@ -139,43 +142,45 @@ export default function BillingPage() {
               </div>
 
               {/* Items table */}
-              <table className="w-full text-xs mb-4">
-                <thead>
-                  <tr className="bg-indigo-600 text-white">
-                    <th className="text-left py-2 px-3 rounded-tl-lg">#</th>
-                    <th className="text-left py-2 px-3">Item</th>
-                    <th className="text-center py-2 px-3">Size</th>
-                    <th className="text-right py-2 px-3 rounded-tr-lg">Price</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {getItems(selectedOrder).filter(Boolean).map((item, i) => (
-                    <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="py-2 px-3 text-gray-500">{i + 1}</td>
-                      <td className="py-2 px-3 font-medium">
-                        {item.product || item.name}
-                        {item.color ? ` (${item.color})` : ''}
+              <div className="overflow-x-auto mb-4">
+                <table className="w-full text-xs min-w-[420px]">
+                  <thead>
+                    <tr className="bg-indigo-600 text-white">
+                      <th className="text-left py-2 px-3 rounded-tl-lg">#</th>
+                      <th className="text-left py-2 px-3">Item</th>
+                      <th className="text-center py-2 px-3">Size</th>
+                      <th className="text-right py-2 px-3 rounded-tr-lg">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getItems(selectedOrder).filter(Boolean).map((item, i) => (
+                      <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="py-2 px-3 text-gray-500">{i + 1}</td>
+                        <td className="py-2 px-3 font-medium">
+                          {item.product || item.name}
+                          {item.color ? ` (${item.color})` : ''}
+                        </td>
+                        <td className="py-2 px-3 text-center text-gray-500">{item.size || '—'}</td>
+                        <td className="py-2 px-3 text-right font-semibold">₹{item.price}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-indigo-200">
+                      <td colSpan={3} className="py-2 px-3 font-bold text-right text-gray-700">Total</td>
+                      <td className="py-2 px-3 font-bold text-right text-indigo-700 text-base">
+                        ₹{(selectedOrder.totalPrice || 0).toLocaleString('en-IN')}
                       </td>
-                      <td className="py-2 px-3 text-center text-gray-500">{item.size || '—'}</td>
-                      <td className="py-2 px-3 text-right font-semibold">₹{item.price}</td>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-indigo-200">
-                    <td colSpan={3} className="py-2 px-3 font-bold text-right text-gray-700">Total</td>
-                    <td className="py-2 px-3 font-bold text-right text-indigo-700 text-base">
-                      ₹{(selectedOrder.totalPrice || 0).toLocaleString('en-IN')}
-                    </td>
-                  </tr>
-                  {selectedOrder.paymentMethod && (
-                    <tr>
-                      <td colSpan={3} className="px-3 pb-2 text-right text-xs text-gray-500">Payment</td>
-                      <td className="px-3 pb-2 text-right text-xs font-semibold text-gray-700">{selectedOrder.paymentMethod}</td>
-                    </tr>
-                  )}
-                </tfoot>
-              </table>
+                    {selectedOrder.paymentMethod && (
+                      <tr>
+                        <td colSpan={3} className="px-3 pb-2 text-right text-xs text-gray-500">Payment</td>
+                        <td className="px-3 pb-2 text-right text-xs font-semibold text-gray-700">{selectedOrder.paymentMethod}</td>
+                      </tr>
+                    )}
+                  </tfoot>
+                </table>
+              </div>
 
               <div className="text-center text-xs text-gray-400 border-t border-gray-100 pt-3">
                 <p>Thank you for shopping with us! 🛍️</p>
@@ -194,7 +199,7 @@ export default function BillingPage() {
           placeholder="Search by order ID or customer name..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 shadow-sm"
+          className="w-full pl-9 pr-4 py-2.5 min-h-11 text-sm rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 shadow-sm"
         />
       </div>
 

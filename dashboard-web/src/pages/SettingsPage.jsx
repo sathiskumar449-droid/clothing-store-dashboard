@@ -41,7 +41,7 @@ function Field({ label, id, children }) {
   );
 }
 
-const inputCls = "w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition";
+const inputCls = "w-full px-3.5 py-2.5 min-h-11 text-sm rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition";
 
 export default function SettingsPage() {
   const [storeSettings, setStoreSettings] = useState(defaultStore);
@@ -183,7 +183,7 @@ export default function SettingsPage() {
             </Field>
             <button
               onClick={saveStore}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2.5 min-h-11 rounded-xl text-sm font-semibold transition-all duration-300 ease-in-out active:scale-95 ${
                 savedStore
                   ? 'bg-emerald-600 text-white'
                   : 'bg-indigo-600 text-white hover:bg-indigo-700'
@@ -214,7 +214,7 @@ export default function SettingsPage() {
             </Field>
             <button
               onClick={saveStore}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2.5 min-h-11 rounded-xl text-sm font-semibold transition-all duration-300 ease-in-out active:scale-95 ${
                 savedStore
                   ? 'bg-emerald-600 text-white'
                   : 'bg-indigo-600 text-white hover:bg-indigo-700'
@@ -277,7 +277,7 @@ export default function SettingsPage() {
             </p>
             <button
               onClick={saveWoo}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2.5 min-h-11 rounded-xl text-sm font-semibold transition-all duration-300 ease-in-out active:scale-95 ${
                 savedWoo
                   ? 'bg-emerald-600 text-white'
                   : 'bg-indigo-600 text-white hover:bg-indigo-700'

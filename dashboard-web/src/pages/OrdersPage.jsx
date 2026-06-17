@@ -19,17 +19,20 @@ export default function OrdersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [updating, setUpdating] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
 
   const activeTab = searchParams.get('tab') || 'all';
 
   const fetchOrders = useCallback(async () => {
+    setRefreshing(true);
     try {
       const res = await getOrders();
       setOrders(res.data || []);
     } catch {/* silent */} finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -63,8 +66,8 @@ export default function OrdersPage() {
           <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
           <p className="text-sm text-gray-500 mt-0.5">{orders.length} total orders</p>
         </div>
-        <button onClick={fetchOrders} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 shadow-sm">
-          <RefreshCw size={14} />
+        <button onClick={fetchOrders} className="flex items-center gap-1.5 px-3 py-2 min-h-11 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 active:scale-95 shadow-sm transition-all duration-200">
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
           Refresh
         </button>
       </div>
@@ -75,7 +78,7 @@ export default function OrdersPage() {
           <button
             key={tab}
             onClick={() => setSearchParams({ tab })}
-            className={`flex-1 min-w-max px-3 py-2 rounded-lg text-xs font-semibold capitalize transition-all ${
+            className={`flex-1 min-w-max px-3 py-2 min-h-11 rounded-lg text-xs font-semibold capitalize transition-colors duration-300 ease-in-out ${
               activeTab === tab
                 ? 'bg-white text-indigo-700 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -163,7 +166,7 @@ export default function OrdersPage() {
                             key={s}
                             disabled={updating === id}
                             onClick={() => handleStatusUpdate(order, s)}
-                            className="px-3 py-1 text-xs font-medium rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-all disabled:opacity-50 capitalize"
+                            className="px-3 py-1 min-h-11 text-xs font-medium rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95 transition-all duration-200 disabled:opacity-50 capitalize"
                           >
                             {updating === id ? '...' : s}
                           </button>

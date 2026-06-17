@@ -1,24 +1,5 @@
-import { NavLink } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  MessageSquare,
-  ShoppingBag,
-  Receipt,
-  Package,
-  Users,
-  Settings,
-  Store,
-} from 'lucide-react';
-
-const navItems = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/chats', icon: MessageSquare, label: 'Chats' },
-  { to: '/orders', icon: ShoppingBag, label: 'Orders' },
-  { to: '/billing', icon: Receipt, label: 'Billing' },
-  { to: '/products', icon: Package, label: 'Products' },
-  { to: '/customers', icon: Users, label: 'Customers' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-];
+import { Store } from 'lucide-react';
+import NavList from './NavList';
 
 export default function Sidebar() {
   return (
@@ -34,32 +15,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto bg-[#111b21]">
-        {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-r-xl rounded-l-none text-sm font-medium transition-all duration-200 border-l-4 group
-              ${isActive
-                ? 'bg-[#2a3942] text-white border-[#00a884] shadow-md'
-                : 'text-[#aebac1] border-transparent hover:bg-[#202c33] hover:text-white'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Icon
-                  size={18}
-                  className={isActive ? 'text-[#00a884]' : 'text-[#8696a0] group-hover:text-white transition-colors'}
-                />
-                {label}
-              </>
-            )}
-          </NavLink>
-        ))}
-      </nav>
+      <NavList />
 
       {/* Footer */}
       <div className="px-5 py-4 border-t border-[#222e35] bg-[#111b21]">

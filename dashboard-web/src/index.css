@@ -58,6 +58,23 @@ body {
 
 .msg-animate { animation: slideIn 0.2s ease-out; }
 
+/* Nav icon click bounce */
+@keyframes navIconPop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.35) rotate(-4deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.animate-nav-pop { animation: navIconPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* Card fade-in on load */
+@keyframes fadeInCard {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-fade-in-card {
+  animation: fadeInCard 0.35s ease-out both;
+}
+
 /* Print styles for invoice */
 @media print {
   .no-print { display: none !important; }

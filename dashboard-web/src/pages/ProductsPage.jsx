@@ -307,7 +307,7 @@ export default function ProductsPage() {
             <button
               onClick={handleSync}
               disabled={syncing || loading}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 shadow-sm transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2.5 min-h-11 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 active:scale-95 disabled:opacity-60 shadow-sm transition-all duration-200 cursor-pointer"
             >
               <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
               {syncing ? 'Syncing...' : 'Sync to Database'}
@@ -316,7 +316,7 @@ export default function ProductsPage() {
           <button
             onClick={fetchProducts}
             disabled={loading || syncing}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60 shadow-sm transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2.5 min-h-11 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 active:scale-95 disabled:opacity-60 shadow-sm transition-all duration-200 cursor-pointer"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             {fetched ? 'Refresh' : 'Load Products'}
@@ -435,10 +435,10 @@ export default function ProductsPage() {
                 placeholder="Search products..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-8 py-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white shadow-sm"
+                className="w-full pl-9 pr-8 py-2.5 min-h-11 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white shadow-sm"
               />
               {searchQuery && (
-                <button 
+                <button
                   onClick={() => setSearchQuery('')}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
@@ -448,7 +448,7 @@ export default function ProductsPage() {
             </div>
             <button
               onClick={() => setIsFilterDrawerOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 shadow-sm shrink-0 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2.5 min-h-11 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 active:scale-95 shadow-sm shrink-0 transition-all duration-200 cursor-pointer"
             >
               <Filter size={14} className={selectedCategorySlug ? 'text-indigo-600' : 'text-gray-400'} />
               <span>Filter</span>
@@ -467,9 +467,9 @@ export default function ProductsPage() {
               <div className="relative flex flex-col w-72 max-w-sm bg-white h-full shadow-2xl p-4 overflow-y-auto ml-auto">
                 <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-4">
                   <span className="text-sm font-bold text-gray-800">Categories</span>
-                  <button 
+                  <button
                     onClick={() => setIsFilterDrawerOpen(false)}
-                    className="p-1 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                    className="min-w-11 min-h-11 flex items-center justify-center rounded-full hover:bg-gray-100 active:scale-90 text-gray-500 hover:text-gray-700 transition-all duration-200"
                   >
                     <X size={16} />
                   </button>
@@ -501,7 +501,7 @@ export default function ProductsPage() {
                         setSelectedCategorySlug('');
                         setIsFilterDrawerOpen(false);
                       }}
-                      className="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                      className="w-full py-2.5 min-h-11 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-xl transition-colors duration-300 cursor-pointer"
                     >
                       Clear Category Filter
                     </button>
@@ -564,12 +564,16 @@ export default function ProductsPage() {
                 description="Try clearing your search query or choosing a different category to see products." 
               />
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredProducts.map(product => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredProducts.map((product, index) => {
                   const image = product.images?.[0]?.src;
                   const inStock = product.stock_status === 'instock';
                   return (
-                    <div key={product.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow group flex flex-col justify-between">
+                    <div
+                      key={product.id}
+                      className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow group flex flex-col justify-between animate-fade-in-card"
+                      style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
+                    >
                       <div>
                         <div className="aspect-square bg-gray-50 overflow-hidden relative">
                           {image ? (

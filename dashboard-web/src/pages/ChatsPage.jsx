@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import {
   Send, Bot, BotOff, Trash2, ArrowLeft, RefreshCw, MessageSquare,
-  CheckCheck, ChevronDown, Pencil, X, Check
+  CheckCheck, ChevronDown, Pencil, X, Check, Menu
 } from 'lucide-react';
 import {
   getAllChats, getChatHistory, sendMessage, toggleBot, deleteChat,
@@ -25,6 +25,7 @@ function formatDate(ts) {
 export default function ChatsPage() {
   const { phone: phoneParam } = useParams();
   const navigate = useNavigate();
+  const { openMobileNav } = useOutletContext() ?? {};
 
   const [chats, setChats] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
@@ -32,6 +33,7 @@ export default function ChatsPage() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingChats, setLoadingChats] = useState(true);
+  const [refreshingChats, setRefreshingChats] = useState(false);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -48,11 +50,13 @@ export default function ChatsPage() {
   };
 
   const fetchChats = useCallback(async () => {
+    setRefreshingChats(true);
     try {
       const res = await getAllChats();
       setChats(res.data?.chats || []);
     } catch {/* silent */} finally {
       setLoadingChats(false);
+      setRefreshingChats(false);
     }
   }, []);
 
@@ -206,24 +210,34 @@ export default function ChatsPage() {
   );
 
   return (
-    <div className="fixed top-0 bottom-20 left-0 right-0 md:static md:w-full md:h-screen flex overflow-hidden bg-[#f0f2f5]">
+    <div className="fixed top-0 bottom-0 left-0 right-0 md:static md:w-full md:h-screen flex overflow-hidden bg-[#f0f2f5]">
       {/* Chat List Panel */}
       <div className={`
         ${activeChat ? 'hidden md:flex' : 'flex'}
         flex-col w-full md:w-90 bg-white border-r border-[#d1d7db] shrink-0
       `}>
         {/* List Header */}
-        <div className="px-4 py-3 bg-[#f0f2f5] flex items-center justify-between border-b border-[#d1d7db]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-white font-bold">
+        <div className="px-3 py-3 bg-[#f0f2f5] flex items-center justify-between border-b border-[#d1d7db]">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openMobileNav}
+              aria-label="Open menu"
+              className="md:hidden min-w-11 min-h-11 flex items-center justify-center rounded-full hover:bg-[#eaebeb] text-[#54656f] active:scale-90 transition-all duration-200"
+            >
+              <Menu size={20} />
+            </button>
+            <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-white font-bold shrink-0">
               SC
             </div>
             <div>
               <h1 className="text-base font-bold text-[#111b21]">WhatsApp Chats</h1>
             </div>
           </div>
-          <button onClick={fetchChats} className="p-1.5 rounded-full hover:bg-[#eaebeb] text-[#54656f] transition-all">
-            <RefreshCw size={18} />
+          <button
+            onClick={fetchChats}
+            className="min-w-11 min-h-11 flex items-center justify-center rounded-full hover:bg-[#eaebeb] text-[#54656f] transition-all duration-200 active:scale-90"
+          >
+            <RefreshCw size={18} className={refreshingChats ? 'animate-spin' : ''} />
           </button>
         </div>
 
@@ -235,7 +249,7 @@ export default function ChatsPage() {
               placeholder="Search or start a new chat..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-4 pr-3 py-1.5 text-sm rounded-lg border border-transparent bg-[#f0f2f5] text-[#111b21] placeholder-[#667781] focus:outline-none focus:bg-white focus:border-[#00a884] transition-all"
+              className="w-full pl-4 pr-3 py-1.5 min-h-11 text-sm rounded-lg border border-transparent bg-[#f0f2f5] text-[#111b21] placeholder-[#667781] focus:outline-none focus:bg-white focus:border-[#00a884] transition-all"
             />
           </div>
         </div>
@@ -316,7 +330,7 @@ export default function ChatsPage() {
             <div className="flex items-center gap-3 px-4 py-3 bg-[#f0f2f5] border-b border-[#d1d7db] shadow-sm shrink-0 z-10">
               <button
                 onClick={() => { setActiveChat(null); navigate('/chats', { replace: true }); }}
-                className="md:hidden p-1.5 rounded-full hover:bg-[#eaebeb] text-[#54656f]"
+                className="md:hidden min-w-11 min-h-11 flex items-center justify-center rounded-full hover:bg-[#eaebeb] text-[#54656f] active:scale-90 transition-all duration-200"
               >
                 <ArrowLeft size={18} />
               </button>
@@ -330,7 +344,7 @@ export default function ChatsPage() {
               {/* Bot toggle */}
               <button
                 onClick={handleToggleBot}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 min-h-11 rounded-lg text-xs font-bold transition-colors duration-300 ease-in-out shadow-sm active:scale-95 ${
                   activeChat.botPaused
                     ? 'bg-amber-100 text-amber-800 hover:bg-[#00a884]/20 hover:text-[#00a884]'
                     : 'bg-[#e0f2fe] text-blue-800 hover:bg-amber-200 hover:text-amber-900'
@@ -470,12 +484,12 @@ export default function ChatsPage() {
                   onChange={e => setText(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
                   placeholder="Type a message..."
-                  className="flex-1 px-4 py-2 text-sm rounded-lg border border-transparent bg-white text-[#111b21] placeholder-[#667781] focus:outline-none focus:ring-1 focus:ring-[#00a884] transition-all"
+                  className="flex-1 px-4 py-2 min-h-11 text-sm rounded-lg border border-transparent bg-white text-[#111b21] placeholder-[#667781] focus:outline-none focus:ring-1 focus:ring-[#00a884] transition-all"
                 />
                 <button
                   onClick={handleSend}
                   disabled={sending || !text.trim()}
-                  className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-white hover:bg-[#008f72] disabled:opacity-50 transition-all shrink-0 shadow-sm"
+                  className="w-11 h-11 rounded-full bg-[#00a884] flex items-center justify-center text-white hover:bg-[#008f72] active:scale-90 disabled:opacity-50 transition-all duration-200 shrink-0 shadow-sm"
                 >
                   <Send size={16} />
                 </button>

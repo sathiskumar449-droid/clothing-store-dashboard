@@ -2444,7 +2444,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // Set triggers to false since explicit intents are handled by the router
     const isCheckoutTrigger = false;
     const isCategorySearch = false;
-    const isGreeting = false;
+    const GREETING_WORDS = ['hi', 'hello', 'hey', 'hii', 'hiii', 'hiiii', 'helo',
+        'hlo', 'vanakkam', 'வணக்கம்', 'start', 'menu', 'good morning',
+        'good afternoon', 'good evening', 'sir', 'hi sir', 'hello sir'];
+    const cleanedForGreeting = textLower.replace(/[^a-zA-Zஅ-ஹ\s]/g, '').trim();
+    const isGreeting = GREETING_WORDS.some(g => cleanedForGreeting === g) ||
+        /^h+i+\b/.test(cleanedForGreeting) ||
+        cleanedForGreeting === 'hi sir' || cleanedForGreeting === 'hello sir';
 
     // 2. STATE-SPECIFIC HANDLERS
 
