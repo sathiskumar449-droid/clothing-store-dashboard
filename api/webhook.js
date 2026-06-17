@@ -1116,7 +1116,7 @@ export const getCategoryCounts = (products) => {
 
 // Helper to sort parent categories
 export const getSortedParents = (categoryCounts) => {
-    const parents = Object.keys(categoryCounts).filter(cat => categoryCounts[cat] > 0);
+    const parents = Object.keys(categoryCounts).filter(cat => categoryCounts[cat] > 0 && cat !== 'General');
     parents.sort((a, b) => {
         const order = { 'New Arrivals': 1, 'Shirts': 2, 'T-Shirts': 3, 'Pants': 4, 'Jeans': 5, 'Shorts': 6 };
         const orderA = order[a] || 99;
