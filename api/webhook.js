@@ -148,6 +148,24 @@ function dbRowToOrder(row) {
     return base;
 }
 
+// Look up a single order by its id (or legacy order_id column) for WhatsApp order tracking replies
+async function getOrderById(orderId) {
+    try {
+        const { data, error } = await supabase
+            .from('orders')
+            .select('*')
+            .or(`id.eq.${orderId},order_id.eq.${orderId}`)
+            .limit(1);
+
+        if (error) throw error;
+        if (data && data.length > 0) return dbRowToOrder(data[0]);
+        return null;
+    } catch (error) {
+        console.error('❌ Error looking up order by id:', error.message);
+        return null;
+    }
+}
+
 // =============================
 // Chats Database Helpers  (async — Supabase)
 // =============================
@@ -2397,6 +2415,35 @@ async function handleIntent(intentResult, session, products, from) {
     }
 }
 
+// States where the bot is actively waiting for a specific raw number (phone/pincode),
+// so a bare numeric message must NOT be hijacked as an order-id lookup.
+const NUMERIC_INPUT_STATES = ['AWAITING_CHECKOUT_PHONE', 'AWAITING_CHECKOUT_PINCODE'];
+
+// Extract an Order ID from free-form customer text. Supports "ORD-<digits>",
+// "order #1234" / "order 1234", and a bare number (3+ digits) on its own.
+function extractOrderId(rawText, skipBareNumber = false) {
+    const text = (rawText || '').trim();
+    if (!text) return null;
+
+    let match = text.match(/\bORD-\d+\b/i);
+    if (match) return match[0].toUpperCase();
+
+    match = text.match(/\border\b\s*(?:id)?\s*[:#]?\s*(\d{3,})/i);
+    if (match) return match[1];
+
+    if (!skipBareNumber && /^\d{3,}$/.test(text)) return text;
+
+    return null;
+}
+
+const ORDER_STATUS_MESSAGES = {
+    pending: 'Your order is being processed. It will be shipped soon!',
+    confirmed: 'Your order is confirmed and being prepared for shipping.',
+    shipped: 'Your order has been shipped! It should arrive within 2-5 days.',
+    delivered: 'Your order has been delivered. Thank you for shopping with us!',
+    cancelled: 'This order was cancelled.'
+};
+
 async function _handleSalesAssistantJS(from, userMessage, products, session) {
     const normalizedMessage = normalizeQuery(userMessage);
     const textLower = normalizedMessage.toLowerCase();
@@ -2414,6 +2461,28 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // Backward compatibility for stale recommendation states
     if (session.state === "AWAITING_RECOMMENDATION_CONFIRM" || session.state === "AWAITING_COMBO_CART_CONFIRM") {
         session.state = "AWAITING_MORE_ITEMS";
+    }
+
+    // ─── Order Tracking Lookup (checked EARLY, before any other intent matching) ───
+    const skipBareOrderNumber = NUMERIC_INPUT_STATES.includes(session.state);
+    const trackedOrderId = extractOrderId(userMessage, skipBareOrderNumber);
+    if (trackedOrderId) {
+        const order = await getOrderById(trackedOrderId);
+        if (order) {
+            const statusKey = (order.status || '').toLowerCase();
+            const statusMsg = ORDER_STATUS_MESSAGES[statusKey] || 'We will check the latest status and update you shortly.';
+            const orderedOn = order.date
+                ? new Date(order.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                : 'N/A';
+            return {
+                replyText: `📦 Order Status Update\n\nOrder ID: ${order.id}\nStatus: ${order.status}\nOrdered on: ${orderedOn}\n\n${statusMsg}`,
+                sendImages: []
+            };
+        }
+        return {
+            replyText: "We couldn't find that order. Please double check the Order ID, or our team will verify and get back to you shortly.",
+            sendImages: []
+        };
     }
 
     // ─── Intent Detection & Routing Layer ───
