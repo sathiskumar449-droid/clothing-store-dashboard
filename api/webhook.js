@@ -73,8 +73,10 @@ export async function getProducts() {
                 cat = 'imported shorts';
             } else if (nameLower.includes('formal pant') || nameLower.includes('cotton pant')) {
                 cat = 'Formal Pant';
+            } else if (nameLower.includes('laycra') || nameLower.includes('lycra')) {
+                cat = 'laycra pant';
             } else if (nameLower.includes('pant') || nameLower.includes('phant')) {
-                cat = 'Formal Pant';
+                cat = cat || 'Pants';
             } else if (nameLower.includes('shirt')) {
                 // Shirt: fix wrong DB category (Casual Pant, Men, General, etc.)
                 const wrongCat = catLower.includes('pant') || catLower.includes('phant') ||
@@ -1316,6 +1318,11 @@ function detectIntent(text, products = [], session = null) {
     const excludeIntents = ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'];
     if (!excludeIntents.includes(t) && (t === 'cancel' || t === '❌ cancel' || t === 'cancel_shopping' || t === 'cancel_order' || t === 'confirm_order_cancel')) {
         return { type: 'CANCEL_SHOPPING' };
+    }
+
+    // Global Shop More trigger — always navigate to category list regardless of current state
+    if (t === 'shop_more' || t === 'shop more') {
+        return { type: 'SHOP_MORE' };
     }
 
     // 0. CATEGORY keyword routing when a promo category exists
