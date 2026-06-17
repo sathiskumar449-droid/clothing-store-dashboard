@@ -162,28 +162,13 @@ function dbRowToProduct(row) {
     };
 }
 
-const GENERIC_CATEGORIES = ['men', 'menu', 'general', 'uncategorized', 'kids', 'new arrival', 'new arrivals'];
+const GENERIC_CATEGORIES = ['men', 'menu', 'general', 'uncategorized'];
 
-// Returns the most specific product category (skips generic/umbrella ones).
-// New Arrivals is treated as generic so e.g. ["New Arrival", "POLO FIT PANT"]
-// correctly yields "POLO FIT PANT", not "New Arrivals".
-const selectBestCategory = (categories) => {
+// Returns the most specific WooCommerce category (skips generic umbrella ones like "Men").
+const getPrimaryCategory = (categories) => {
     if (!Array.isArray(categories) || categories.length === 0) return 'General';
     const specific = categories.find(c => !GENERIC_CATEGORIES.includes((c.name || '').toLowerCase().trim()));
-    if (specific) return specific.name;
-    // All are generic — prefer "New Arrivals" over other generic labels
-    const newArrival = categories.find(c => {
-        const n = (c.name || '').toLowerCase().trim();
-        return n === 'new arrival' || n === 'new arrivals';
-    });
-    return newArrival ? 'New Arrivals' : categories[0].name;
-};
-
-// Returns ALL WooCommerce category names (lowercased) for a product.
-// Used to populate the `categories` array column so any category can be searched.
-const allCategoryNames = (categories) => {
-    if (!Array.isArray(categories)) return [];
-    return categories.map(c => (c.name || '').trim()).filter(Boolean);
+    return specific ? specific.name.trim() : (categories[0]?.name?.trim() || 'General');
 };
 
 // ✅ Batch Sync products from WooCommerce
@@ -215,8 +200,8 @@ export const syncProducts = async (req, res) => {
                 id:          p.id, // WooCommerce numeric ID
                 name:        p.name,
                 code:        p.sku || String(p.id),
-                category:    selectBestCategory(p.categories),
-                categories:  allCategoryNames(p.categories),   // full category list
+                category:    getPrimaryCategory(p.categories),
+                categories:  (p.categories || []).map(c => (c.name || '').trim()).filter(Boolean),
                 pattern:     p.pattern || null,
                 color:       color || p.color || null,
                 price:       p.price !== undefined ? String(p.price) : '0',
@@ -261,8 +246,8 @@ const mapWooProductToDb = (p) => {
         id:          p.id,
         name:        p.name,
         code:        p.sku || String(p.id),
-        category:    selectBestCategory(p.categories),
-        categories:  allCategoryNames(p.categories),
+        category:    getPrimaryCategory(p.categories),
+        categories:  (p.categories || []).map(c => (c.name || '').trim()).filter(Boolean),
         pattern:     p.pattern || null,
         color:       color || p.color || null,
         price:       p.price !== undefined ? String(p.price) : '0',

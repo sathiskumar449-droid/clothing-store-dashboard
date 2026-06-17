@@ -50,45 +50,8 @@ export async function getProducts() {
 
         if (error) throw error;
 
-        // Return in the same shape as the original JSON array and apply self-healing category classification rules
         return (data || []).map(row => {
-            const nameLower = (row.name || '').toLowerCase();
-            let cat = row.category || 'General';
-            const catLower = String(cat).toLowerCase().trim();
-
-            // ── Name-based detection runs FIRST (highest priority) ──────────
-            // This ensures a product like "polofit dark green" stored as
-            // "New Arrivals" in the DB is still correctly classified by name.
-            if (nameLower.includes('t-shirt') || nameLower.includes('tshirt') || nameLower.includes('t shirt') || nameLower.includes('polo t-shirt') || nameLower.includes('five sleeve t shirt') || nameLower.includes('round neck t shirt')) {
-                cat = nameLower.includes('polo') ? 'Polo T-Shirts' : 'T-Shirts';
-            } else if (nameLower.includes('polofit') || nameLower.includes('polo fit pant') || nameLower.includes('polo fit pants') || nameLower.includes('polo fit')) {
-                cat = 'Polo Fit Pant';
-            } else if (nameLower.includes('cargo') && (nameLower.includes('pant') || nameLower.includes('track'))) {
-                cat = 'Cargo Pant';
-            } else if (nameLower.includes('track') || nameLower.includes('trach')) {
-                cat = 'Track Pant';
-            } else if (nameLower.includes('jeans') || nameLower.includes('jean')) {
-                cat = 'Jeans';
-            } else if (nameLower.includes('shorts')) {
-                cat = 'imported shorts';
-            } else if (nameLower.includes('formal pant') || nameLower.includes('cotton pant')) {
-                cat = 'Formal Pant';
-            } else if (nameLower.includes('laycra') || nameLower.includes('lycra')) {
-                cat = 'laycra pant';
-            } else if (nameLower.includes('pant') || nameLower.includes('phant')) {
-                cat = cat || 'Pants';
-            } else if (nameLower.includes('shirt')) {
-                // Shirt: fix wrong DB category (Casual Pant, Men, General, etc.)
-                const wrongCat = catLower.includes('pant') || catLower.includes('phant') ||
-                    ['men', 'menu', 'general', 'new arrival', 'new arrivals', 'casual shirt'].includes(catLower);
-                if (wrongCat) cat = 'Casual Shirts';
-            } else if (['menu', 'new arrival', 'new arrivals'].includes(catLower)) {
-                // Name gave no clue → honour the DB "New Arrivals" label
-                cat = 'New Arrivals';
-            }
-
-            // Full WooCommerce category list (text[] column). Falls back to the
-            // self-healed primary category so legacy rows still work.
+            const cat = row.category || 'General';
             const allCats = Array.isArray(row.categories) && row.categories.length > 0
                 ? row.categories
                 : [cat];
@@ -98,7 +61,7 @@ export async function getProducts() {
                 name: row.name,
                 code: row.code,
                 category: cat,
-                categories: allCats,   // all WooCommerce categories for this product
+                categories: allCats,
                 pattern: row.pattern,
                 color: row.color,
                 price: row.price,
@@ -1053,35 +1016,24 @@ const isJogger = (p) => {
     return nameLower.includes('jogger') || catLower.includes('jogger');
 };
 
-// Dynamically group subcategories into top-level parent categories based on noun rules
 export const getParentCategory = (categoryName) => {
     if (!categoryName) return 'General';
     const catLower = categoryName.toLowerCase().trim();
 
-    const rules = [
-        { keywords: ['new arrival', 'new arrivals'], parent: 'New Arrivals' },
-        { keywords: ['t-shirt', 't shirt', 'tshirt', 'polo t'], parent: 'T-Shirts' },
-        { keywords: ['shirt', 'linen', 'lenin', 'chava'], parent: 'Shirts' },
-        { keywords: ['men', 'menu', 'general', 'uncategorized'], parent: 'General' },
-        { keywords: ['pant', 'pants', 'phant', 'trouser', 'jogger', 'polo fit', 'polofit'], parent: 'Pants' },
-        { keywords: ['jeans', 'jean'], parent: 'Jeans' },
-        { keywords: ['shorts', 'short'], parent: 'Shorts' },
-        { keywords: ['saree'], parent: 'Sarees' },
-        { keywords: ['frock'], parent: 'Frocks' },
-        { keywords: ['suit'], parent: 'Suits' },
-        { keywords: ['kurti', 'kurta'], parent: 'Kurtis' }
-    ];
-
-    for (const rule of rules) {
-        if (rule.keywords.some(kw => catLower.includes(kw))) {
-            return rule.parent;
-        }
+    // T-Shirts checked before Shirts to avoid 't-shirt' matching 'shirt'
+    if (['t-shirt', 'tshirt', 'round neck', 'polo t'].some(kw => catLower.includes(kw))) {
+        return 'T-Shirts';
     }
-
-    // Capitalize properly
-    return categoryName.split(/\s+/)
-        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-        .join(' ').trim();
+    if (['shirt', 'linen', 'lenin', 'chava', 'printed', 'stripes', 'casual', 'plain', 'cotton shirt'].some(kw => catLower.includes(kw))) {
+        return 'Shirts';
+    }
+    if (['pant', 'phant', 'jeans', 'trouser', 'shorts', 'track', 'cargo', 'lycra', 'laycra'].some(kw => catLower.includes(kw))) {
+        return 'Pants';
+    }
+    if (catLower.includes('new arrival')) {
+        return 'New Arrivals';
+    }
+    return categoryName;
 };
 
 // Dynamically get emoji based on parent category
@@ -1120,7 +1072,7 @@ export const getCategoryCounts = (products) => {
 export const getSortedParents = (categoryCounts) => {
     const parents = Object.keys(categoryCounts).filter(cat => categoryCounts[cat] > 0 && cat !== 'General');
     parents.sort((a, b) => {
-        const order = { 'New Arrivals': 1, 'Shirts': 2, 'T-Shirts': 3, 'Pants': 4, 'Jeans': 5, 'Shorts': 6 };
+        const order = { 'New Arrivals': 1, 'Shirts': 2, 'T-Shirts': 3, 'Pants': 4 };
         const orderA = order[a] || 99;
         const orderB = order[b] || 99;
         if (orderA !== orderB) return orderA - orderB;
@@ -1434,12 +1386,16 @@ function detectIntent(text, products = [], session = null) {
     }
 
     // 5. Category vs Search Intent
-    const parentCategories = ['New Arrivals', 'Shirts', 'Pants', 'T-Shirts', 'Jeans', 'Shorts'];
-    const foundCategory = parentCategories.find(cat => {
+    const parentCategories = ['New Arrivals', 'Shirts', 'Pants', 'T-Shirts'];
+    let foundCategory = parentCategories.find(cat => {
         const catSingular = cat.endsWith('s') ? cat.slice(0, -1) : cat;
         const regex = new RegExp(`\\b${catSingular}(s)?\\b`, 'i');
         return regex.test(t);
     });
+    // Jeans and Shorts are now grouped under Pants
+    if (!foundCategory && (/\bjean(s)?\b/i.test(t) || /\bshort(s)?\b/i.test(t))) {
+        foundCategory = 'Pants';
+    }
 
     if (foundCategory) {
         const descriptors = [
@@ -1476,14 +1432,14 @@ function matchParentCategory(text, parentCategories) {
         'pants': 'Pants',
         'phant': 'Pants',
         'phants': 'Pants',
-        'jeans': 'Jeans',
-        'jean': 'Jeans',
+        'jeans': 'Pants',
+        'jean': 'Pants',
         'tshirt': 'T-Shirts',
         'tshirts': 'T-Shirts',
         't-shirt': 'T-Shirts',
         't-shirts': 'T-Shirts',
-        'shorts': 'Shorts',
-        'short': 'Shorts'
+        'shorts': 'Pants',
+        'short': 'Pants'
     };
 
     for (const key of Object.keys(mappings)) {
