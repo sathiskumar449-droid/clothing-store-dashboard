@@ -2038,7 +2038,29 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
     }
 
     const startNumber = startIndex + 1;
-    const collageUrl = await createProductCollage(pageProducts, startNumber, productsPool);
+    const cacheKey = (session.selectedSubCategory || '').toLowerCase().replace(/\s+/g, '_') + '_page_' + currentPage;
+    let collageUrl = null;
+    if (session.selectedSubCategory) {
+        const { data: cachedCollage } = await supabase
+            .from('collage_cache')
+            .select('collage_url')
+            .eq('cache_key', cacheKey)
+            .maybeSingle();
+        if (cachedCollage?.collage_url) {
+            console.log(`[Collage] Cache HIT: ${cacheKey}`);
+            collageUrl = cachedCollage.collage_url;
+        }
+    }
+    if (!collageUrl) {
+        console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);
+        collageUrl = await createProductCollage(pageProducts, startNumber, productsPool);
+        if (collageUrl && session.selectedSubCategory) {
+            supabase.from('collage_cache').upsert(
+                { cache_key: cacheKey, collage_url: collageUrl },
+                { onConflict: 'cache_key' }
+            ).catch(err => console.warn('[Collage] Cache save failed:', err.message));
+        }
+    }
 
     const totalProducts = session.searchProducts.length;
     const totalPages = Math.ceil(totalProducts / pageSize);
