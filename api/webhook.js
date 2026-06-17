@@ -505,9 +505,9 @@ export async function sendImage(to, imageUrl, caption = '') {
 
 async function sendButtons(to, bodyText, buttons) {
     const finalButtons = buttons ? [...buttons] : [];
-    const hasCancel = finalButtons.some(b => 
-        b.id === 'cancel_shopping' || 
-        b.id.toLowerCase().includes('cancel') || 
+    const hasCancel = finalButtons.some(b =>
+        b.id === 'cancel_shopping' ||
+        b.id.toLowerCase().includes('cancel') ||
         b.title.toLowerCase().includes('cancel') ||
         ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(b.id)
     );
@@ -672,7 +672,7 @@ const getTargetRecommendationTags = (tag) => {
 // Helper to retrieve fallback/self-healing image URI if the database row has 'null' or missing image
 const getProductImageUri = (product, allProducts = []) => {
     if (product.imageUri && product.imageUri.startsWith('http') && product.imageUri !== 'null' && product.imageUri !== 'undefined') {
-        
+
         return product.imageUri;
     }
 
@@ -1155,12 +1155,12 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
         promoCategory = 'Pants';
         matcher = (candidate) => isBottomWearProduct(candidate) && !isTShirtCategory(candidate.category, candidate.name);
     } else if (isCargoTrackPant(addedProduct) || isJogger(addedProduct) || isTrouser(addedProduct) ||
-               (addedProduct.category || '').toLowerCase().includes('track') ||
-               (addedProduct.name || '').toLowerCase().includes('track') ||
-               (addedProduct.category || '').toLowerCase().includes('trach') ||
-               (addedProduct.name || '').toLowerCase().includes('trach') ||
-               (addedProduct.category || '').toLowerCase().includes('cargo') ||
-               (addedProduct.name || '').toLowerCase().includes('cargo')) {
+        (addedProduct.category || '').toLowerCase().includes('track') ||
+        (addedProduct.name || '').toLowerCase().includes('track') ||
+        (addedProduct.category || '').toLowerCase().includes('trach') ||
+        (addedProduct.name || '').toLowerCase().includes('trach') ||
+        (addedProduct.category || '').toLowerCase().includes('cargo') ||
+        (addedProduct.name || '').toLowerCase().includes('cargo')) {
         offerLabel = 'Matching T-Shirts';
         promoCategory = 'T-Shirts';
         matcher = (candidate) => isTShirtCategory(candidate.category, candidate.name);
@@ -1546,7 +1546,7 @@ async function showCartSummaryWithCrossSell(session, products) {
     let cartSummary = `🛒 *Your Cart Summary:*\n\n`;
     let totalQty = 0;
     let totalAmount = 0;
-    
+
     const cart = session.cart || [];
     cart.forEach((item, i) => {
         const itemTotal = Number(item.price) * (item.qty || 1);
@@ -2018,10 +2018,20 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
         console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);
         collageUrl = await createProductCollage(pageProducts, startNumber, productsPool);
         if (collageUrl && session.selectedSubCategory) {
-            supabase.from('collage_cache').upsert(
-                { cache_key: cacheKey, collage_url: collageUrl },
-                { onConflict: 'cache_key' }
-            ).catch(err => console.warn('[Collage] Cache save failed:', err.message));
+            try {
+                const { error } = await supabase
+                    .from('collage_cache')
+                    .upsert(
+                        { cache_key: cacheKey, collage_url: collageUrl },
+                        { onConflict: 'cache_key' }
+                    );
+
+                if (error) {
+                    console.warn('[Collage] Cache save failed:', error.message);
+                }
+            } catch (err) {
+                console.warn('[Collage] Cache save failed:', err.message);
+            }
         }
     }
 
@@ -2333,9 +2343,9 @@ async function handleIntent(intentResult, session, products, from) {
                 const cats = Array.isArray(p.categories) && p.categories.length > 0
                     ? p.categories : [p.category];
                 return normalizeSpelling((p.name || '').toLowerCase()).includes(term) ||
-                       cats.some(c => normalizeSpelling((c || '').toLowerCase()).includes(term)) ||
-                       (p.color || '').toLowerCase().includes(term) ||
-                       (p.pattern || '').toLowerCase().includes(term);
+                    cats.some(c => normalizeSpelling((c || '').toLowerCase()).includes(term)) ||
+                    (p.color || '').toLowerCase().includes(term) ||
+                    (p.pattern || '').toLowerCase().includes(term);
             };
 
             let matched = [];
@@ -2652,7 +2662,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         if (isShopMatches) {
             // Navigate to subcategory list for the promo category (e.g. Pants → Formal Pant, Cargo Pant...)
             const promoCategory = session.crossSellPromoCategory || 'Pants';
-            
+
             // Mark crossSellShown as true so they won't see recommendations again
             session.crossSellShown = true;
             session.cartCrossSellShown = true;
@@ -3713,15 +3723,15 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
     // GREETING ("hi", "hello", etc.)
     if (isGreeting) {
-    session.cart = [];
-    session.orderingCart = [];
-    session.orderingQueue = [];
-    session.orderingIndex = 0;
-    session.pendingProduct = null;
-    session.selectedSize = null;
-    session.crossSellShown = false;
-    session.cartCrossSellShown = false;
-    session.state = "AWAITING_CATEGORY";
+        session.cart = [];
+        session.orderingCart = [];
+        session.orderingQueue = [];
+        session.orderingIndex = 0;
+        session.pendingProduct = null;
+        session.selectedSize = null;
+        session.crossSellShown = false;
+        session.cartCrossSellShown = false;
+        session.state = "AWAITING_CATEGORY";
         const categoryCounts = getCategoryCounts(products);
         const parents = getSortedParents(categoryCounts);
         session.parentCategories = parents;
@@ -4064,9 +4074,9 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
         }
         if (res.sendButtons && res.sendButtons.buttons) {
             const buttons = res.sendButtons.buttons;
-            const hasCancel = buttons.some(b => 
-                b.id === 'cancel_shopping' || 
-                b.id.toLowerCase().includes('cancel') || 
+            const hasCancel = buttons.some(b =>
+                b.id === 'cancel_shopping' ||
+                b.id.toLowerCase().includes('cancel') ||
                 b.title.toLowerCase().includes('cancel') ||
                 ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(b.id)
             );
