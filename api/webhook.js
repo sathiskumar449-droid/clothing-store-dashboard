@@ -1404,7 +1404,7 @@ async function showCartSummaryWithCrossSell(session, products) {
         }
     }
     
-    bodyText += `We have special deals on matching *${promoCategory}* matching your selection. Tap "Shop Matches" to view and buy them! 👇`;
+    bodyText += `We have special deals on matching *${promoCategory}* matching your selection. Tap "Shop ${promoCategory}" to view and buy them! 👇`;
 
     const promoCandidates = related.slice(0, 2);
     let collageUrl = null;
@@ -1415,17 +1415,20 @@ async function showCartSummaryWithCrossSell(session, products) {
     }
 
     session.state = "AWAITING_CART_SUMMARY_DECISION";
+    session.crossSellPromoCategory = promoCategory;
+
+    const shopBtnLabel = `🛍️ Shop ${promoCategory}`;
 
     return {
         sendButtons: {
             body: bodyText,
             buttons: [
-                { id: 'view_matches', title: '🛍️ Shop Matches' },
+                { id: 'view_matches', title: shopBtnLabel },
                 { id: 'continue_checkout', title: '🛒 Checkout' },
                 { id: 'cancel_order', title: '❌ Cancel' }
             ]
         },
-        sendImages: collageUrl ? [{ url: collageUrl, caption: `Matching Pants Deals` }] : []
+        sendImages: collageUrl ? [{ url: collageUrl, caption: `Matching ${promoCategory} Deals` }] : []
     };
 }
 
@@ -2173,12 +2176,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.parentCategories = parents;
             return makeCategoriesListResponse(parents, categoryCounts, "Your order has been cancelled. Please select a category to continue shopping:");
         } else {
+            const promoLbl = `🛍️ Shop ${session.crossSellPromoCategory || 'Pants'}`;
             return {
                 replyText: `⚠️ Invalid option. Please select an option:`,
                 sendButtons: {
                     body: `Select option:`,
                     buttons: [
-                        { id: 'view_matches', title: '🛍️ Shop Matches' },
+                        { id: 'view_matches', title: promoLbl },
                         { id: 'continue_checkout', title: '🛒 Checkout' },
                         { id: 'cancel_order', title: '❌ Cancel' }
                     ]
@@ -3183,6 +3187,14 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
 
     // STATE: AWAITING_CATEGORY (expects a category number)
+    // Auto-load parentCategories if missing (e.g. fresh session after order complete)
+    if (session.state === "AWAITING_CATEGORY" && isNumber) {
+        if (!session.parentCategories || session.parentCategories.length === 0) {
+            const _catCounts = getCategoryCounts(products);
+            const _parents = getSortedParents(_catCounts);
+            session.parentCategories = _parents;
+        }
+    }
     if (session.state === "AWAITING_CATEGORY" && isNumber && session.parentCategories?.length > 0) {
         const idx = parseInt(textLower, 10) - 1;
         if (idx >= 0 && idx < session.parentCategories.length) {
@@ -3282,12 +3294,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         };
     }
     if (session.state === "AWAITING_CART_SUMMARY_DECISION") {
+        const _promoLbl = `🛍️ Shop ${session.crossSellPromoCategory || 'Pants'}`;
         return {
             replyText: `⚠️ Invalid option. Please choose:`,
             sendButtons: {
                 body: `Select option:`,
                 buttons: [
-                    { id: 'view_matches', title: '🛍️ Shop Matches' },
+                    { id: 'view_matches', title: _promoLbl },
                     { id: 'continue_checkout', title: '🛒 Checkout' },
                     { id: 'cancel_order', title: '❌ Cancel' }
                 ]
@@ -3365,10 +3378,11 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         };
     }
     if (session.state === "AWAITING_CATEGORY") {
-        return {
-            replyText: `⚠️ Invalid format. Please reply with a category number from the list (1, 2, 3...). 😊`,
-            sendImages: []
-        };
+        // Re-load and show category list instead of plain error
+        const _catCounts2 = getCategoryCounts(products);
+        const _parents2 = getSortedParents(_catCounts2);
+        session.parentCategories = _parents2;
+        return makeCategoriesListResponse(_parents2, _catCounts2, "⚠️ Invalid format. Please select a category number from the list below: 😊");
     }
 
     // Dynamic general fallback
