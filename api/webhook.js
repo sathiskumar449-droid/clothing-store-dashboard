@@ -2263,7 +2263,7 @@ async function handleIntent(intentResult, session, products, from) {
                 await logChatMessage(from, 'bot', welcomeMsg.trim());
             }
 
-            return goToFlatSubcategoryList(session, products);
+            return goToFlatSubcategoryList(session, products, "😊 How can we help you today?\n\nLooking for clothing?");
         }
         case 'CATEGORY': {
             const categoryCounts = getCategoryCounts(products);
@@ -3734,7 +3734,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             await logChatMessage(from, 'bot', welcomeMsg.trim());
         }
 
-        return goToFlatSubcategoryList(session, products);
+        return goToFlatSubcategoryList(session, products, "😊 How can we help you today?\n\nLooking for clothing?");
     }
 
     // CHECKOUT INITIATION
