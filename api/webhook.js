@@ -1643,17 +1643,6 @@ async function showCartSummaryWithCrossSell(session, products) {
         }
     }
 
-    if (related.length > 0) {
-        const firstCandidate = related[0];
-        if (isShirtCategory(firstCandidate.category, firstCandidate.name)) {
-            promoCategory = 'Shirts';
-        } else if (isTShirtCategory(firstCandidate.category, firstCandidate.name)) {
-            promoCategory = 'T-Shirts';
-        } else if (isBottomWearProduct(firstCandidate)) {
-            promoCategory = 'Pants';
-        }
-    }
-
     if (related.length === 0) {
         session.state = "AWAITING_CART_SUMMARY_DECISION";
         session.crossSellOptionAvailable = false;
@@ -3131,14 +3120,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
                 if (candidates.length > 0) {
                     let promoCategory = offer?.promoCategory || 'Pants';
-                    const firstCand = candidates[0];
-                    if (isShirtCategory(firstCand.category, firstCand.name)) {
-                        promoCategory = 'Shirts';
-                    } else if (isTShirtCategory(firstCand.category, firstCand.name)) {
-                        promoCategory = 'T-Shirts';
-                    } else if (isBottomWearProduct(firstCand)) {
-                        promoCategory = 'Pants';
-                    }
 
                     session.promoCategory = promoCategory;
 
@@ -3454,17 +3435,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             let promoCategory = offer?.promoCategory || 'Pants';
             const offerLabel = offer?.offerLabel || 'Matching Styles';
             const candidates = offer?.candidates || [];
-
-            if (candidates.length > 0) {
-                const firstCand = candidates[0];
-                if (isShirtCategory(firstCand.category, firstCand.name)) {
-                    promoCategory = 'Shirts';
-                } else if (isTShirtCategory(firstCand.category, firstCand.name)) {
-                    promoCategory = 'T-Shirts';
-                } else if (isBottomWearProduct(firstCand)) {
-                    promoCategory = 'Pants';
-                }
-            }
 
             session.promoCategory = promoCategory;
 
