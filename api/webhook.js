@@ -1168,6 +1168,8 @@ const isCasualShirtProduct = (p) => {
         catLower.includes('printed shirt') ||
         nameLower.includes('linen') ||
         catLower.includes('linen') ||
+        nameLower.includes('lenin') ||
+        catLower.includes('lenin') ||
         nameLower.includes('cotton shirt') ||
         catLower.includes('cotton shirt')
     );
@@ -1205,6 +1207,9 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
     let promoCategory = getParentCategory(addedProduct.category);
     let matcher = () => false;
 
+    // Category-based checks run first so the product's actual assigned category is authoritative —
+    // a mislabeled product name (e.g. a product literally named "plain shirt ..." but filed under
+    // category "Casual Pant") must not override its real category via the name-text heuristics below.
     if (isTShirtCategory(addedProduct.category, addedProduct.name)) {
         offerLabel = 'Matching Track Pants & Cargo Pants';
         promoCategory = 'Pants';
@@ -1215,18 +1220,6 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
             const isCargoPant = catLower.includes('cargo') || nameLower.includes('cargo');
             return isTrackPant || isCargoPant || isTrouser(candidate) || isJogger(candidate);
         };
-    } else if (isPlainShirtProduct(addedProduct)) {
-        offerLabel = 'Matching Pants';
-        promoCategory = 'Pants';
-        matcher = (candidate) => isBottomWearProduct(candidate);
-    } else if (isCasualShirtProduct(addedProduct)) {
-        offerLabel = 'Matching Pants';
-        promoCategory = 'Pants';
-        matcher = (candidate) => isBottomWearProduct(candidate);
-    } else if (isShirtCategory(addedProduct.category, addedProduct.name)) {
-        offerLabel = 'Matching Pants';
-        promoCategory = 'Pants';
-        matcher = (candidate) => isBottomWearProduct(candidate) && !isTShirtCategory(candidate.category, candidate.name);
     } else if (isCargoTrackPant(addedProduct) || isJogger(addedProduct) || isTrouser(addedProduct) ||
         (addedProduct.category || '').toLowerCase().includes('track') ||
         (addedProduct.name || '').toLowerCase().includes('track') ||
@@ -1241,6 +1234,18 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
         offerLabel = 'Matching Shirts';
         promoCategory = 'Shirts';
         matcher = (candidate) => isShirtCategory(candidate.category, candidate.name) && !isTShirtCategory(candidate.category, candidate.name);
+    } else if (isPlainShirtProduct(addedProduct)) {
+        offerLabel = 'Matching Pants';
+        promoCategory = 'Pants';
+        matcher = (candidate) => isBottomWearProduct(candidate);
+    } else if (isCasualShirtProduct(addedProduct)) {
+        offerLabel = 'Matching Pants';
+        promoCategory = 'Pants';
+        matcher = (candidate) => isBottomWearProduct(candidate);
+    } else if (isShirtCategory(addedProduct.category, addedProduct.name)) {
+        offerLabel = 'Matching Pants';
+        promoCategory = 'Pants';
+        matcher = (candidate) => isBottomWearProduct(candidate) && !isTShirtCategory(candidate.category, candidate.name);
     } else {
         offerLabel = 'Matching Pants';
         promoCategory = 'Pants';
