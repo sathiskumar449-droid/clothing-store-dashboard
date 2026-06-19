@@ -1038,11 +1038,16 @@ export const getParentCategory = (categoryName) => {
     if (!categoryName) return 'General';
     const catLower = categoryName.toLowerCase().trim();
 
-    // T-Shirts checked before Shirts to avoid 't-shirt' matching 'shirt'
-    if (['t-shirt', 'tshirt', 'round neck', 'polo t'].some(kw => catLower.includes(kw))) {
+    // T-Shirts checked before Shirts to avoid 't-shirt'/'t shirt' matching the generic 'shirt' keyword.
+    // 't shirt' (with a space) is included because real categories like "Five Sleeve T Shirt" and
+    // "Football T Shirt" use a space, not a hyphen — without it they fell through to the Shirts list below.
+    if (['t-shirt', 'tshirt', 't shirt', 'round neck', 'polo t'].some(kw => catLower.includes(kw))) {
         return 'T-Shirts';
     }
-    if (['shirt', 'linen', 'lenin', 'chava', 'printed', 'stripes', 'casual', 'plain', 'cotton shirt'].some(kw => catLower.includes(kw))) {
+    // 'casual' and 'plain' were removed: both are generic adjectives, not shirt-specific, and were
+    // matching pant categories like "Casual Pant" before the Pants check below ever ran. Real shirt
+    // categories ("Casual Shirts", "Plain Shirts", "Lenin Plain") still match via 'shirt'/'lenin'.
+    if (['shirt', 'linen', 'lenin', 'chava', 'printed', 'stripes', 'cotton shirt'].some(kw => catLower.includes(kw))) {
         return 'Shirts';
     }
     if (['pant', 'phant', 'jeans', 'trouser', 'shorts', 'track', 'cargo', 'lycra', 'laycra'].some(kw => catLower.includes(kw))) {
@@ -1186,6 +1191,8 @@ const isBottomWearProduct = (p) => {
 
 function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
     if (!addedProduct) return null;
+
+    console.log('[getCrossSellOffer] addedProduct.name=', addedProduct.name, '| addedProduct.category=', addedProduct.category, '| getParentCategory=', getParentCategory(addedProduct.category));
 
     const hasValidImage = (p) => {
         const img = getProductImageUri(p, allProducts);
