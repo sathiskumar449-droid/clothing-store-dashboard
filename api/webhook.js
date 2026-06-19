@@ -239,7 +239,7 @@ export async function getSession(phone) {
     }
 
     return {
-        state: "AWAITING_CATEGORY",
+        state: "AWAITING_SUBCATEGORY_SELECTION",
         cart: [],
         history: [],
         searchProducts: [],
@@ -1099,6 +1099,54 @@ export const getSortedParents = (categoryCounts) => {
     return parents;
 };
 
+// Helper to compute the full flat list of WooCommerce subcategory names (in-stock only)
+export const getAllSubCategoriesList = (products) => {
+    const counts = {};
+    products.forEach(p => {
+        if (Number(p.stock) > 0) {
+            const sub = p.category || 'General';
+            if (sub === 'General') return;
+            counts[sub] = (counts[sub] || 0) + 1;
+        }
+    });
+    const subs = Object.keys(counts).filter(sub => counts[sub] > 0);
+    subs.sort((a, b) => a.localeCompare(b));
+    return subs;
+};
+
+// Number emojis don't exist beyond 10, so fall back to plain "11.", "12." etc.
+const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+const numberPrefix = (idx) => idx < 10 ? NUMBER_EMOJIS[idx] : `${idx + 1}.`;
+
+function makeAllSubcategoriesPlainTextResponse(subs, bodyPrefix = "👋 Welcome to Super Collections.\n\nPlease select a category:") {
+    let replyText = `${bodyPrefix}\n\n`;
+    subs.forEach((sub, idx) => {
+        const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        replyText += `${numberPrefix(idx)} ${capSub}\n`;
+    });
+    replyText += `\nPlease reply with the number.`;
+    return {
+        replyText,
+        sendImages: [],
+        listContext: { type: 'subcategories', data: subs }
+    };
+}
+
+// Single entry point for "show category selection" — replaces the old two-step
+// (main category → subcategory) flow with one flat numbered list of every subcategory.
+function goToFlatSubcategoryList(session, products, bodyPrefix) {
+    const subs = getAllSubCategoriesList(products);
+    session.subCategories = subs;
+    session.selectedParentCategory = null;
+    session.state = "AWAITING_SUBCATEGORY_SELECTION";
+    return bodyPrefix !== undefined
+        ? makeAllSubcategoriesPlainTextResponse(subs, bodyPrefix)
+        : makeAllSubcategoriesPlainTextResponse(subs);
+}
+
+// True when the session is sitting at the flat top-level category menu (no parent/subcategory chosen yet)
+const isAtTopLevelMenu = (session) => session.state === "AWAITING_SUBCATEGORY_SELECTION" && !session.selectedParentCategory;
+
 const isPlainShirtProduct = (p) => {
     const nameLower = (p?.name || '').toLowerCase();
     const catLower = (p?.category || '').toLowerCase();
@@ -1229,10 +1277,9 @@ async function getCustomerLastOrder(phone) {
 }
 
 // Helper to initiate checkout
-const startCheckout = async (session, from = null) => {
+const startCheckout = async (session, from = null, products = []) => {
     if (!session.cart || session.cart.length === 0) {
-        session.state = "AWAITING_CATEGORY";
-        return { replyText: "Your cart is empty. 😊 Please select a category to start shopping.", sendImages: [] };
+        return goToFlatSubcategoryList(session, products, "Your cart is empty. 😊 Please select a category to start shopping.");
     }
 
     if (from) {
@@ -1514,29 +1561,6 @@ function withInlineCancelSection(sections) {
     return normalizedSections;
 }
 
-function makeCategoriesListResponse(parents, categoryCounts, bodyPrefix = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.") {
-    const body = bodyPrefix;
-    const buttonText = "Select Category";
-    const sections = withInlineCancelSection([
-        {
-            title: "Categories",
-            rows: parents.map((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                return {
-                    id: String(idx + 1),
-                    title: `${emoji} ${cat}`.substring(0, 24),
-                    description: `${categoryCounts[cat]} items available`
-                };
-            })
-        }
-    ]);
-    return {
-        sendList: { body, buttonText, sections },
-        sendImages: [],
-        listContext: { type: 'categories', data: parents }
-    };
-}
-
 function makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent) {
     const body = `*${selectedParent}*:\n\nPlease select a subcategory.`;
     const buttonText = "Select Subcategory";
@@ -1673,30 +1697,18 @@ async function showCartSummaryWithCrossSell(session, products) {
 
 async function getStatePrompt(session, products) {
     switch (session.state) {
-        case "AWAITING_CATEGORY": {
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            return makeCategoriesListResponse(parents, categoryCounts);
-        }
         case "AWAITING_SUBCATEGORY_SELECTION": {
-            const selectedParent = session.selectedParentCategory;
-            const subcategoryCounts = {};
-            products.forEach(p => {
-                if (Number(p.stock) > 0) {
-                    const cats = Array.isArray(p.categories) && p.categories.length > 0 ? p.categories : [p.category];
-                    if (cats.some(c => getParentCategory(c) === selectedParent)) {
-                        const sub = p.category || 'General';
-                        subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
+            const subs = session.subCategories || [];
+            if (session.selectedParentCategory) {
+                const subcategoryCounts = {};
+                products.forEach(p => {
+                    if (Number(p.stock) > 0 && subs.includes(p.category)) {
+                        subcategoryCounts[p.category] = (subcategoryCounts[p.category] || 0) + 1;
                     }
-                }
-            });
-            const subs = Object.keys(subcategoryCounts).filter(sub => subcategoryCounts[sub] > 0);
-            subs.sort((a, b) => a.localeCompare(b));
-            session.subCategories = subs;
-
-            return makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent);
+                });
+                return makeSubcategoriesListResponse(subs, subcategoryCounts, session.selectedParentCategory);
+            }
+            return makeAllSubcategoriesPlainTextResponse(subs);
         }
         case "AWAITING_MODEL_SELECTION": {
             const selectedSub = session.selectedSubCategory;
@@ -1985,10 +1997,7 @@ async function getStatePrompt(session, products) {
             };
         }
         default: {
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-            return makeCategoriesListResponse(parents, categoryCounts);
+            return goToFlatSubcategoryList(session, products);
         }
     }
 }
@@ -2168,18 +2177,13 @@ async function handleIntent(intentResult, session, products, from) {
             }
         }
         case 'SHOP_MORE': {
-            session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
             session.fromCrossSell = false;
-            const shopMoreCounts = getCategoryCounts(products);
-            const shopMoreParents = getSortedParents(shopMoreCounts);
-            session.parentCategories = shopMoreParents;
-            return makeCategoriesListResponse(shopMoreParents, shopMoreCounts);
+            return goToFlatSubcategoryList(session, products);
         }
         case 'CLEAR_CART': {
             session.cart = [];
-            session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
             session.searchProducts = [];
@@ -2188,11 +2192,7 @@ async function handleIntent(intentResult, session, products, from) {
             session.cartCrossSellShown = false;
             session.fromCrossSell = false;
 
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            return makeCategoriesListResponse(parents, categoryCounts, "Your cart has been cleared. 😊\n\nPlease select a category to continue:");
+            return goToFlatSubcategoryList(session, products, "Your cart has been cleared. 😊");
         }
         case 'HUMAN': {
             return {
@@ -2204,7 +2204,7 @@ async function handleIntent(intentResult, session, products, from) {
         case 'CHECKOUT': {
             if (!session.cart || session.cart.length === 0) {
                 let replyText = "Your cart is empty. 😊 Please add products to your cart first.";
-                if (session.state !== "AWAITING_CATEGORY") {
+                if (!isAtTopLevelMenu(session)) {
                     const statePrompt = await getStatePrompt(session, products);
                     if (statePrompt.replyText) {
                         replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
@@ -2222,11 +2222,11 @@ async function handleIntent(intentResult, session, products, from) {
                 return { replyText, sendImages: [] };
             }
             session.fromCrossSell = false;
-            return await startCheckout(session, from);
+            return await startCheckout(session, from, products);
         }
         case 'FAQ': {
             let replyText = intentResult.reply;
-            if (session.state !== "AWAITING_CATEGORY") {
+            if (!isAtTopLevelMenu(session)) {
                 const statePrompt = await getStatePrompt(session, products);
                 if (statePrompt.replyText) {
                     replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
@@ -2251,18 +2251,11 @@ async function handleIntent(intentResult, session, products, from) {
                 session.state = "AWAITING_PENDING_CART_DECISION";
                 return await getStatePrompt(session, products);
             }
-            session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
             session.lastRecommendation = null;
-            session.subCategories = null;
-            session.selectedParentCategory = null;
             session.selectedSubCategory = null;
             session.isRecommendation = false;
-
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
 
             const welcomeMsg = await getWelcomeMessagePrefix();
             if (welcomeMsg) {
@@ -2270,7 +2263,7 @@ async function handleIntent(intentResult, session, products, from) {
                 await logChatMessage(from, 'bot', welcomeMsg.trim());
             }
 
-            return makeCategoriesListResponse(parents, categoryCounts);
+            return goToFlatSubcategoryList(session, products);
         }
         case 'CATEGORY': {
             const categoryCounts = getCategoryCounts(products);
@@ -2397,7 +2390,7 @@ async function handleIntent(intentResult, session, products, from) {
                 return await prepareProductsPageResponse(session, products, `Search: ${query}`);
             } else {
                 let replyText = "We are sorry, but those products are currently out of stock. 😔";
-                if (session.state !== "AWAITING_CATEGORY") {
+                if (!isAtTopLevelMenu(session)) {
                     const statePrompt = await getStatePrompt(session, products);
                     replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
                     return {
@@ -2450,7 +2443,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
     // Ensure session properties are initialized
     session.cart = session.cart || [];
-    session.state = session.state || "AWAITING_CATEGORY";
+    session.state = session.state || "AWAITING_SUBCATEGORY_SELECTION";
     session.isRecommendation = session.isRecommendation || false;
     session.crossSellShown = session.crossSellShown || false;
     session.promoCategory = session.promoCategory || null;
@@ -2528,7 +2521,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_CANCEL_NO_CART_DECISION") {
         const choice = textLower.trim();
         if (choice === 'cancel_continue_shopping' || choice.includes('continue') || choice === '1') {
-            session.state = "AWAITING_CATEGORY";
             session.cart = [];
             session.orderingCart = [];
             session.orderingQueue = [];
@@ -2541,18 +2533,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
             session.fromCrossSell = false;
-            session.subCategories = null;
-            session.selectedParentCategory = null;
             session.selectedSubCategory = null;
             session.lastRecommendation = null;
             session.awaitingRecommendationResponse = false;
             session.awaitingCartAdditionConfirmation = false;
 
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            return makeCategoriesListResponse(parents, categoryCounts, "👋 Welcome back! Please select a category to start shopping:");
+            return goToFlatSubcategoryList(session, products, "👋 Welcome back! Please select a category to start shopping:");
         } else if (choice === 'cancel_exit_shopping' || choice.includes('exit') || choice === '2') {
             return {
                 replyText: "Thank you for visiting! Have a great day! 😊",
@@ -2577,7 +2563,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_CANCEL_PENDING_DECISION") {
         const choice = textLower.trim();
         if (choice === 'cancel_continue_shopping' || choice.includes('continue') || choice === '1') {
-            session.state = "AWAITING_CATEGORY";
             session.orderingCart = [...(session.cart || [])];
             session.orderingQueue = [];
             session.orderingIndex = 0;
@@ -2589,21 +2574,15 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
             session.fromCrossSell = false;
-            session.subCategories = null;
-            session.selectedParentCategory = null;
             session.selectedSubCategory = null;
             session.lastRecommendation = null;
             session.awaitingRecommendationResponse = false;
             session.awaitingCartAdditionConfirmation = false;
 
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            return makeCategoriesListResponse(parents, categoryCounts, "Sure! 😊 Keep shopping and add more items to your cart:");
+            return goToFlatSubcategoryList(session, products, "Sure! 😊 Keep shopping and add more items to your cart:");
         } else if (choice === 'cancel_checkout' || choice.includes('checkout') || choice === '2') {
             session.fromCrossSell = false;
-            return await startCheckout(session, from);
+            return await startCheckout(session, from, products);
         } else if (choice === 'cancel_clear_exit' || choice.includes('clear') || choice === '3') {
             session.cart = [];
             session.orderingCart = [];
@@ -2646,20 +2625,15 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         if (isCheckout) {
             session.crossSellShown = true;
             session.cartCrossSellShown = true;
-            return await startCheckout(session, from);
+            return await startCheckout(session, from, products);
         } else if (isContinue) {
-            session.state = "AWAITING_CATEGORY";
             session.fromCrossSell = false;
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
 
-            return makeCategoriesListResponse(parents, categoryCounts, "Sure! 😊 Please select a category to continue:");
+            return goToFlatSubcategoryList(session, products, "Sure! 😊 Please select a category to continue:");
         } else if (isClear) {
             session.cart = [];
-            session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
             session.searchProducts = [];
@@ -2668,11 +2642,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.cartCrossSellShown = false;
             session.fromCrossSell = false;
 
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            return makeCategoriesListResponse(parents, categoryCounts, "Your cart has been cleared. 😊\n\nPlease select a category to continue:");
+            return goToFlatSubcategoryList(session, products, "Your cart has been cleared. 😊");
         } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
             return {
                 sendButtons: {
@@ -2700,16 +2670,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const label = session.selectedSubCategory || "Products";
             return await prepareProductsPageResponse(session, products, label);
         } else if (choice === "continue_diff_cat" || choice.includes("other") || choice.includes("diff") || choice === "2") {
-            session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
             session.fromCrossSell = false;
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-            return makeCategoriesListResponse(parents, categoryCounts);
+            return goToFlatSubcategoryList(session, products);
         } else if (choice === "cart_summary" || choice.includes("checkout") || choice === "3") {
             session.cartCrossSellShown = true;
             return await showCartSummaryWithCrossSell(session, products);
@@ -2756,7 +2722,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             subs.sort((a, b) => a.localeCompare(b));
 
             if (subs.length === 0) {
-                return await startCheckout(session, from);
+                return await startCheckout(session, from, products);
             }
 
             session.fromCrossSell = true;
@@ -2781,31 +2747,23 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.state = "AWAITING_SUBCATEGORY_SELECTION";
             return makeSubcategoriesListResponse(subs, subcategoryCounts, promoCategory);
         } else if (isShopMore) {
-            session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
             session.fromCrossSell = false;
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-            return makeCategoriesListResponse(parents, categoryCounts);
+            return goToFlatSubcategoryList(session, products);
         } else if (choice === "continue_checkout" || choice.includes("checkout") || choice.includes("continue") || choice === "2") {
             session.fromCrossSell = false;
-            return await startCheckout(session, from);
+            return await startCheckout(session, from, products);
         } else if (choice === "cancel_order" || choice.includes("cancel") || choice === "3") {
             session.cart = [];
             session.orderingCart = [];
             session.orderingIndex = 0;
-            session.state = "AWAITING_CATEGORY";
             session.pendingProduct = null;
             session.selectedSize = null;
             session.fromCrossSell = false;
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-            return makeCategoriesListResponse(parents, categoryCounts, "Your order has been cancelled. Please select a category to continue shopping:");
+            return goToFlatSubcategoryList(session, products, "Your order has been cancelled. Please select a category to continue shopping:");
         } else {
             const buttons = session.crossSellShown ? [
                 { id: 'shop_more', title: '🛍️ Shop More' },
@@ -2833,14 +2791,11 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const noKeywords = ['no', 'help_no', 'n', 'illai', 'illa', 'vendam', 'ethum venam', 'no bro', 'nothing', 'no thanks', 'no thank you'];
 
         if (yesKeywords.includes(textLower) || textLower.includes('yes') || textLower.includes('aama') || textLower.includes('sari') || textLower.includes('seri')) {
-            session.state = "AWAITING_CATEGORY";
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            return makeCategoriesListResponse(parents, categoryCounts);
+            return goToFlatSubcategoryList(session, products);
         } else if (noKeywords.includes(textLower) || textLower.includes('no') || textLower.includes('illa') || textLower.includes('vendam')) {
-            session.state = "AWAITING_CATEGORY";
+            session.subCategories = getAllSubCategoriesList(products);
+            session.selectedParentCategory = null;
+            session.state = "AWAITING_SUBCATEGORY_SELECTION";
             session.pendingProduct = null;
             session.selectedSize = null;
             return {
@@ -2848,7 +2803,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 sendImages: []
             };
         } else {
-            session.state = "AWAITING_CATEGORY";
+            session.subCategories = getAllSubCategoriesList(products);
+            session.selectedParentCategory = null;
+            session.state = "AWAITING_SUBCATEGORY_SELECTION";
         }
     }
 
@@ -2943,6 +2900,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             if (matched.length > 0) {
                 session.selectedSubCategory = selectedSub;
+                session.selectedParentCategory = session.selectedParentCategory || getParentCategory(selectedSub);
                 session.currentPage = 0;
                 session.searchProducts = matched;
 
@@ -2964,7 +2922,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
                 return await prepareProductsPageResponse(session, products, `${emoji} ${capSub} - Available Stock`);
             } else {
-                session.state = "AWAITING_CATEGORY";
                 return { replyText: "We are sorry, but this subcategory is currently out of stock. 😔", sendImages: [] };
             }
         } else {
@@ -3046,17 +3003,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const currentItem = queue[currentIndex];
 
         if (!currentItem) {
-            session.state = "AWAITING_CATEGORY";
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            let replyText = "Something went wrong. Let's restart. Please select a category:\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            return { replyText, sendImages: [] };
+            return goToFlatSubcategoryList(session, products, "Something went wrong. Let's restart.");
         }
 
         const product = currentItem.product;
@@ -3091,17 +3038,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const currentItem = queue[currentIndex];
 
         if (!currentItem) {
-            session.state = "AWAITING_CATEGORY";
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            let replyText = "Something went wrong. Let's restart. Please select a category:\n\n";
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            return { replyText, sendImages: [] };
+            return goToFlatSubcategoryList(session, products, "Something went wrong. Let's restart.");
         }
 
         const product = currentItem.product;
@@ -3227,11 +3164,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                         collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
                     }
 
-                    const categoryCounts = getCategoryCounts(products);
-                    const parents = getSortedParents(categoryCounts);
-
-                    session.parentCategories = parents;
-                    session.state = "AWAITING_CATEGORY";
+                    session.subCategories = getAllSubCategoriesList(products);
+                    session.selectedParentCategory = null;
+                    session.state = "AWAITING_SUBCATEGORY_SELECTION";
                     session.pendingProduct = null;
                     session.selectedSize = null;
                     session.isRecommendation = false;
@@ -3290,21 +3225,18 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.orderingCart = [];
             session.orderingQueue = [];
             session.orderingIndex = 0;
-            session.state = "AWAITING_CATEGORY";
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
 
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            return makeCategoriesListResponse(parents, categoryCounts, "Let's modify your order. Please select a category to continue shopping:");
+            return goToFlatSubcategoryList(session, products, "Let's modify your order. Please select a category to continue shopping:");
         } else if (isCancel) {
             session.cart = [];
             session.orderingCart = [];
             session.orderingQueue = [];
             session.orderingIndex = 0;
-            session.state = "AWAITING_CATEGORY";
+            session.subCategories = getAllSubCategoriesList(products);
+            session.selectedParentCategory = null;
+            session.state = "AWAITING_SUBCATEGORY_SELECTION";
 
             return { replyText: "Your order is cancelled", sendImages: [] };
         } else {
@@ -3575,11 +3507,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
             }
 
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-
-            session.parentCategories = parents;
-            session.state = "AWAITING_CATEGORY";
+            session.subCategories = getAllSubCategoriesList(products);
+            session.selectedParentCategory = null;
+            session.state = "AWAITING_SUBCATEGORY_SELECTION";
             session.pendingProduct = null;
             session.selectedSize = null;
             session.isRecommendation = false;
@@ -3637,24 +3567,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // STATE: AWAITING_MORE_ITEMS
     if (session.state === "AWAITING_MORE_ITEMS") {
         if (textLower === "yes" || textLower === "y" || textLower === "aama") {
-            session.state = "AWAITING_CATEGORY";
             const cartCount = session.cart.length;
             const cartTotal = session.cart.reduce((sum, i) => sum + Number(i.price), 0);
 
-            const categoryCounts = getCategoryCounts(products);
-            const parents = getSortedParents(categoryCounts);
-            session.parentCategories = parents;
-
-            let replyText = `Great! 😊 You have ${cartCount} item(s) in your cart (Total: ₹${cartTotal}).\n\nPlease select a category to continue shopping:\n\n`;
-            parents.forEach((cat, idx) => {
-                const emoji = getCategoryEmoji(cat);
-                replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-            });
-            replyText += "\nPlease reply with the product number.";
-
-            return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+            return goToFlatSubcategoryList(session, products, `Great! 😊 You have ${cartCount} item(s) in your cart (Total: ₹${cartTotal}).`);
         } else if (textLower === "no" || textLower === "n" || textLower === "illai" || textLower === "checkout" || textLower === "no_checkout") {
-            return await startCheckout(session, from);
+            return await startCheckout(session, from, products);
         } else if (!isGreeting && !isCategorySearch && !isCheckoutTrigger) {
             return {
                 replyText: `⚠️ Invalid response. Please reply with YES or NO. 😊`,
@@ -3786,7 +3704,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     const notInterestedKeywords = ["no bro", "ethum venam", "vendam", "later", "paravala"];
     if (notInterestedKeywords.some(kw => textLower.includes(kw))) {
         session.cart = [];
-        session.state = "AWAITING_CATEGORY";
+        session.subCategories = getAllSubCategoriesList(products);
+        session.selectedParentCategory = null;
+        session.state = "AWAITING_SUBCATEGORY_SELECTION";
         session.pendingProduct = null;
         session.selectedSize = null;
         session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
@@ -3807,29 +3727,19 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         session.selectedSize = null;
         session.crossSellShown = false;
         session.cartCrossSellShown = false;
-        session.state = "AWAITING_CATEGORY";
-        const categoryCounts = getCategoryCounts(products);
-        const parents = getSortedParents(categoryCounts);
-        session.parentCategories = parents;
 
         const welcomeMsg = await getWelcomeMessagePrefix();
         if (welcomeMsg) {
             await sendText(from, welcomeMsg.trim());
             await logChatMessage(from, 'bot', welcomeMsg.trim());
         }
-        let replyText = "👋 Welcome to Super Collections.\n\nPlease select a category to continue.\n\n";
-        parents.forEach((cat, idx) => {
-            const emoji = getCategoryEmoji(cat);
-            replyText += `${idx + 1}️⃣ ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-        });
-        replyText += "\nPlease reply with the product number.";
 
-        return { replyText, sendImages: [], listContext: { type: 'categories', data: parents } };
+        return goToFlatSubcategoryList(session, products);
     }
 
     // CHECKOUT INITIATION
     if (isCheckoutTrigger) {
-        return await startCheckout(session, from);
+        return await startCheckout(session, from, products);
     }
 
     // NATURAL CATEGORY / PRODUCT SEARCH
@@ -3886,81 +3796,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             return { replyText, sendImages: [], searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
         } else {
             return { replyText: "We are sorry, but those products are currently out of stock. 😔", sendImages: [] };
-        }
-    }
-
-    // STATE: AWAITING_CATEGORY (expects a category number)
-    // Auto-load parentCategories if missing (e.g. fresh session after order complete)
-    if (session.state === "AWAITING_CATEGORY" && isNumber) {
-        if (!session.parentCategories || session.parentCategories.length === 0) {
-            const _catCounts = getCategoryCounts(products);
-            const _parents = getSortedParents(_catCounts);
-            session.parentCategories = _parents;
-        }
-    }
-    if (session.state === "AWAITING_CATEGORY" && isNumber && session.parentCategories?.length > 0) {
-        const idx = parseInt(textLower, 10) - 1;
-        if (idx >= 0 && idx < session.parentCategories.length) {
-            const selectedParent = session.parentCategories[idx];
-            session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
-            session.cartCrossSellShown = false;
-
-            const subcategoryCounts = {};
-            products.forEach(p => {
-                if (Number(p.stock) > 0) {
-                    const cats = Array.isArray(p.categories) && p.categories.length > 0 ? p.categories : [p.category];
-                    if (cats.some(c => getParentCategory(c) === selectedParent)) {
-                        const sub = p.category || 'General';
-                        subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
-                    }
-                }
-            });
-
-            const subs = Object.keys(subcategoryCounts).filter(sub => subcategoryCounts[sub] > 0);
-            subs.sort((a, b) => a.localeCompare(b));
-
-            // If there is only 1 subcategory, skip subcategory screen!
-            if (subs.length === 1) {
-                const selectedSub = subs[0];
-                const matched = products.filter(p => Number(p.stock) > 0 && p.category === selectedSub);
-
-                if (matched.length > 0) {
-                    session.selectedSubCategory = selectedSub;
-                    session.selectedParentCategory = selectedParent;
-                    session.currentPage = 0;
-                    session.searchProducts = matched;
-
-                    // Auto-select if only 1 product — skip the product list and go straight to size
-                    if (matched.length === 1) {
-                        session.orderingQueue = [{ displayNum: 1, product: matched[0] }];
-                        session.orderingIndex = 0;
-                        session.orderingCart = [...(session.cart || [])];
-                        session.state = "AWAITING_PRODUCT_SIZE";
-                        session.fromCrossSell = false;
-                        session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
-                        session.cartCrossSellShown = false;
-                        return await getStatePrompt(session, products);
-                    }
-
-                    session.state = "AWAITING_MODEL_SELECTION";
-                    const emoji = getCategoryEmoji(selectedParent);
-                    const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-
-                    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub} - Available Stock`);
-                }
-            }
-
-            session.subCategories = subs;
-            session.selectedParentCategory = selectedParent;
-            session.state = "AWAITING_SUBCATEGORY_SELECTION";
-
-            return makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent);
-        } else {
-            const max = session.parentCategories.length;
-            return {
-                replyText: `⚠️ Invalid selection. Please choose a category number from 1 to ${max}. 😊`,
-                sendImages: []
-            };
         }
     }
 
@@ -4112,31 +3947,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             sendImages: []
         };
     }
-    if (session.state === "AWAITING_CATEGORY") {
-        // Re-load and show category list instead of plain error
-        const _catCounts2 = getCategoryCounts(products);
-        const _parents2 = getSortedParents(_catCounts2);
-        session.parentCategories = _parents2;
-        return makeCategoriesListResponse(_parents2, _catCounts2, "⚠️ Invalid format. Please select a category number from the list below: 😊");
-    }
-
     // Dynamic general fallback
-    const categoryCounts = getCategoryCounts(products);
-    const parents = getSortedParents(categoryCounts);
-    session.parentCategories = parents;
-    session.state = "AWAITING_CATEGORY";
-
-    let menuList = "";
-    parents.forEach((cat, idx) => {
-        const emoji = getCategoryEmoji(cat);
-        menuList += `• ${emoji} ${cat} (${categoryCounts[cat]})\n`;
-    });
-
-    return {
-        replyText: `😊 How can we help you today?\n\nLooking for clothing?\n\n${menuList}\nOr feel free to ask about delivery, payments, or returns!`,
-        sendImages: [],
-        listContext: { type: 'categories', data: parents }
-    };
+    return goToFlatSubcategoryList(session, products, "😊 How can we help you today?\n\nLooking for clothing?");
 }
 
 export async function handleSalesAssistantJS(from, userMessage, products, session) {
@@ -4256,10 +4068,7 @@ async function handleMessage(msg) {
         if (isListReply && quotedMsgId && session.msgContext?.[quotedMsgId]) {
             const context = session.msgContext[quotedMsgId];
             console.log(`[handleMessage] Recovered context from quoted message ${quotedMsgId}:`, context);
-            if (context.type === 'categories') {
-                session.state = "AWAITING_CATEGORY";
-                session.parentCategories = context.data;
-            } else if (context.type === 'subcategories') {
+            if (context.type === 'subcategories') {
                 session.state = "AWAITING_SUBCATEGORY_SELECTION";
                 session.subCategories = context.data;
                 session.selectedParentCategory = context.selectedParentCategory;
