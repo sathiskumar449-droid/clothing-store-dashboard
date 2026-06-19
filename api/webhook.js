@@ -1152,29 +1152,6 @@ function goToFlatSubcategoryList(session, products, bodyPrefix) {
 // True when the session is sitting at the flat top-level category menu (no parent/subcategory chosen yet)
 const isAtTopLevelMenu = (session) => session.state === "AWAITING_SUBCATEGORY_SELECTION" && !session.selectedParentCategory;
 
-const isPlainShirtProduct = (p) => {
-    const nameLower = (p?.name || '').toLowerCase();
-    const catLower = (p?.category || '').toLowerCase();
-    return nameLower.includes('plain shirt') || catLower.includes('plain shirt');
-};
-
-const isCasualShirtProduct = (p) => {
-    const nameLower = (p?.name || '').toLowerCase();
-    const catLower = (p?.category || '').toLowerCase();
-    return !isPlainShirtProduct(p) && (
-        nameLower.includes('casual shirt') ||
-        catLower.includes('casual shirt') ||
-        nameLower.includes('printed shirt') ||
-        catLower.includes('printed shirt') ||
-        nameLower.includes('linen') ||
-        catLower.includes('linen') ||
-        nameLower.includes('lenin') ||
-        catLower.includes('lenin') ||
-        nameLower.includes('cotton shirt') ||
-        catLower.includes('cotton shirt')
-    );
-};
-
 const isFormalPantProduct = (p) => {
     const nameLower = (p?.name || '').toLowerCase();
     const catLower = (p?.category || '').toLowerCase();
@@ -1207,10 +1184,13 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
     let promoCategory = getParentCategory(addedProduct.category);
     let matcher = () => false;
 
-    // Category-based checks run first so the product's actual assigned category is authoritative —
-    // a mislabeled product name (e.g. a product literally named "plain shirt ..." but filed under
-    // category "Casual Pant") must not override its real category via the name-text heuristics below.
-    if (isTShirtCategory(addedProduct.category, addedProduct.name)) {
+    // Classification is driven entirely by getParentCategory(addedProduct.category) — the single
+    // source of truth already used for category browsing/sorting — instead of re-deriving it through
+    // several separate keyword-matching helpers (isPlainShirtProduct, isCasualShirtProduct, etc.) that
+    // each had their own keyword list and could individually develop gaps for new subcategory names.
+    const addedParent = getParentCategory(addedProduct.category);
+
+    if (addedParent === 'T-Shirts') {
         offerLabel = 'Matching Track Pants & Cargo Pants';
         promoCategory = 'Pants';
         matcher = (candidate) => {
@@ -1220,32 +1200,30 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
             const isCargoPant = catLower.includes('cargo') || nameLower.includes('cargo');
             return isTrackPant || isCargoPant || isTrouser(candidate) || isJogger(candidate);
         };
-    } else if (isCargoTrackPant(addedProduct) || isJogger(addedProduct) || isTrouser(addedProduct) ||
-        (addedProduct.category || '').toLowerCase().includes('track') ||
-        (addedProduct.name || '').toLowerCase().includes('track') ||
-        (addedProduct.category || '').toLowerCase().includes('trach') ||
-        (addedProduct.name || '').toLowerCase().includes('trach') ||
-        (addedProduct.category || '').toLowerCase().includes('cargo') ||
-        (addedProduct.name || '').toLowerCase().includes('cargo')) {
-        offerLabel = 'Matching T-Shirts';
-        promoCategory = 'T-Shirts';
-        matcher = (candidate) => isTShirtCategory(candidate.category, candidate.name);
-    } else if (isPantOrJeansCategory(addedProduct.category, addedProduct.name) || isPoloFitPant(addedProduct) || isJeans(addedProduct) || isFormalPantProduct(addedProduct) || isCottonPantProduct(addedProduct)) {
-        offerLabel = 'Matching Shirts';
-        promoCategory = 'Shirts';
-        matcher = (candidate) => isShirtCategory(candidate.category, candidate.name) && !isTShirtCategory(candidate.category, candidate.name);
-    } else if (isPlainShirtProduct(addedProduct)) {
+    } else if (addedParent === 'Pants') {
+        // Track/cargo pants specifically cross-sell T-Shirts (athletic pairing); every other pant
+        // (formal, jeans, polo fit, cotton, etc.) cross-sells Shirts.
+        const isTrackOrCargoPant = isCargoTrackPant(addedProduct) || isJogger(addedProduct) || isTrouser(addedProduct) ||
+            (addedProduct.category || '').toLowerCase().includes('track') ||
+            (addedProduct.name || '').toLowerCase().includes('track') ||
+            (addedProduct.category || '').toLowerCase().includes('trach') ||
+            (addedProduct.name || '').toLowerCase().includes('trach') ||
+            (addedProduct.category || '').toLowerCase().includes('cargo') ||
+            (addedProduct.name || '').toLowerCase().includes('cargo');
+
+        if (isTrackOrCargoPant) {
+            offerLabel = 'Matching T-Shirts';
+            promoCategory = 'T-Shirts';
+            matcher = (candidate) => isTShirtCategory(candidate.category, candidate.name);
+        } else {
+            offerLabel = 'Matching Shirts';
+            promoCategory = 'Shirts';
+            matcher = (candidate) => isShirtCategory(candidate.category, candidate.name) && !isTShirtCategory(candidate.category, candidate.name);
+        }
+    } else if (addedParent === 'Shirts') {
         offerLabel = 'Matching Pants';
         promoCategory = 'Pants';
         matcher = (candidate) => isBottomWearProduct(candidate);
-    } else if (isCasualShirtProduct(addedProduct)) {
-        offerLabel = 'Matching Pants';
-        promoCategory = 'Pants';
-        matcher = (candidate) => isBottomWearProduct(candidate);
-    } else if (isShirtCategory(addedProduct.category, addedProduct.name)) {
-        offerLabel = 'Matching Pants';
-        promoCategory = 'Pants';
-        matcher = (candidate) => isBottomWearProduct(candidate) && !isTShirtCategory(candidate.category, candidate.name);
     } else {
         offerLabel = 'Matching Pants';
         promoCategory = 'Pants';
