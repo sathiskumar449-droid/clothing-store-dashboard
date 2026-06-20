@@ -2790,7 +2790,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const statusKey = (order.status || '').toLowerCase();
             const statusMsg = ORDER_STATUS_MESSAGES[statusKey] || 'We will check the latest status and update you shortly.';
             const orderedOn = order.date
-                ? new Date(order.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                ? new Date(order.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
                 : 'N/A';
             return {
                 replyText: `📦 Order Status Update\n\nOrder ID: ${order.id}\nStatus: ${order.status}\nOrdered on: ${orderedOn}\n\n${statusMsg}`,
@@ -4469,8 +4469,8 @@ async function handleMessage(msg) {
         if (aiResponse.isOrderConfirmed && aiResponse.orderDetails) {
             const orderId = 'ORD-' + Date.now();
             const orderDate = new Date();
-            const dateStr = orderDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-            const timeStr = orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            const dateStr = orderDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' });
+            const timeStr = orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
 
             const cartItems = session.cart;
             const totalPrice = cartItems.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
