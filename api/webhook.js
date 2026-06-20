@@ -1310,6 +1310,27 @@ const getCategoryEmoji = (parentCategory) => {
     return '🛍️';
 };
 
+// Generic/umbrella WooCommerce category tags that should never be treated as a product's "real"
+// category. Mirrors GENERIC_CATEGORIES in api/products.js (used by getPrimaryCategory when
+// collapsing a product's full categories array into the singular category field at sync time)
+// plus "New Arrival" — which getPrimaryCategory does NOT skip, so a product tagged both
+// "New Arrival" and a real category (e.g. "POLO FIT PANT") can end up with category="New Arrival",
+// silently losing its real category for any code that only looks at the singular field.
+const GENERIC_CATEGORY_TAGS = ['men', 'menu', 'general', 'uncategorized', 'new arrival', 'new arrivals'];
+
+// Returns the most specific real category for a product by checking its full categories array
+// (falling back to the singular category field if categories is absent) and skipping generic
+// umbrella tags — use this instead of product.category directly wherever the result feeds into
+// classification logic (e.g. getParentCategory), since product.category can itself be a generic
+// tag chosen as "primary" even when a real, more specific category is also present.
+const getEffectiveCategory = (product) => {
+    const cats = Array.isArray(product.categories) && product.categories.length > 0
+        ? product.categories
+        : [product.category];
+    const specific = cats.find(c => c && !GENERIC_CATEGORY_TAGS.includes(c.toLowerCase().trim()));
+    return specific || product.category || 'General';
+};
+
 // A product can carry multiple WooCommerce categories (e.g. ["New Arrival", "Polo Fit Pant"]),
 // but only one of them is collapsed into the singular p.category field at sync time
 // (see getPrimaryCategory in api/products.js). Matching subcategory selection against
@@ -1854,7 +1875,13 @@ const isBottomWearProduct = (p) => {
 function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
     if (!addedProduct) return null;
 
-    console.log('[getCrossSellOffer] addedProduct.name=', addedProduct.name, '| addedProduct.category=', addedProduct.category, '| getParentCategory=', getParentCategory(addedProduct.category));
+    // getEffectiveCategory (not addedProduct.category directly) — addedProduct.category can be a
+    // generic umbrella tag like "New Arrival" chosen as "primary" at sync time even when the
+    // product also carries a real category (e.g. "POLO FIT PANT") in its full categories array.
+    // Using the raw singular field here previously made such products fall through every branch
+    // below into the default "Pants" bucket regardless of what they actually were.
+    const effectiveCategory = getEffectiveCategory(addedProduct);
+    console.log('[getCrossSellOffer] addedProduct.name=', addedProduct.name, '| addedProduct.category=', addedProduct.category, '| effectiveCategory=', effectiveCategory, '| getParentCategory=', getParentCategory(effectiveCategory));
 
     const hasValidImage = (p) => {
         const img = getProductImageUri(p, allProducts);
@@ -1864,14 +1891,14 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
     const isExcluded = (id) => excludedIds.some(eid => String(eid) === String(id));
 
     let offerLabel = 'Matching Styles';
-    let promoCategory = getParentCategory(addedProduct.category);
+    let promoCategory = getParentCategory(effectiveCategory);
     let matcher = () => false;
 
-    // Classification is driven entirely by getParentCategory(addedProduct.category) — the single
+    // Classification is driven entirely by getParentCategory(effectiveCategory) — the single
     // source of truth already used for category browsing/sorting — instead of re-deriving it through
     // several separate keyword-matching helpers (isPlainShirtProduct, isCasualShirtProduct, etc.) that
     // each had their own keyword list and could individually develop gaps for new subcategory names.
-    const addedParent = getParentCategory(addedProduct.category);
+    const addedParent = getParentCategory(effectiveCategory);
 
     if (addedParent === 'T-Shirts') {
         offerLabel = 'Matching Track Pants & Cargo Pants';
@@ -1887,11 +1914,11 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
         // Track/cargo pants specifically cross-sell T-Shirts (athletic pairing); every other pant
         // (formal, jeans, polo fit, cotton, etc.) cross-sells Shirts.
         const isTrackOrCargoPant = isCargoTrackPant(addedProduct) || isJogger(addedProduct) || isTrouser(addedProduct) ||
-            (addedProduct.category || '').toLowerCase().includes('track') ||
+            effectiveCategory.toLowerCase().includes('track') ||
             (addedProduct.name || '').toLowerCase().includes('track') ||
-            (addedProduct.category || '').toLowerCase().includes('trach') ||
+            effectiveCategory.toLowerCase().includes('trach') ||
             (addedProduct.name || '').toLowerCase().includes('trach') ||
-            (addedProduct.category || '').toLowerCase().includes('cargo') ||
+            effectiveCategory.toLowerCase().includes('cargo') ||
             (addedProduct.name || '').toLowerCase().includes('cargo');
 
         if (isTrackOrCargoPant) {
