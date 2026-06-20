@@ -515,6 +515,91 @@ export async function sendCtaUrlWelcomeMessage(to) {
     return response.data;
 }
 
+// Video guide card (cta_url to Drive video) sent as part of the greeting sequence.
+// Throws on failure so the caller can fall back to the plain text welcome message.
+export async function sendVideoGuideCard(to) {
+    const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+    const payload = {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive: {
+            type: 'cta_url',
+            header: {
+                type: 'text',
+                text: '📹 Need Help Ordering?'
+            },
+            body: {
+                text: 'Having trouble placing an order? Watch our step-by-step video guide.'
+            },
+            action: {
+                name: 'cta_url',
+                parameters: {
+                    display_text: 'Watch Video',
+                    url: 'https://drive.google.com/file/d/1wXwDqhYUpB_uv6v38kl9Gdh6mX2fTykG/view?usp=drivesdk'
+                }
+            }
+        }
+    };
+
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        throw new Error(`Environment variables missing! WHATSAPP_TOKEN: ${WHATSAPP_TOKEN ? 'exists' : 'missing'}, PHONE_NUMBER_ID: ${PHONE_NUMBER_ID ? 'exists' : 'missing'}`);
+    }
+
+    console.log(`[sendVideoGuideCard] Payload being sent:`, JSON.stringify(payload, null, 2));
+
+    try {
+        const response = await axios.post(url, payload, {
+            headers: {
+                Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        console.log(`[sendVideoGuideCard] Meta API response:`, JSON.stringify(response.data, null, 2));
+        return response.data;
+    } catch (error) {
+        console.error(`[sendVideoGuideCard] Meta API error response:`, JSON.stringify(error.response?.data || error.message, null, 2));
+        throw error;
+    }
+}
+
+// Native WhatsApp location message (store pin) sent as part of the greeting sequence.
+// Throws on failure so the caller can fall back to the plain text welcome message.
+export async function sendLocationCard(to) {
+    const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+    const payload = {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'location',
+        location: {
+            latitude: Number(process.env.STORE_LATITUDE),
+            longitude: Number(process.env.STORE_LONGITUDE),
+            name: 'Super Collections',
+            address: '127 Srinivasa Street, Udumalpet - 642126'
+        }
+    };
+
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        throw new Error(`Environment variables missing! WHATSAPP_TOKEN: ${WHATSAPP_TOKEN ? 'exists' : 'missing'}, PHONE_NUMBER_ID: ${PHONE_NUMBER_ID ? 'exists' : 'missing'}`);
+    }
+
+    console.log(`[sendLocationCard] Payload being sent:`, JSON.stringify(payload, null, 2));
+
+    try {
+        const response = await axios.post(url, payload, {
+            headers: {
+                Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        console.log(`[sendLocationCard] Meta API response:`, JSON.stringify(response.data, null, 2));
+        return response.data;
+    } catch (error) {
+        console.error(`[sendLocationCard] Meta API error response:`, JSON.stringify(error.response?.data || error.message, null, 2));
+        throw error;
+    }
+}
+
 export async function uploadMedia(imageUrl) {
     try {
         console.log(`[uploadMedia] Downloading image from WooCommerce: ${imageUrl}`);
@@ -2405,17 +2490,40 @@ async function handleIntent(intentResult, session, products, from) {
             session.selectedSubCategory = null;
             session.isRecommendation = false;
 
+            let welcomeCardFailed = false;
+            let videoCardFailed = false;
+            let locationCardFailed = false;
+
             try {
                 await sendCtaUrlWelcomeMessage(from);
                 console.log('[Welcome] ✅ cta_url welcome card sent to', from);
             } catch (err) {
+                welcomeCardFailed = true;
                 console.error('[Welcome] ❌ cta_url welcome card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
             }
 
-            const welcomeMsg = await getWelcomeMessagePrefix();
-            if (welcomeMsg) {
-                await sendText(from, welcomeMsg.trim());
-                await logChatMessage(from, 'bot', welcomeMsg.trim());
+            try {
+                await sendVideoGuideCard(from);
+                console.log('[Welcome] ✅ video guide card sent to', from);
+            } catch (err) {
+                videoCardFailed = true;
+                console.error('[Welcome] ❌ video guide card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+            }
+
+            try {
+                await sendLocationCard(from);
+                console.log('[Welcome] ✅ location card sent to', from);
+            } catch (err) {
+                locationCardFailed = true;
+                console.error('[Welcome] ❌ location card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+            }
+
+            if (welcomeCardFailed || videoCardFailed || locationCardFailed) {
+                const welcomeMsg = await getWelcomeMessagePrefix();
+                if (welcomeMsg) {
+                    await sendText(from, welcomeMsg.trim());
+                    await logChatMessage(from, 'bot', welcomeMsg.trim());
+                }
             }
 
             console.log('[IntroMenu] Greeting detected — showing Shop Now / Order Help buttons for', from);
@@ -3884,17 +3992,40 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         session.cartCrossSellShown = false;
         session.awaitingOrderHelpChoice = false;
 
+        let welcomeCardFailed = false;
+        let videoCardFailed = false;
+        let locationCardFailed = false;
+
         try {
             await sendCtaUrlWelcomeMessage(from);
             console.log('[Welcome] ✅ cta_url welcome card sent to', from);
         } catch (err) {
+            welcomeCardFailed = true;
             console.error('[Welcome] ❌ cta_url welcome card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
         }
 
-        const welcomeMsg = await getWelcomeMessagePrefix();
-        if (welcomeMsg) {
-            await sendText(from, welcomeMsg.trim());
-            await logChatMessage(from, 'bot', welcomeMsg.trim());
+        try {
+            await sendVideoGuideCard(from);
+            console.log('[Welcome] ✅ video guide card sent to', from);
+        } catch (err) {
+            videoCardFailed = true;
+            console.error('[Welcome] ❌ video guide card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+        }
+
+        try {
+            await sendLocationCard(from);
+            console.log('[Welcome] ✅ location card sent to', from);
+        } catch (err) {
+            locationCardFailed = true;
+            console.error('[Welcome] ❌ location card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+        }
+
+        if (welcomeCardFailed || videoCardFailed || locationCardFailed) {
+            const welcomeMsg = await getWelcomeMessagePrefix();
+            if (welcomeMsg) {
+                await sendText(from, welcomeMsg.trim());
+                await logChatMessage(from, 'bot', welcomeMsg.trim());
+            }
         }
 
         console.log('[IntroMenu] Greeting detected — showing Shop Now / Order Help buttons for', from);
