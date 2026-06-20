@@ -254,8 +254,7 @@ export async function getSession(phone) {
         awaitingCartAdditionConfirmation: false,
         pendingProduct: null,
         orderingQueue: [],
-        orderingIndex: 0,
-        orderingCart: [],
+        pendingSelections: {},
         fromCrossSell: false,
         crossSellShown: false,
         cartCrossSellShown: false
@@ -1468,20 +1467,308 @@ async function enterSubCategoryByIndex(session, products, idx, allSubs) {
 
     // Auto-select if only 1 product — skip the product list and go straight to size
     if (matched.length === 1) {
-        session.orderingQueue = [{ displayNum: 1, product: matched[0] }];
-        session.orderingIndex = 0;
-        session.orderingCart = [...(session.cart || [])];
-        session.state = "AWAITING_PRODUCT_SIZE";
-        session.fromCrossSell = false;
-        session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
-        session.cartCrossSellShown = false;
-        return await getStatePrompt(session, products);
+        return await enqueueProductsForOrdering(session, products, [matched[0]]);
     }
 
     session.state = "AWAITING_MODEL_SELECTION";
     const emoji = getCategoryEmoji(session.selectedParentCategory || '');
     const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
     return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`);
+}
+
+// =============================
+// Per-product size/qty selection (pendingSelections)
+// =============================
+// Each product being sized/qty'd is tracked independently in session.pendingSelections, keyed by
+// product ID, instead of a single shared "current product" pointer. This means a customer can
+// start configuring product A, then — before finishing it — select a different product B (e.g.
+// by tapping an older "Select Product" list still visible in the chat), configure B, and come
+// back to finish A, with no risk of B's flow inheriting or overwriting A's size/qty. Size and qty
+// button/list replies embed the product ID directly (size_<id>_<value>, qty_<id>_<value>) so they
+// route to the correct entry unambiguously, regardless of whatever session.state currently says.
+// session.orderingQueue still holds products that were selected together but haven't been shown
+// a size prompt yet — it's consumed one at a time as earlier entries in pendingSelections finish.
+
+// Looks up the most recently prompted pendingSelections entry still waiting on `step` ('AWAITING_PRODUCT_SIZE'
+// or 'AWAITING_PRODUCT_QTY'). Only used for plain typed replies (e.g. "M" or "3") that don't carry
+// an explicit product ID — button/list replies are routed directly by ID instead.
+function getMostRecentPending(session, step) {
+    const entries = Object.values(session.pendingSelections || {});
+    for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].step === step) return entries[i];
+    }
+    return null;
+}
+
+async function renderSizePrompt(entry, collageBatch, products) {
+    const product = entry.product;
+    const pid = String(product.id);
+    const sizeList = (Array.isArray(product.sizes)
+        ? product.sizes
+        : String(product.sizes).split(',').map(s => s.trim())
+    ).filter(Boolean);
+
+    const body = `📐 *${product.name}*\n\nPlease select your size:`;
+
+    let sendImages = [];
+    if (collageBatch && collageBatch.length > 1) {
+        const collageUrl = await createPromoCollage(collageBatch, products);
+        if (collageUrl) sendImages = [{ url: collageUrl, caption: "Selected items" }];
+    } else {
+        const imgUri = getProductImageUri(product, products);
+        if (imgUri) sendImages = [{ url: imgUri, caption: product.name }];
+    }
+
+    if (sizeList.length <= 3) {
+        return {
+            sendButtons: {
+                body,
+                buttons: sizeList.map(s => ({ id: `size_${pid}_${s.toUpperCase()}`, title: s.toUpperCase() }))
+            },
+            sendImages
+        };
+    }
+    const sections = [
+        {
+            title: "Available Sizes",
+            rows: sizeList.map(s => ({
+                id: `size_${pid}_${s.toUpperCase()}`,
+                title: s.toUpperCase(),
+                description: `Select size ${s.toUpperCase()}`
+            }))
+        }
+    ];
+    return {
+        sendList: { body, buttonText: "Choose Size", sections },
+        sendImages
+    };
+}
+
+function renderQtyPrompt(entry) {
+    const product = entry.product;
+    const pid = String(product.id);
+    const size = entry.size || 'N/A';
+    const body = `📐 *${product.name}*\nSelected Size: *${size}*\n\nPlease select the quantity you want to purchase:`;
+    const sections = [
+        {
+            title: "Select Quantity",
+            rows: Array.from({ length: 10 }, (_, i) => ({
+                id: `qty_${pid}_${i + 1}`,
+                title: String(i + 1),
+                description: `Qty: ${i + 1}`
+            }))
+        }
+    ];
+    return {
+        sendList: { body, buttonText: "Choose Qty", sections },
+        sendImages: []
+    };
+}
+
+// Adds newly selected products to the ordering flow and prompts for the first one's size (with a
+// collage if more than one was selected together, matching the old "select 2+ products at once"
+// UX). Any product already mid-flow in pendingSelections is left untouched.
+async function enqueueProductsForOrdering(session, products, newProducts) {
+    session.orderingQueue = session.orderingQueue || [];
+    session.pendingSelections = session.pendingSelections || {};
+    session.fromCrossSell = false;
+    session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
+    session.cartCrossSellShown = false;
+
+    if (newProducts.length === 0) return promptNextQueuedProduct(session, products);
+
+    const [first, ...rest] = newProducts;
+    session.orderingQueue.push(...rest);
+
+    const pid = String(first.id);
+    if (session.pendingSelections[pid]) {
+        // Already mid-flow for this exact product — don't restart it, just continue normally.
+        return promptNextQueuedProduct(session, products);
+    }
+    session.pendingSelections[pid] = { product: first, size: null, qty: null, step: 'AWAITING_PRODUCT_SIZE' };
+    session.state = "AWAITING_PRODUCT_SIZE";
+    return await renderSizePrompt(session.pendingSelections[pid], newProducts.length > 1 ? newProducts : null, products);
+}
+
+// Pops the next not-yet-started product off the queue and shows its size prompt. Returns null if
+// the queue is empty — callers decide what "nothing left to prompt" means in their context.
+async function promptNextQueuedProduct(session, products) {
+    session.orderingQueue = session.orderingQueue || [];
+    session.pendingSelections = session.pendingSelections || {};
+
+    while (session.orderingQueue.length > 0) {
+        const product = session.orderingQueue.shift();
+        const pid = String(product.id);
+        if (session.pendingSelections[pid]) continue; // already in progress — don't duplicate
+        session.pendingSelections[pid] = { product, size: null, qty: null, step: 'AWAITING_PRODUCT_SIZE' };
+        session.state = "AWAITING_PRODUCT_SIZE";
+        return await renderSizePrompt(session.pendingSelections[pid], null, products);
+    }
+    return null;
+}
+
+// Validates a size reply against `entry`'s product and, on success, advances that entry to the qty
+// step. Shared by the button-reply path (product ID known from the payload) and the typed-text
+// fallback path (product ID inferred as the most recently prompted pending entry).
+// session.state is kept in sync with entry.step — the typed-text fallback (which has no product ID
+// of its own) relies on session.state to decide whether to look for an AWAITING_PRODUCT_SIZE or
+// AWAITING_PRODUCT_QTY entry, so it must reflect whichever entry was most recently touched.
+function applySizeSelection(session, entry, sizeInput) {
+    const product = entry.product;
+    const normalizedInput = normalizeSize(sizeInput);
+    const sizeList = (Array.isArray(product.sizes)
+        ? product.sizes
+        : String(product.sizes).split(',').map(s => s.trim())
+    ).filter(Boolean);
+    const matchedSize = sizeList.find(s => normalizeSize(s) === normalizedInput);
+
+    if (!matchedSize) {
+        const rawSizes = sizeList.map(s => s.toUpperCase());
+        const sizeButtonsOrList = sizeList.length <= 3 ? `Choose from: ${rawSizes.join(', ')}` : `Please select a size from the options below.`;
+        session.state = entry.step;
+        return {
+            replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${rawSizes.join(', ')}\n\n${sizeButtonsOrList}`,
+            sendImages: []
+        };
+    }
+
+    entry.size = matchedSize.toUpperCase();
+    entry.step = 'AWAITING_PRODUCT_QTY';
+    session.state = entry.step;
+    return renderQtyPrompt(entry);
+}
+
+// Validates a qty reply (already known to be a valid 1-99 integer) against `entry`, finalizes it
+// straight into the cart, and either prompts the next queued product's size or — once nothing is
+// left pending — runs the same post-add-to-cart / cross-sell flow the old single-queue code did.
+async function applyQtySelection(session, products, entry, qty) {
+    const product = entry.product;
+    session.cart = session.cart || [];
+    session.cart.push({
+        id: product.id,
+        name: product.name,
+        product: product.name,
+        size: entry.size || 'M',
+        qty,
+        price: Number(product.price),
+        color: product.color || ''
+    });
+    delete session.pendingSelections[String(product.id)];
+
+    const nextPrompt = await promptNextQueuedProduct(session, products);
+    if (nextPrompt) return nextPrompt;
+
+    const remaining = Object.values(session.pendingSelections);
+    if (remaining.length > 0) {
+        // Other product(s) are still mid-flow (e.g. an interleaved selection) — they already have
+        // their own live prompt to answer, so just acknowledge this one rather than re-prompting.
+        // Sync session.state to the last-remaining entry so a plain typed reply (no product ID)
+        // still resolves to the right one via getMostRecentPending.
+        session.state = remaining[remaining.length - 1].step;
+        const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
+        return { replyText: `✅ *${addedName}* (${entry.size}) x${qty} added to cart.`, sendImages: [] };
+    }
+
+    // Check if this addition came from a cross-sell suggestion
+    if (session.fromCrossSell) {
+        session.fromCrossSell = false;
+        return await showCartSummaryWithCrossSell(session, products);
+    }
+
+    // Otherwise, normal post add-to-cart flow: check for matching deals using existing cross-sell logic
+    if (!session.crossSellShown) {
+        const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
+        const excludedIds = session.cart.map(item => item.id);
+        const offer = getCrossSellOffer(product, uniqueProducts, excludedIds);
+        const candidates = offer?.candidates || [];
+
+        if (candidates.length > 0) {
+            let promoCategory = offer?.promoCategory || 'Pants';
+            session.promoCategory = promoCategory;
+
+            const sortedCandidates = candidates
+                .map(p => ({ product: p, score: getRecommendationScore(product, p, uniqueProducts) }))
+                .sort((a, b) => b.score - a.score)
+                .map(item => item.product);
+
+            let promoCandidates = pickRandomTopCandidates(sortedCandidates);
+
+            if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
+                const uniquePromoCandidates = [];
+                const seenIds = new Set();
+                for (const p of promoCandidates) {
+                    if (!seenIds.has(p.id)) {
+                        seenIds.add(p.id);
+                        uniquePromoCandidates.push(p);
+                    }
+                }
+                promoCandidates = uniquePromoCandidates;
+            }
+
+            let collageUrl = null;
+            if (promoCandidates.length > 1) {
+                collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
+            } else if (promoCandidates.length === 1) {
+                collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
+            }
+
+            session.subCategories = getAllSubCategoriesList(products);
+            session.selectedParentCategory = null;
+            session.state = "AWAITING_SUBCATEGORY_SELECTION";
+            session.pendingProduct = null;
+            session.isRecommendation = false;
+            session.crossSellShown = true;
+            session.cartCrossSellShown = true;
+
+            const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
+
+            let promoEmoji = '🛍️';
+            if (promoCategory === 'Shirts') promoEmoji = '👕';
+            if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
+            if (promoCategory === 'T-Shirts') promoEmoji = '👕';
+            if (promoCategory === 'Shorts') promoEmoji = '🩳';
+
+            const promoKeyword = promoCategory.toUpperCase();
+
+            let bodyText = `✅ *${addedName}* added to cart.\n\n`;
+            bodyText += `🔥 Special Offer!\n`;
+            bodyText += `Matching Collection Available`;
+
+            return {
+                sendButtons: {
+                    body: bodyText,
+                    buttons: [
+                        { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
+                        { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
+                    ]
+                },
+                sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
+                cart: session.cart
+            };
+        }
+    }
+
+    session.state = "AWAITING_POST_ADD_TO_CART_DECISION";
+    return await getStatePrompt(session, products);
+}
+
+// Routes a size_<id>_<value> button/list reply directly to its pendingSelections entry,
+// independent of session.state. Returns null if productId isn't a recognized pending entry (e.g.
+// a stale button from a long-finished flow), so the caller falls through to normal routing.
+function handleSizeReply(session, productId, sizeValue) {
+    session.pendingSelections = session.pendingSelections || {};
+    const entry = session.pendingSelections[productId];
+    if (!entry) return null;
+    return applySizeSelection(session, entry, sizeValue);
+}
+
+// Routes a qty_<id>_<value> button/list reply directly to its pendingSelections entry,
+// independent of session.state. Returns null if productId isn't a recognized pending entry.
+async function handleQtyReply(session, products, productId, qty) {
+    session.pendingSelections = session.pendingSelections || {};
+    const entry = session.pendingSelections[productId];
+    if (!entry) return null;
+    return await applyQtySelection(session, products, entry, qty);
 }
 
 // True when the session is sitting at the flat top-level category menu (no parent/subcategory chosen yet)
@@ -2219,98 +2506,17 @@ async function getStatePrompt(session, products) {
             };
         }
         case "AWAITING_PRODUCT_SIZE": {
-            const queue = session.orderingQueue || [];
-            const currentIndex = session.orderingIndex || 0;
-            const currentItem = queue[currentIndex];
-            if (!currentItem) return { replyText: "Please select a category to start shopping.", sendImages: [] };
-            const product = currentItem.product;
-            const sizeList = (Array.isArray(product.sizes)
-                ? product.sizes
-                : String(product.sizes).split(',').map(s => s.trim())
-            ).filter(Boolean);
-
-            const body = `📐 *${product.name}*\n\nPlease select your size:`;
-
-            let sendImages = [];
-            if (currentIndex === 0) {
-                if (queue.length > 1) {
-                    const collageUrl = await createPromoCollage(queue.map(item => item.product), products);
-                    if (collageUrl) {
-                        sendImages = [{ url: collageUrl, caption: "Selected items" }];
-                    }
-                } else {
-                    const imgUri = getProductImageUri(product, products);
-                    if (imgUri) {
-                        sendImages = [{ url: imgUri, caption: product.name }];
-                    }
-                }
-            }
-
-            if (sizeList.length <= 3) {
-                return {
-                    sendButtons: {
-                        body,
-                        buttons: sizeList.map(s => ({ id: s.toUpperCase(), title: s.toUpperCase() }))
-                    },
-                    sendImages
-                };
-            } else {
-                const sections = [
-                    {
-                        title: "Available Sizes",
-                        rows: sizeList.map(s => ({
-                            id: s.toUpperCase(),
-                            title: s.toUpperCase(),
-                            description: `Select size ${s.toUpperCase()}`
-                        }))
-                    }
-                ];
-                return {
-                    sendList: {
-                        body,
-                        buttonText: "Choose Size",
-                        sections
-                    },
-                    sendImages
-                };
-            }
+            // Reachable here only via indirect callers (e.g. CHECKOUT/FAQ "continue shopping"
+            // reminders) re-rendering whatever the customer was last doing — the main flow renders
+            // size prompts directly via renderSizePrompt/enqueueProductsForOrdering instead.
+            const entry = getMostRecentPending(session, 'AWAITING_PRODUCT_SIZE');
+            if (!entry) return { replyText: "Please select a category to start shopping.", sendImages: [] };
+            return await renderSizePrompt(entry, null, products);
         }
         case "AWAITING_PRODUCT_QTY": {
-            const queue = session.orderingQueue || [];
-            const currentIndex = session.orderingIndex || 0;
-            const currentItem = queue[currentIndex];
-            if (!currentItem) return { replyText: "Please select a category to start shopping.", sendImages: [] };
-            const product = currentItem.product;
-            const size = session.selectedSize || 'N/A';
-
-            const body = `📐 *${product.name}*\nSelected Size: *${size}*\n\nPlease select the quantity you want to purchase:`;
-
-            const sections = [
-                {
-                    title: "Select Quantity",
-                    rows: [
-                        { id: "qty_1", title: "1", description: "Qty: 1" },
-                        { id: "qty_2", title: "2", description: "Qty: 2" },
-                        { id: "qty_3", title: "3", description: "Qty: 3" },
-                        { id: "qty_4", title: "4", description: "Qty: 4" },
-                        { id: "qty_5", title: "5", description: "Qty: 5" },
-                        { id: "qty_6", title: "6", description: "Qty: 6" },
-                        { id: "qty_7", title: "7", description: "Qty: 7" },
-                        { id: "qty_8", title: "8", description: "Qty: 8" },
-                        { id: "qty_9", title: "9", description: "Qty: 9" },
-                        { id: "qty_10", title: "10", description: "Qty: 10" }
-                    ]
-                }
-            ];
-
-            return {
-                sendList: {
-                    body,
-                    buttonText: "Choose Qty",
-                    sections
-                },
-                sendImages: []
-            };
+            const entry = getMostRecentPending(session, 'AWAITING_PRODUCT_QTY');
+            if (!entry) return { replyText: "Please select a category to start shopping.", sendImages: [] };
+            return renderQtyPrompt(entry);
         }
         case "AWAITING_ORDER_CONFIRMATION": {
             let summaryText = `🛒 *Order Summary:*\n\n`;
@@ -2544,8 +2750,7 @@ async function handleIntent(intentResult, session, products, from) {
                 session.cartCrossSellShown = false;
                 session.fromCrossSell = false;
                 session.orderingQueue = [];
-                session.orderingIndex = 0;
-                session.orderingCart = [];
+                session.pendingSelections = {};
                 session.subCategories = null;
                 session.selectedParentCategory = null;
                 session.selectedSubCategory = null;
@@ -2902,12 +3107,27 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     session.crossSellShown = session.crossSellShown || false;
     session.promoCategory = session.promoCategory || null;
     session.orderingQueue = session.orderingQueue || [];
-    session.orderingIndex = session.orderingIndex || 0;
-    session.orderingCart = session.orderingCart || [];
+    session.pendingSelections = session.pendingSelections || {};
 
     // Backward compatibility for stale recommendation states
     if (session.state === "AWAITING_RECOMMENDATION_CONFIRM" || session.state === "AWAITING_COMBO_CART_CONFIRM") {
         session.state = "AWAITING_MORE_ITEMS";
+    }
+
+    // ─── Size/Qty button replies are routed directly by the product ID embedded in the button's
+    // id (size_<productId>_<SIZE>, qty_<productId>_<N>) — independent of session.state. This lets
+    // two products be mid-flow (size/qty) at once without one clobbering the other, since each
+    // reply unambiguously names which pendingSelections entry it belongs to. Checked before order
+    // tracking / intent detection so neither can ever intercept these structured payloads.
+    const sizeReplyMatch = textLower.match(/^size_(\d+)_(.+)$/);
+    if (sizeReplyMatch) {
+        const reply = handleSizeReply(session, sizeReplyMatch[1], sizeReplyMatch[2]);
+        if (reply) return reply;
+    }
+    const qtyReplyMatch = textLower.match(/^qty_(\d+)_(\d+)$/);
+    if (qtyReplyMatch) {
+        const reply = await handleQtyReply(session, products, qtyReplyMatch[1], parseInt(qtyReplyMatch[2], 10));
+        if (reply) return reply;
     }
 
     // ─── Order Tracking Lookup (checked EARLY, before any other intent matching) ───
@@ -2976,9 +3196,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const choice = textLower.trim();
         if (choice === 'cancel_continue_shopping' || choice.includes('continue') || choice === '1') {
             session.cart = [];
-            session.orderingCart = [];
             session.orderingQueue = [];
-            session.orderingIndex = 0;
+            session.pendingSelections = {};
             session.pendingProduct = null;
             session.selectedSize = null;
             session.selectedColor = null;
@@ -3017,9 +3236,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (session.state === "AWAITING_CANCEL_PENDING_DECISION") {
         const choice = textLower.trim();
         if (choice === 'cancel_continue_shopping' || choice.includes('continue') || choice === '1') {
-            session.orderingCart = [...(session.cart || [])];
             session.orderingQueue = [];
-            session.orderingIndex = 0;
+            session.pendingSelections = {};
             session.pendingProduct = null;
             session.selectedSize = null;
             session.selectedColor = null;
@@ -3039,9 +3257,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             return await startCheckout(session, from, products);
         } else if (choice === 'cancel_clear_exit' || choice.includes('clear') || choice === '3') {
             session.cart = [];
-            session.orderingCart = [];
             session.orderingQueue = [];
-            session.orderingIndex = 0;
+            session.pendingSelections = {};
             return {
                 replyText: "Your cart has been cleared. Goodbye! 😊",
                 sendImages: [],
@@ -3210,8 +3427,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             return await startCheckout(session, from, products);
         } else if (choice === "cancel_order" || choice.includes("cancel") || choice === "3") {
             session.cart = [];
-            session.orderingCart = [];
-            session.orderingIndex = 0;
+            session.orderingQueue = [];
+            session.pendingSelections = {};
             session.pendingProduct = null;
             session.selectedSize = null;
             session.fromCrossSell = false;
@@ -3360,14 +3577,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
                 // Auto-select if only 1 product — skip the product list and go straight to size
                 if (matched.length === 1) {
-                    session.orderingQueue = [{ displayNum: 1, product: matched[0] }];
-                    session.orderingIndex = 0;
-                    session.orderingCart = [...(session.cart || [])];
-                    session.state = "AWAITING_PRODUCT_SIZE";
-                    session.fromCrossSell = false;
-                    session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
-                    session.cartCrossSellShown = false;
-                    return await getStatePrompt(session, products);
+                    return await enqueueProductsForOrdering(session, products, [matched[0]]);
                 }
 
                 session.state = "AWAITING_MODEL_SELECTION";
@@ -3425,21 +3635,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const validSelections = selections.filter(idx => idx >= 1 && idx <= maxVal);
 
             if (validSelections.length > 0) {
-                // Construct ordering queue
-                const queue = validSelections.map(idx => ({
-                    displayNum: idx,
-                    product: session.searchProducts[idx - 1]
-                }));
-
-                session.orderingQueue = queue;
-                session.orderingIndex = 0;
-                session.orderingCart = [...(session.cart || [])];
-                session.state = "AWAITING_PRODUCT_SIZE";
-                session.fromCrossSell = false;
-                session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
-                session.cartCrossSellShown = false;
-
-                return await getStatePrompt(session, products);
+                const newProducts = validSelections.map(idx => session.searchProducts[idx - 1]);
+                return await enqueueProductsForOrdering(session, products, newProducts);
             } else {
                 // The number didn't match a product on this list — it might still be a valid
                 // category number from the main flat subcategory menu (e.g. customer is viewing
@@ -3460,206 +3657,32 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         }
     }
 
-    // STATE: AWAITING_PRODUCT_SIZE
+    // STATE: AWAITING_PRODUCT_SIZE (typed input, e.g. "M" — no product ID attached, unlike
+    // size_<id>_<value> button replies which are routed earlier in the function instead)
     if (session.state === "AWAITING_PRODUCT_SIZE") {
-        const queue = session.orderingQueue || [];
-        const currentIndex = session.orderingIndex || 0;
-        const currentItem = queue[currentIndex];
+        const entry = getMostRecentPending(session, 'AWAITING_PRODUCT_SIZE');
+        if (!entry) {
+            return goToFlatSubcategoryList(session, products, "Something went wrong. Let's restart.");
+        }
+        return applySizeSelection(session, entry, textLower.trim());
+    }
 
-        if (!currentItem) {
+    // STATE: AWAITING_PRODUCT_QTY (typed input, e.g. "3" — see note above)
+    if (session.state === "AWAITING_PRODUCT_QTY") {
+        const entry = getMostRecentPending(session, 'AWAITING_PRODUCT_QTY');
+        if (!entry) {
             return goToFlatSubcategoryList(session, products, "Something went wrong. Let's restart.");
         }
 
-        const product = currentItem.product;
-        const sizeInput = textLower.trim();
-        const normalizedInput = normalizeSize(sizeInput);
-        const sizeList = (Array.isArray(product.sizes)
-            ? product.sizes
-            : String(product.sizes).split(',').map(s => s.trim())
-        ).filter(Boolean);
-        const matchedSize = sizeList.find(s => normalizeSize(s) === normalizedInput);
-
-        if (!matchedSize) {
-            const rawSizes = sizeList.map(s => s.toUpperCase());
-            const sizeButtonsOrList = sizeList.length <= 3 ? `Choose from: ${rawSizes.join(', ')}` : `Please select a size from the options below.`;
+        const typedQty = parseInt(textLower.trim(), 10);
+        if (isNaN(typedQty) || typedQty <= 0 || typedQty >= 100) {
             return {
-                replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${rawSizes.join(', ')}\n\n${sizeButtonsOrList}`,
-                sendImages: []
+                replyText: `⚠️ Invalid quantity. Please select a quantity from the list or type a number:`,
+                ...renderQtyPrompt(entry)
             };
         }
 
-        session.selectedSize = matchedSize.toUpperCase();
-        session.tempQty = 1;
-        session.state = "AWAITING_PRODUCT_QTY";
-
-        return await getStatePrompt(session, products);
-    }
-
-    // STATE: AWAITING_PRODUCT_QTY
-    if (session.state === "AWAITING_PRODUCT_QTY") {
-        const queue = session.orderingQueue || [];
-        const currentIndex = session.orderingIndex || 0;
-        const currentItem = queue[currentIndex];
-
-        if (!currentItem) {
-            return goToFlatSubcategoryList(session, products, "Something went wrong. Let's restart.");
-        }
-
-        const product = currentItem.product;
-
-        // Parse selected quantity
-        let selectedQty = 1;
-        const matchQty = textLower.match(/^qty_(\d+)$/);
-        if (matchQty) {
-            selectedQty = parseInt(matchQty[1], 10);
-        } else {
-            const typedQty = parseInt(textLower.trim(), 10);
-            if (!isNaN(typedQty) && typedQty > 0 && typedQty < 100) {
-                selectedQty = typedQty;
-            } else {
-                // Fallback for invalid input in quantity stage
-                const size = session.selectedSize || 'N/A';
-                const body = `📐 *${product.name}*\nSelected Size: *${size}*\n\nPlease select the quantity you want to purchase:`;
-                const sections = [
-                    {
-                        title: "Select Quantity",
-                        rows: [
-                            { id: "qty_1", title: "1", description: "Qty: 1" },
-                            { id: "qty_2", title: "2", description: "Qty: 2" },
-                            { id: "qty_3", title: "3", description: "Qty: 3" },
-                            { id: "qty_4", title: "4", description: "Qty: 4" },
-                            { id: "qty_5", title: "5", description: "Qty: 5" },
-                            { id: "qty_6", title: "6", description: "Qty: 6" },
-                            { id: "qty_7", title: "7", description: "Qty: 7" },
-                            { id: "qty_8", title: "8", description: "Qty: 8" },
-                            { id: "qty_9", title: "9", description: "Qty: 9" },
-                            { id: "qty_10", title: "10", description: "Qty: 10" }
-                        ]
-                    }
-                ];
-                return {
-                    replyText: `⚠️ Invalid quantity. Please select a quantity from the list or type a number:`,
-                    sendList: {
-                        body,
-                        buttonText: "Choose Qty",
-                        sections
-                    },
-                    sendImages: []
-                };
-            }
-        }
-
-        // Successfully parsed quantity! Add to cart.
-        session.orderingCart = session.orderingCart || [];
-        session.orderingCart.push({
-            id: product.id,
-            name: product.name,
-            product: product.name,
-            size: session.selectedSize || 'M',
-            qty: selectedQty,
-            price: Number(product.price),
-            color: product.color || ''
-        });
-
-        const nextIndex = currentIndex + 1;
-        session.orderingIndex = nextIndex;
-
-        if (nextIndex < queue.length) {
-            session.selectedSize = null;
-            session.tempQty = 1;
-            session.state = "AWAITING_PRODUCT_SIZE";
-            return await getStatePrompt(session, products);
-        } else {
-            session.cart = session.orderingCart;
-
-            // Check if this addition came from a cross-sell suggestion
-            if (session.fromCrossSell) {
-                session.fromCrossSell = false;
-                // Transition directly to AWAITING_CART_SUMMARY_DECISION
-                return await showCartSummaryWithCrossSell(session, products);
-            }
-
-            // Otherwise, normal post add-to-cart flow: check for matching deals using existing cross-sell logic
-            if (!session.crossSellShown) {
-                const uniqueProducts = [...new Map(products.map(p => [p.id, p])).values()];
-                const excludedIds = session.cart.map(item => item.id);
-                const offer = getCrossSellOffer(product, uniqueProducts, excludedIds);
-                const candidates = offer?.candidates || [];
-
-                if (candidates.length > 0) {
-                    let promoCategory = offer?.promoCategory || 'Pants';
-
-                    session.promoCategory = promoCategory;
-
-                    // Score and sort candidates by color and style compatibility
-                    const sortedCandidates = candidates
-                        .map(p => ({ product: p, score: getRecommendationScore(product, p, uniqueProducts) }))
-                        .sort((a, b) => b.score - a.score)
-                        .map(item => item.product);
-
-                    // Randomly pick 4 from the top 8 scored recommendations for variety
-                    let promoCandidates = pickRandomTopCandidates(sortedCandidates);
-
-                    // Validation: Ensure unique product IDs inside collage
-                    if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
-                        const uniquePromoCandidates = [];
-                        const seenIds = new Set();
-                        for (const p of promoCandidates) {
-                            if (!seenIds.has(p.id)) {
-                                seenIds.add(p.id);
-                                uniquePromoCandidates.push(p);
-                            }
-                        }
-                        promoCandidates = uniquePromoCandidates;
-                    }
-
-                    let collageUrl = null;
-                    if (promoCandidates.length > 1) {
-                        collageUrl = await createPromoCollage(promoCandidates, uniqueProducts);
-                    } else if (promoCandidates.length === 1) {
-                        collageUrl = getProductImageUri(promoCandidates[0], uniqueProducts);
-                    }
-
-                    session.subCategories = getAllSubCategoriesList(products);
-                    session.selectedParentCategory = null;
-                    session.state = "AWAITING_SUBCATEGORY_SELECTION";
-                    session.pendingProduct = null;
-                    session.selectedSize = null;
-                    session.isRecommendation = false;
-                    session.crossSellShown = true;
-                    session.cartCrossSellShown = true;
-
-                    const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
-
-                    let promoEmoji = '🛍️';
-                    if (promoCategory === 'Shirts') promoEmoji = '👕';
-                    if (promoCategory === 'Pants' || promoCategory === 'Jeans') promoEmoji = '👖';
-                    if (promoCategory === 'T-Shirts') promoEmoji = '👕';
-                    if (promoCategory === 'Shorts') promoEmoji = '🩳';
-
-                    const promoKeyword = promoCategory.toUpperCase();
-
-                    let bodyText = `✅ *${addedName}* added to cart.\n\n`;
-                    bodyText += `🔥 Special Offer!\n`;
-                    bodyText += `Matching Collection Available`;
-
-                    return {
-                        sendButtons: {
-                            body: bodyText,
-                            buttons: [
-                                { id: promoKeyword, title: `${promoEmoji} VIEW ${promoKeyword}` },
-                                { id: 'CHECKOUT', title: '🛒 CHECKOUT' }
-                            ]
-                        },
-                        sendImages: collageUrl ? [{ url: collageUrl, caption: `${promoCategory} trending collection` }] : [],
-                        cart: session.cart
-                    };
-                }
-            }
-
-            session.state = "AWAITING_POST_ADD_TO_CART_DECISION";
-            return await getStatePrompt(session, products);
-        }
+        return await applyQtySelection(session, products, entry, typedQty);
     }
 
     // STATE: AWAITING_ORDER_CONFIRMATION
@@ -3678,18 +3701,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else if (isModify) {
             session.cart = [];
-            session.orderingCart = [];
             session.orderingQueue = [];
-            session.orderingIndex = 0;
+            session.pendingSelections = {};
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
 
             return goToFlatSubcategoryList(session, products, "Let's modify your order. Please select a category to continue shopping:");
         } else if (isCancel) {
             session.cart = [];
-            session.orderingCart = [];
             session.orderingQueue = [];
-            session.orderingIndex = 0;
+            session.pendingSelections = {};
             session.subCategories = getAllSubCategoriesList(products);
             session.selectedParentCategory = null;
             session.state = "AWAITING_SUBCATEGORY_SELECTION";
@@ -3736,16 +3757,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             if (selectedProductId) {
                 const product = products.find(p => p.id === selectedProductId);
                 if (product) {
-                    const queue = [{
-                        displayNum: selectedNum,
-                        product: product
-                    }];
-                    session.orderingQueue = queue;
-                    session.orderingIndex = 0;
-                    session.orderingCart = [...(session.cart || [])];
-                    session.state = "AWAITING_PRODUCT_SIZE";
                     session.isRecommendation = true;
-                    return await getStatePrompt(session, products);
+                    return await enqueueProductsForOrdering(session, products, [product]);
                 }
             }
         }
@@ -4165,9 +4178,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // GREETING ("hi", "hello", etc.)
     if (isGreeting) {
         session.cart = [];
-        session.orderingCart = [];
         session.orderingQueue = [];
-        session.orderingIndex = 0;
+        session.pendingSelections = {};
         session.pendingProduct = null;
         session.selectedSize = null;
         session.crossSellShown = false;
@@ -4286,40 +4298,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
 
     // SMART FALLBACKS & GENERAL FALLBACKS
-    if (session.state === "AWAITING_PRODUCT_SIZE") {
-        const queue = session.orderingQueue || [];
-        const currentIndex = session.orderingIndex || 0;
-        const currentItem = queue[currentIndex];
-        const product = currentItem ? currentItem.product : null;
-        if (product) {
-            const sizeList = (Array.isArray(product.sizes) ? product.sizes : String(product.sizes).split(',')).map(s => s.trim().toUpperCase());
-            return {
-                replyText: `❌ Invalid size selection. Please choose a valid size for ${product.name} from the options:\n${sizeList.join(', ')}`,
-                sendImages: []
-            };
-        }
-    }
-    if (session.state === "AWAITING_PRODUCT_QTY") {
-        const queue = session.orderingQueue || [];
-        const currentIndex = session.orderingIndex || 0;
-        const currentItem = queue[currentIndex];
-        const product = currentItem ? currentItem.product : null;
-        const currentQty = session.tempQty || 1;
-        if (product) {
-            return {
-                replyText: `⚠️ Invalid response. Please use the buttons below to change the quantity or confirm your selection:`,
-                sendButtons: {
-                    body: `📐 *${product.name}*\nSelected Size: *${session.selectedSize || 'N/A'}*\nSelected Qty: *${currentQty}*\n\nUse the buttons below to change quantity or confirm:`,
-                    buttons: [
-                        { id: 'qty_minus', title: '➖ Qty' },
-                        { id: 'qty_plus', title: '➕ Qty' },
-                        { id: 'qty_confirm', title: `✅ Confirm: ${currentQty}` }
-                    ]
-                },
-                sendImages: []
-            };
-        }
-    }
     if (session.state === "AWAITING_POST_ADD_TO_CART_DECISION") {
         return {
             replyText: `⚠️ Invalid option. Please choose one of the options below:`,
