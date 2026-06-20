@@ -1445,6 +1445,45 @@ function goToFlatSubcategoryList(session, products, bodyPrefix) {
         : makeAllSubcategoriesPlainTextResponse(subs);
 }
 
+// Resolves a 1-based index against the full flat subcategory menu (the same array used for the
+// main "Select a Category" menu) and transitions the session into that subcategory's product
+// flow. Used as a fallback when a number typed inside an unrelated product list doesn't match
+// any product there but does match a category number — so the customer jumps straight into that
+// category instead of seeing a confusing "invalid product number" error.
+// Returns undefined if idx isn't a valid category index (caller should fall through to its own
+// invalid-selection message); otherwise returns the response to send.
+async function enterSubCategoryByIndex(session, products, idx, allSubs) {
+    if (!(idx >= 0 && idx < allSubs.length)) return undefined;
+    const selectedSub = allSubs[idx];
+    const matched = products.filter(p => Number(p.stock) > 0 && productMatchesSubCategory(p, selectedSub));
+
+    if (matched.length === 0) {
+        return { replyText: "We are sorry, but this subcategory is currently out of stock. 😔", sendImages: [] };
+    }
+
+    session.selectedSubCategory = selectedSub;
+    session.selectedParentCategory = getParentCategory(selectedSub);
+    session.currentPage = 0;
+    session.searchProducts = matched;
+
+    // Auto-select if only 1 product — skip the product list and go straight to size
+    if (matched.length === 1) {
+        session.orderingQueue = [{ displayNum: 1, product: matched[0] }];
+        session.orderingIndex = 0;
+        session.orderingCart = [...(session.cart || [])];
+        session.state = "AWAITING_PRODUCT_SIZE";
+        session.fromCrossSell = false;
+        session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
+        session.cartCrossSellShown = false;
+        return await getStatePrompt(session, products);
+    }
+
+    session.state = "AWAITING_MODEL_SELECTION";
+    const emoji = getCategoryEmoji(session.selectedParentCategory || '');
+    const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`);
+}
+
 // True when the session is sitting at the flat top-level category menu (no parent/subcategory chosen yet)
 const isAtTopLevelMenu = (session) => session.state === "AWAITING_SUBCATEGORY_SELECTION" && !session.selectedParentCategory;
 
@@ -3402,6 +3441,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
                 return await getStatePrompt(session, products);
             } else {
+                // The number didn't match a product on this list — it might still be a valid
+                // category number from the main flat subcategory menu (e.g. customer is viewing
+                // "Five Sleeve T Shirt" products but types "12", which is actually a different
+                // category like "Polo T-shirts (pocket)"). Jump straight into that category.
+                if (selections.length === 1) {
+                    const allSubs = getAllSubCategoriesList(products);
+                    const categoryJump = await enterSubCategoryByIndex(session, products, selections[0] - 1, allSubs);
+                    if (categoryJump) return categoryJump;
+                }
+
                 const max = session.searchProducts?.length || 1;
                 return {
                     replyText: `⚠️ Invalid selection. Please choose a product number from 1 to ${max}. 😊`,
