@@ -2442,6 +2442,15 @@ function extractOrderId(rawText, skipBareNumber = false) {
     return null;
 }
 
+// True when the customer's text contains more than one number (e.g. "2 and 7", "2,7", "2 & 7"),
+// so we can nudge them to send one at a time instead of showing a generic invalid-format error.
+const hasMultipleNumbers = (text) => {
+    const matches = (text || '').match(/\d+/g);
+    return !!matches && matches.length > 1;
+};
+
+const MULTIPLE_NUMBERS_REPLY = `😊 Please reply with just ONE number at a time.\n\nFor example, type *2* to see that category first. Once you're done, you can type another number like *7* to browse that category too!`;
+
 const ORDER_STATUS_MESSAGES = {
     pending: 'Your order is being processed. It will be shipped soon!',
     confirmed: 'Your order is confirmed and being prepared for shipping.',
@@ -3910,13 +3919,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
     if (session.state === "AWAITING_MODEL_SELECTION") {
         return {
-            replyText: `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
+            replyText: hasMultipleNumbers(textLower) ? MULTIPLE_NUMBERS_REPLY : `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
             sendImages: []
         };
     }
     if (session.state === "AWAITING_SUBCATEGORY_SELECTION") {
         return {
-            replyText: `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
+            replyText: hasMultipleNumbers(textLower) ? MULTIPLE_NUMBERS_REPLY : `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
             sendImages: []
         };
     }
