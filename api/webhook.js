@@ -1547,8 +1547,13 @@ function detectIntent(text, products = [], session = null) {
 
     // Order Help submenu: while awaiting a 1-4 choice, intercept it BEFORE any other routing
     // (category numbers, search, cart flow) so it can't be mistaken for a subcategory/product pick.
-    if (session && session.awaitingOrderHelpChoice && /^[1-4]$/.test(t)) {
-        return { type: 'ORDER_HELP_CHOICE', choice: t };
+    // Anything other than a 1-4 digit clears the flag here and falls through to normal routing,
+    // so a stale flag can't hijack a later category/product number.
+    if (session && session.awaitingOrderHelpChoice) {
+        if (/^[1-4]$/.test(t)) {
+            return { type: 'ORDER_HELP_CHOICE', choice: t };
+        }
+        session.awaitingOrderHelpChoice = false;
     }
 
     // Intro menu triggers (the two buttons shown on greeting)
@@ -2453,7 +2458,10 @@ async function handleIntent(intentResult, session, products, from) {
             };
         }
         case 'ORDER_HELP_CHOICE': {
-            session.awaitingOrderHelpChoice = false;
+            // Keep the flag armed after 1-3 so the customer can immediately type another digit
+            // (the FAQ reply text itself invites this: "Reply 4 to talk to our team"). Only
+            // choice 4 (terminal — hands off to a human) clears it.
+            session.awaitingOrderHelpChoice = intentResult.choice !== '4';
             console.log('[IntroMenu] Order Help choice selected:', intentResult.choice, 'for', from);
             return await handleOrderHelpChoice(intentResult.choice, from);
         }
