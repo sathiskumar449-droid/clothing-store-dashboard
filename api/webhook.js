@@ -1310,6 +1310,19 @@ const getCategoryEmoji = (parentCategory) => {
     return '🛍️';
 };
 
+// A product can carry multiple WooCommerce categories (e.g. ["New Arrival", "Polo Fit Pant"]),
+// but only one of them is collapsed into the singular p.category field at sync time
+// (see getPrimaryCategory in api/products.js). Matching subcategory selection against
+// p.category alone silently drops products whose chosen subcategory wasn't picked as
+// "primary" — checking the full categories array (case/whitespace-insensitive) catches all of them.
+const productMatchesSubCategory = (p, subCategory) => {
+    const target = (subCategory || '').toLowerCase().trim();
+    const cats = Array.isArray(p.categories) && p.categories.length > 0
+        ? p.categories
+        : [p.category];
+    return cats.some(c => (c || '').toLowerCase().trim() === target);
+};
+
 // Helper to calculate active category counts
 export const getCategoryCounts = (products) => {
     const categoryCounts = {};
@@ -3133,7 +3146,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             // If only 1 subcategory, skip the list and go directly to products
             if (subs.length === 1) {
                 const selectedSub = subs[0];
-                const matched = products.filter(p => Number(p.stock) > 0 && p.category === selectedSub);
+                const matched = products.filter(p => Number(p.stock) > 0 && productMatchesSubCategory(p, selectedSub));
                 if (matched.length > 0) {
                     session.selectedSubCategory = selectedSub;
                     session.state = "AWAITING_MODEL_SELECTION";
@@ -3298,7 +3311,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const idx = parseInt(textLower, 10) - 1;
         if (session.subCategories && idx >= 0 && idx < session.subCategories.length) {
             const selectedSub = session.subCategories[idx];
-            const matched = products.filter(p => Number(p.stock) > 0 && p.category === selectedSub);
+            const matched = products.filter(p => Number(p.stock) > 0 && productMatchesSubCategory(p, selectedSub));
 
             if (matched.length > 0) {
                 session.selectedSubCategory = selectedSub;
