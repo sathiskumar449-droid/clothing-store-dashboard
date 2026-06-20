@@ -1275,7 +1275,19 @@ export const getSortedParents = (categoryCounts) => {
     return parents;
 };
 
-// Helper to compute the full flat list of WooCommerce subcategory names (in-stock only)
+// Fixed display order + bold headers for the flat subcategory menu. Anything whose
+// getParentCategory() isn't one of these (e.g. New Arrivals leftovers) falls into "Other".
+const SUBCATEGORY_GROUP_ORDER = ['Shirts', 'T-Shirts', 'Pants', 'Shorts'];
+const SUBCATEGORY_GROUP_HEADERS = {
+    'Shirts': '*👔 Shirts*',
+    'T-Shirts': '*👕 T-Shirts*',
+    'Pants': '*🧍 Pants*',
+    'Shorts': '*🩳 Shorts*'
+};
+
+// Helper to compute the full flat list of WooCommerce subcategory names (in-stock only),
+// excluding "New Arrival(s)" entirely and pre-sorted into the fixed group display order
+// so this is the single source of truth for both the rendered menu and the numeric lookup.
 export const getAllSubCategoriesList = (products) => {
     const counts = {};
     products.forEach(p => {
@@ -1285,8 +1297,21 @@ export const getAllSubCategoriesList = (products) => {
             counts[sub] = (counts[sub] || 0) + 1;
         }
     });
-    const subs = Object.keys(counts).filter(sub => counts[sub] > 0 && sub.toLowerCase().trim() !== 'men');
-    subs.sort((a, b) => a.localeCompare(b));
+    const subs = Object.keys(counts).filter(sub => {
+        if (counts[sub] <= 0) return false;
+        const subLower = sub.toLowerCase().trim();
+        if (subLower === 'men') return false;
+        if (subLower === 'new arrival' || subLower === 'new arrivals') return false;
+        return true;
+    });
+    subs.sort((a, b) => {
+        const groupA = SUBCATEGORY_GROUP_ORDER.indexOf(getParentCategory(a));
+        const groupB = SUBCATEGORY_GROUP_ORDER.indexOf(getParentCategory(b));
+        const orderA = groupA === -1 ? SUBCATEGORY_GROUP_ORDER.length : groupA;
+        const orderB = groupB === -1 ? SUBCATEGORY_GROUP_ORDER.length : groupB;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.localeCompare(b);
+    });
     return subs;
 };
 
@@ -1294,13 +1319,31 @@ export const getAllSubCategoriesList = (products) => {
 // in WhatsApp for 1-10 but not 11+, so we avoid them to keep formatting consistent.
 const numberPrefix = (idx) => `${idx + 1}.`;
 
-function makeAllSubcategoriesPlainTextResponse(subs, bodyPrefix = "👋 Welcome to Super Collections.\n\nPlease select a category:") {
-    let replyText = `${bodyPrefix}\n\n`;
-    subs.forEach((sub, idx) => {
-        const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-        replyText += `${numberPrefix(idx)} ${capSub}\n`;
+function makeAllSubcategoriesPlainTextResponse(subs, bodyPrefix = "📋 *Select a Category*") {
+    const groupNames = [...SUBCATEGORY_GROUP_ORDER, 'Other'];
+    let idx = 0;
+    const groupBlocks = [];
+    groupNames.forEach(group => {
+        const groupSubs = subs.filter(sub => {
+            const parent = getParentCategory(sub);
+            return group === 'Other' ? !SUBCATEGORY_GROUP_ORDER.includes(parent) : parent === group;
+        });
+        if (groupSubs.length === 0) return;
+        const lines = [];
+        if (SUBCATEGORY_GROUP_HEADERS[group]) {
+            lines.push(SUBCATEGORY_GROUP_HEADERS[group]);
+        }
+        groupSubs.forEach(sub => {
+            const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+            lines.push(`${numberPrefix(idx)} ${capSub}`);
+            idx++;
+        });
+        groupBlocks.push(lines.join('\n'));
     });
-    replyText += `\nPlease reply with the number.`;
+
+    console.log('[SubcategoryMenu] Final filtered+sorted list:', subs.map((sub, sIdx) => `${sIdx + 1}. ${sub}`));
+
+    const replyText = `${bodyPrefix}\n\n${groupBlocks.join('\n\n')}\n\n_Please reply with the number._`;
     return {
         replyText,
         sendImages: [],
