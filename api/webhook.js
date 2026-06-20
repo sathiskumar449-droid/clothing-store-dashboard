@@ -1471,7 +1471,9 @@ function detectIntent(text, products = [], session = null) {
     }
 
     // 5. Category vs Search Intent
-    const parentCategories = ['New Arrivals', 'Shirts', 'Pants', 'T-Shirts'];
+    // T-Shirts must be checked before Shirts: "t-shirts" contains a word boundary right after the
+    // hyphen, so the \bShirt(s)?\b regex below would otherwise match it and misclassify as Shirts.
+    const parentCategories = ['New Arrivals', 'T-Shirts', 'Shirts', 'Pants'];
     let foundCategory = parentCategories.find(cat => {
         const catSingular = cat.endsWith('s') ? cat.slice(0, -1) : cat;
         const regex = new RegExp(`\\b${catSingular}(s)?\\b`, 'i');
@@ -1508,9 +1510,15 @@ function detectIntent(text, products = [], session = null) {
 
 function matchParentCategory(text, parentCategories) {
     const t = text.toLowerCase().trim();
+    // T-Shirts keys must come before the plain 'shirt'/'shirts' keys: t.includes('shirt') is true
+    // for "t-shirts" too, so checking 'shirt' first would misclassify T-Shirts input as Shirts.
     const mappings = {
         'new arrival': 'New Arrivals',
         'new arrivals': 'New Arrivals',
+        'tshirt': 'T-Shirts',
+        'tshirts': 'T-Shirts',
+        't-shirt': 'T-Shirts',
+        't-shirts': 'T-Shirts',
         'shirt': 'Shirts',
         'shirts': 'Shirts',
         'pant': 'Pants',
@@ -1519,10 +1527,6 @@ function matchParentCategory(text, parentCategories) {
         'phants': 'Pants',
         'jeans': 'Pants',
         'jean': 'Pants',
-        'tshirt': 'T-Shirts',
-        'tshirts': 'T-Shirts',
-        't-shirt': 'T-Shirts',
-        't-shirts': 'T-Shirts',
         'shorts': 'Pants',
         'short': 'Pants'
     };
