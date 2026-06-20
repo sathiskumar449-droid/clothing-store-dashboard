@@ -759,6 +759,19 @@ const COLOR_MATCHES = {
     'brown': ['white', 'black', 'grey', 'gray', 'navy', 'sandal', 'beige', 'cream']
 };
 
+const DARK_COLORS = ['black', 'navy', 'dark green', 'maroon', 'brown', 'olive', 'charcoal', 'dark grey', 'dark gray', 'dark blue', 'wine'];
+const LIGHT_COLORS = ['white', 'cream', 'beige', 'light grey', 'light gray', 'sky blue', 'lavender', 'pink', 'yellow', 'mint', 'peach'];
+
+const isDarkColor = (colorName) => {
+    const c = (colorName || '').toLowerCase().trim();
+    return DARK_COLORS.some(dc => c.includes(dc));
+};
+
+const isLightColor = (colorName) => {
+    const c = (colorName || '').toLowerCase().trim();
+    return LIGHT_COLORS.some(lc => c.includes(lc));
+};
+
 const getRecommendationScore = (addedProduct, candidate, products) => {
     let score = 0;
 
@@ -797,9 +810,26 @@ const getRecommendationScore = (addedProduct, candidate, products) => {
         } else if (c1 === c2) {
             score += 2;
         }
+
+        // Color contrast bonus: dark added product paired with a light candidate (or vice versa)
+        if ((isDarkColor(c1) && isLightColor(c2)) || (isLightColor(c1) && isDarkColor(c2))) {
+            score += 20;
+        }
     }
 
     return score;
+};
+
+// Picks `pickCount` random items from the top `poolSize` of a score-sorted list, so repeat
+// visits don't always surface the identical top candidates.
+const pickRandomTopCandidates = (sortedCandidates, poolSize = 8, pickCount = 4) => {
+    const pool = sortedCandidates.slice(0, poolSize);
+    const shuffled = [...pool];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled.slice(0, pickCount);
 };
 
 const getRecommendationsList = (addedProduct, allProducts, excludedIds = []) => {
@@ -3112,8 +3142,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                         .sort((a, b) => b.score - a.score)
                         .map(item => item.product);
 
-                    // Slice top 4 recommendations
-                    let promoCandidates = sortedCandidates.slice(0, 4);
+                    // Randomly pick 4 from the top 8 scored recommendations for variety
+                    let promoCandidates = pickRandomTopCandidates(sortedCandidates);
 
                     // Validation: Ensure unique product IDs inside collage
                     if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
@@ -3442,8 +3472,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 .sort((a, b) => b.score - a.score)
                 .map(item => item.product);
 
-            // Slice top 4 recommendations
-            let promoCandidates = sortedCandidates.slice(0, 4);
+            // Randomly pick 4 from the top 8 scored recommendations for variety
+            let promoCandidates = pickRandomTopCandidates(sortedCandidates);
 
             // Validation: Ensure unique product IDs inside collage
             if (new Set(promoCandidates.map(p => p.id)).size !== promoCandidates.length) {
