@@ -43,10 +43,14 @@ export async function getWelcomeMessagePrefix() {
 
 export async function getProducts() {
     try {
+        // 'id' is a tiebreaker: rows sharing the same created_at (common with bulk imports)
+        // otherwise have no guaranteed order between queries, which let the product array
+        // order drift between requests and desync collage images (see prepareProductsPageResponse).
         const { data, error } = await supabase
             .from('products')
             .select('*')
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true })
+            .order('id', { ascending: true });
 
         if (error) throw error;
 
@@ -2050,7 +2054,13 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
     }
 
     const startNumber = startIndex + 1;
-    const cacheKey = (session.selectedSubCategory || '').toLowerCase().replace(/\s+/g, '_') + '_page_' + currentPage;
+    console.log('[Collage] Order going into createProductCollage:', pageProducts.map((p, i) => `${startNumber + i}=${p.color || ''} ${p.name}`.trim()));
+    // Include the ordered product IDs in the cache key so a cache hit only ever serves a
+    // collage that was built from this exact same product order — if the underlying products
+    // array order ever drifts between requests, the key changes and the collage regenerates
+    // instead of silently showing a stale order that no longer matches the list below.
+    const orderSignature = crypto.createHash('md5').update(pageProducts.map(p => p.id).join(',')).digest('hex').substring(0, 12);
+    const cacheKey = (session.selectedSubCategory || '').toLowerCase().replace(/\s+/g, '_') + '_page_' + currentPage + '_' + orderSignature;
     let collageUrl = null;
     if (session.selectedSubCategory) {
         const { data: cachedCollage } = await supabase
@@ -2090,6 +2100,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
 
     const body = `👔 *${queryLabel}* (Page ${pageNum}/${totalPages})`;
     const buttonText = "Select Product";
+    console.log('[ProductList] Order going into sendList rows:', pageProducts.map((p, i) => `${startIndex + i + 1}=${p.color || ''} ${p.name}`.trim()));
     const sections = [
         {
             title: "Products",
