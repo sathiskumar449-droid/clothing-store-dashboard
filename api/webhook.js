@@ -1370,6 +1370,22 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'CANCEL_SHOPPING' };
     }
 
+    // Order Help submenu: while awaiting a 1-4 choice, intercept it BEFORE any other routing
+    // (category numbers, search, cart flow) so it can't be mistaken for a subcategory/product pick.
+    if (session && session.awaitingOrderHelpChoice && /^[1-4]$/.test(t)) {
+        return { type: 'ORDER_HELP_CHOICE', choice: t };
+    }
+
+    // Intro menu triggers (the two buttons shown on greeting)
+    if (t === 'order_help') {
+        console.log('[IntroMenu] order_help button clicked');
+        return { type: 'ORDER_HELP' };
+    }
+    if (t === 'shop_now') {
+        console.log('[IntroMenu] shop_now button clicked — routing to flat subcategory list');
+        return { type: 'SHOP_MORE' };
+    }
+
     // Global Shop More trigger — always navigate to category list regardless of current state
     if (t === 'shop_more' || t === 'shop more') {
         return { type: 'SHOP_MORE' };
@@ -2152,6 +2168,45 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
     return response;
 }
 
+// Static FAQ-style replies for the "Order Help" submenu (placeholders — wording to be customized later).
+async function handleOrderHelpChoice(choice, customerPhone) {
+    const followUp = "\n\nNeed more help? Reply 4 to talk to our team, or type 'menu' to go back to shopping.";
+
+    switch (choice) {
+        case '1':
+            console.log('[OrderHelp] Order Status FAQ sent to', customerPhone);
+            return {
+                replyText: `📦 *Order Status*\n\nPlease share your Order ID and we'll check the latest status for you.${followUp}`,
+                sendImages: []
+            };
+        case '2':
+            console.log('[OrderHelp] Returns & Exchange FAQ sent to', customerPhone);
+            return {
+                replyText: `🔄 *Returns & Exchange*\n\nWe offer a 7-day return and exchange policy. Please share your Order ID and a photo of the product to start the process.${followUp}`,
+                sendImages: []
+            };
+        case '3':
+            console.log('[OrderHelp] Delivery Time FAQ sent to', customerPhone);
+            return {
+                replyText: `🚚 *Delivery Time*\n\nOrders are usually delivered within 2-5 working days.${followUp}`,
+                sendImages: []
+            };
+        case '4': {
+            console.log('[OrderHelp] Talk to team — contact number sent to', customerPhone);
+            const contactNumber = process.env.STORE_CONTACT_NUMBER || '+91-XXXXXXXXXX';
+            return {
+                replyText: `🙋 Our team will assist you! Contact us directly here: ${contactNumber}`,
+                sendImages: []
+            };
+        }
+        default:
+            return {
+                replyText: "⚠️ Please reply with a number between 1 and 4.",
+                sendImages: []
+            };
+    }
+}
+
 async function handleIntent(intentResult, session, products, from) {
     switch (intentResult.type) {
         case 'CANCEL_SHOPPING': {
@@ -2214,6 +2269,18 @@ async function handleIntent(intentResult, session, products, from) {
             session.selectedSize = null;
             session.fromCrossSell = false;
             return goToFlatSubcategoryList(session, products);
+        }
+        case 'ORDER_HELP': {
+            session.awaitingOrderHelpChoice = true;
+            return {
+                replyText: "1. Order Status\n2. Returns & Exchange\n3. Delivery Time\n4. Talk to our team\n\nPlease reply with the number.",
+                sendImages: []
+            };
+        }
+        case 'ORDER_HELP_CHOICE': {
+            session.awaitingOrderHelpChoice = false;
+            console.log('[IntroMenu] Order Help choice selected:', intentResult.choice, 'for', from);
+            return await handleOrderHelpChoice(intentResult.choice, from);
         }
         case 'CLEAR_CART': {
             session.cart = [];
@@ -2280,6 +2347,7 @@ async function handleIntent(intentResult, session, products, from) {
             session.fromCrossSell = false;
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
+            session.awaitingOrderHelpChoice = false;
             if (session.cart && session.cart.length > 0) {
                 session.state = "AWAITING_PENDING_CART_DECISION";
                 return await getStatePrompt(session, products);
@@ -2296,7 +2364,17 @@ async function handleIntent(intentResult, session, products, from) {
                 await logChatMessage(from, 'bot', welcomeMsg.trim());
             }
 
-            return goToFlatSubcategoryList(session, products, "😊 How can we help you today?\n\nLooking for clothing?");
+            console.log('[IntroMenu] Greeting detected — showing Shop Now / Order Help buttons for', from);
+            return {
+                sendButtons: {
+                    body: "😊 How can we help you today?",
+                    buttons: [
+                        { id: 'shop_now', title: '🛍️ Shop Now' },
+                        { id: 'order_help', title: '📦 Order Help' }
+                    ]
+                },
+                sendImages: []
+            };
         }
         case 'CATEGORY': {
             const categoryCounts = getCategoryCounts(products);
@@ -3750,6 +3828,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         session.selectedSize = null;
         session.crossSellShown = false;
         session.cartCrossSellShown = false;
+        session.awaitingOrderHelpChoice = false;
 
         const welcomeMsg = await getWelcomeMessagePrefix();
         if (welcomeMsg) {
@@ -3757,7 +3836,17 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             await logChatMessage(from, 'bot', welcomeMsg.trim());
         }
 
-        return goToFlatSubcategoryList(session, products, "😊 How can we help you today?\n\nLooking for clothing?");
+        console.log('[IntroMenu] Greeting detected — showing Shop Now / Order Help buttons for', from);
+        return {
+            sendButtons: {
+                body: "😊 How can we help you today?",
+                buttons: [
+                    { id: 'shop_now', title: '🛍️ Shop Now' },
+                    { id: 'order_help', title: '📦 Order Help' }
+                ]
+            },
+            sendImages: []
+        };
     }
 
     // CHECKOUT INITIATION
