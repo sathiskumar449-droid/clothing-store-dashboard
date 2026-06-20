@@ -294,6 +294,75 @@ export async function deleteSession(phone) {
     }
 }
 
+// =============================
+// Per-customer session lock
+// =============================
+// getSession/saveSession do a plain read-then-write of the whole session blob,
+// which races when two webhook POSTs for the same customer overlap (e.g. two
+// quick messages). acquireSessionLock claims the row with a single conditional
+// UPDATE — Postgres serializes concurrent UPDATEs on the same row, so only one
+// caller's WHERE clause can match at a time, making the claim atomic without a
+// separate lock manager. A TTL lets a lock left behind by a crashed/timed-out
+// invocation be reclaimed instead of permanently wedging that customer.
+const SESSION_LOCK_TTL_MS = 15000;
+const SESSION_LOCK_RETRY_DELAY_MS = 1500;
+const SESSION_LOCK_MAX_RETRIES = 5;
+
+async function acquireSessionLock(phone) {
+    const key = `session_${phone}`;
+    const nowIso = new Date().toISOString();
+    const staleIso = new Date(Date.now() - SESSION_LOCK_TTL_MS).toISOString();
+
+    try {
+        // Make sure the row exists before attempting the conditional claim below.
+        // ignoreDuplicates means this is a no-op (does not touch locked_at) if the row is already there.
+        await supabase
+            .from('chats')
+            .upsert(
+                { customer_phone: key, customer_name: 'Session State' },
+                { onConflict: 'customer_phone', ignoreDuplicates: true }
+            );
+
+        const { data, error } = await supabase
+            .from('chats')
+            .update({ locked_at: nowIso })
+            .eq('customer_phone', key)
+            .or(`locked_at.is.null,locked_at.lt.${staleIso}`)
+            .select('customer_phone');
+
+        if (error) throw error;
+        return Array.isArray(data) && data.length > 0;
+    } catch (err) {
+        console.error(`❌ Error acquiring session lock for ${phone}:`, err.message);
+        return false;
+    }
+}
+
+async function releaseSessionLock(phone) {
+    try {
+        const { error } = await supabase
+            .from('chats')
+            .update({ locked_at: null })
+            .eq('customer_phone', `session_${phone}`);
+        if (error) throw error;
+    } catch (err) {
+        console.error(`❌ Error releasing session lock for ${phone}:`, err.message);
+    }
+}
+
+// Waits for another in-flight request for this customer to finish. Returns true if
+// the lock was acquired (caller must release it); false if it gave up after retrying
+// and is proceeding unlocked (fail-open, so a stuck/crashed lock can't drop messages forever).
+async function waitForSessionLock(phone) {
+    for (let attempt = 0; attempt < SESSION_LOCK_MAX_RETRIES; attempt++) {
+        if (await acquireSessionLock(phone)) return true;
+        console.log(`[Lock] Session for ${phone} busy, retrying (${attempt + 1}/${SESSION_LOCK_MAX_RETRIES})...`);
+        await new Promise(resolve => setTimeout(resolve, SESSION_LOCK_RETRY_DELAY_MS));
+    }
+    console.warn(`[Lock] Could not acquire session lock for ${phone} after ${SESSION_LOCK_MAX_RETRIES} retries — proceeding without lock.`);
+    return false;
+}
+
 export async function logChatMessage(customerPhone, sender, text, type = 'text', imageUrl = null, messageId = null) {
     try {
         // Fetch current row (or create default)
@@ -4358,6 +4427,12 @@ async function handleMessage(msg) {
 
     console.log(`[handleMessage] Bot active for ${from} — processing...`);
 
+    // Serialize processing per customer: if a previous message from the same
+    // customer is still being handled (e.g. two messages sent seconds apart),
+    // wait for it to finish so this request reads post-write session state
+    // instead of evaluating its menu selection against a stale one.
+    const sessionLockAcquired = await waitForSessionLock(from);
+
     try {
         const products = await getProducts();
         const orders = await getOrders();
@@ -4628,6 +4703,8 @@ async function handleMessage(msg) {
     } catch (err) {
         console.error('❌ Error handling message:', err);
         await sendText(from, "⚠️ We apologize, but a small error occurred. Please try again later.");
+    } finally {
+        if (sessionLockAcquired) await releaseSessionLock(from);
     }
 }
 

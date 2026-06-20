@@ -64,8 +64,12 @@ CREATE TABLE IF NOT EXISTS chats (
     last_message    TEXT    DEFAULT '',
     last_updated    TIMESTAMPTZ DEFAULT NOW(),
     bot_paused      BOOLEAN DEFAULT FALSE,
-    messages        JSONB   DEFAULT '[]'   -- array of {sender, type, text, imageUrl, timestamp}
+    messages        JSONB   DEFAULT '[]',  -- array of {sender, type, text, imageUrl, timestamp}
+    locked_at       TIMESTAMPTZ DEFAULT NULL  -- per-customer processing lock for session rows (see getSession/acquireSessionLock)
 );
+
+-- Safe to re-run: adds the column if this script is applied to an existing database
+ALTER TABLE chats ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ DEFAULT NULL;
 
 -- ============================================================
 -- 4. INDEXES for performance
