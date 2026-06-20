@@ -1080,7 +1080,12 @@ export const getParentCategory = (categoryName) => {
     if (['shirt', 'linen', 'lenin', 'chava', 'printed', 'stripes', 'cotton shirt'].some(kw => catLower.includes(kw))) {
         return 'Shirts';
     }
-    if (['pant', 'phant', 'jeans', 'trouser', 'shorts', 'track', 'cargo', 'lycra', 'laycra'].some(kw => catLower.includes(kw))) {
+    // Shorts checked before the generic Pants list so categories like "Imported Shorts" get
+    // their own parent instead of being lumped in with Pants.
+    if (catLower.includes('shorts')) {
+        return 'Shorts';
+    }
+    if (['pant', 'phant', 'jeans', 'trouser', 'track', 'cargo', 'lycra', 'laycra'].some(kw => catLower.includes(kw))) {
         return 'Pants';
     }
     if (catLower.includes('new arrival')) {
@@ -1250,6 +1255,10 @@ function getCrossSellOffer(addedProduct, allProducts, excludedIds = []) {
             promoCategory = 'Shirts';
             matcher = (candidate) => isShirtCategory(candidate.category, candidate.name) && !isTShirtCategory(candidate.category, candidate.name);
         }
+    } else if (addedParent === 'Shorts') {
+        offerLabel = 'Matching T-Shirts';
+        promoCategory = 'T-Shirts';
+        matcher = (candidate) => isTShirtCategory(candidate.category, candidate.name);
     } else if (addedParent === 'Shirts') {
         offerLabel = 'Matching Pants';
         promoCategory = 'Pants';
@@ -1473,14 +1482,14 @@ function detectIntent(text, products = [], session = null) {
     // 5. Category vs Search Intent
     // T-Shirts must be checked before Shirts: "t-shirts" contains a word boundary right after the
     // hyphen, so the \bShirt(s)?\b regex below would otherwise match it and misclassify as Shirts.
-    const parentCategories = ['New Arrivals', 'T-Shirts', 'Shirts', 'Pants'];
+    const parentCategories = ['New Arrivals', 'T-Shirts', 'Shirts', 'Shorts', 'Pants'];
     let foundCategory = parentCategories.find(cat => {
         const catSingular = cat.endsWith('s') ? cat.slice(0, -1) : cat;
         const regex = new RegExp(`\\b${catSingular}(s)?\\b`, 'i');
         return regex.test(t);
     });
-    // Jeans and Shorts are now grouped under Pants
-    if (!foundCategory && (/\bjean(s)?\b/i.test(t) || /\bshort(s)?\b/i.test(t))) {
+    // Jeans are grouped under Pants; Shorts has its own parent (see parentCategories above)
+    if (!foundCategory && /\bjean(s)?\b/i.test(t)) {
         foundCategory = 'Pants';
     }
 
@@ -1527,8 +1536,8 @@ function matchParentCategory(text, parentCategories) {
         'phants': 'Pants',
         'jeans': 'Pants',
         'jean': 'Pants',
-        'shorts': 'Pants',
-        'short': 'Pants'
+        'shorts': 'Shorts',
+        'short': 'Shorts'
     };
 
     for (const key of Object.keys(mappings)) {
