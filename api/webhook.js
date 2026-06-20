@@ -255,6 +255,7 @@ export async function getSession(phone) {
         pendingProduct: null,
         orderingQueue: [],
         pendingSelections: {},
+        pendingOrder: [],
         fromCrossSell: false,
         crossSellShown: false,
         cartCrossSellShown: false
@@ -1489,13 +1490,64 @@ async function enterSubCategoryByIndex(session, products, idx, allSubs) {
 // session.orderingQueue still holds products that were selected together but haven't been shown
 // a size prompt yet — it's consumed one at a time as earlier entries in pendingSelections finish.
 
-// Looks up the most recently prompted pendingSelections entry still waiting on `step` ('AWAITING_PRODUCT_SIZE'
-// or 'AWAITING_PRODUCT_QTY'). Only used for plain typed replies (e.g. "M" or "3") that don't carry
-// an explicit product ID — button/list replies are routed directly by ID instead.
+// session.pendingOrder is a plain array of product-ID strings in touch order (most-recently-
+// touched at the end). This exists because pendingSelections is keyed by product ID, and product
+// IDs are large-but-not-huge integers — JS engines enumerate integer-like string object keys in
+// ASCENDING NUMERIC order regardless of insertion order (Object.keys/values on {"2751":a,"2716":b}
+// returns ["2716","2751"], not insertion order), so Object.values() cannot be used to track
+// recency here. markPendingTouched must be called whenever an entry is created or interacted with.
+function markPendingTouched(session, pid) {
+    session.pendingOrder = (session.pendingOrder || []).filter(id => id !== pid);
+    session.pendingOrder.push(pid);
+}
+
+// Looks up the most recently touched pendingSelections entry still waiting on `step`
+// ('AWAITING_PRODUCT_SIZE' or 'AWAITING_PRODUCT_QTY'). Used for rendering a "continue where you
+// left off" prompt for a given step (e.g. from getStatePrompt's indirect callers) — NOT for
+// resolving fresh typed replies, since recency alone can't tell a size reply from a qty reply
+// when two products are pending in different steps (see resolveTypedPendingEntry below).
 function getMostRecentPending(session, step) {
-    const entries = Object.values(session.pendingSelections || {});
-    for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i].step === step) return entries[i];
+    const order = session.pendingOrder || [];
+    for (let i = order.length - 1; i >= 0; i--) {
+        const entry = session.pendingSelections[order[i]];
+        if (entry && entry.step === step) return entry;
+    }
+    return null;
+}
+
+// Picks which pending entry a plain typed reply (no product ID) most likely targets. Recency
+// alone isn't enough here: if product A is awaiting qty and product B (selected afterwards) is
+// still awaiting size, typing "XL" must resolve to B even though A was touched more recently — "XL"
+// only makes sense as a size. So this prefers whichever pending entry's current step the text
+// actually looks valid for (a real size for a size-step entry, a parseable 1-99 number for a
+// qty-step entry), breaking ties by recency, and only falls back to pure recency when the text
+// doesn't cleanly validate against any pending entry (so the resulting error at least reflects
+// whichever product the customer was last interacting with).
+function resolveTypedPendingEntry(session, text) {
+    const order = session.pendingOrder || [];
+    const normalizedInput = normalizeSize(text);
+
+    for (let i = order.length - 1; i >= 0; i--) {
+        const entry = session.pendingSelections[order[i]];
+        if (!entry || entry.step !== 'AWAITING_PRODUCT_SIZE') continue;
+        const sizeList = (Array.isArray(entry.product.sizes)
+            ? entry.product.sizes
+            : String(entry.product.sizes).split(',').map(s => s.trim())
+        ).filter(Boolean);
+        if (sizeList.some(s => normalizeSize(s) === normalizedInput)) return entry;
+    }
+
+    const typedQty = parseInt(text, 10);
+    if (!isNaN(typedQty) && typedQty > 0 && typedQty < 100) {
+        for (let i = order.length - 1; i >= 0; i--) {
+            const entry = session.pendingSelections[order[i]];
+            if (entry && entry.step === 'AWAITING_PRODUCT_QTY') return entry;
+        }
+    }
+
+    for (let i = order.length - 1; i >= 0; i--) {
+        const entry = session.pendingSelections[order[i]];
+        if (entry) return entry;
     }
     return null;
 }
@@ -1583,9 +1635,11 @@ async function enqueueProductsForOrdering(session, products, newProducts) {
     const pid = String(first.id);
     if (session.pendingSelections[pid]) {
         // Already mid-flow for this exact product — don't restart it, just continue normally.
+        markPendingTouched(session, pid);
         return promptNextQueuedProduct(session, products);
     }
     session.pendingSelections[pid] = { product: first, size: null, qty: null, step: 'AWAITING_PRODUCT_SIZE' };
+    markPendingTouched(session, pid);
     session.state = "AWAITING_PRODUCT_SIZE";
     return await renderSizePrompt(session.pendingSelections[pid], newProducts.length > 1 ? newProducts : null, products);
 }
@@ -1601,6 +1655,7 @@ async function promptNextQueuedProduct(session, products) {
         const pid = String(product.id);
         if (session.pendingSelections[pid]) continue; // already in progress — don't duplicate
         session.pendingSelections[pid] = { product, size: null, qty: null, step: 'AWAITING_PRODUCT_SIZE' };
+        markPendingTouched(session, pid);
         session.state = "AWAITING_PRODUCT_SIZE";
         return await renderSizePrompt(session.pendingSelections[pid], null, products);
     }
@@ -1612,9 +1667,13 @@ async function promptNextQueuedProduct(session, products) {
 // fallback path (product ID inferred as the most recently prompted pending entry).
 // session.state is kept in sync with entry.step — the typed-text fallback (which has no product ID
 // of its own) relies on session.state to decide whether to look for an AWAITING_PRODUCT_SIZE or
-// AWAITING_PRODUCT_QTY entry, so it must reflect whichever entry was most recently touched.
+// AWAITING_PRODUCT_QTY entry, so it must reflect whichever entry was most recently touched. This
+// entry is also marked touched in pendingOrder, since a button reply can target an entry that
+// isn't the most-recently-created one (e.g. going back to size an earlier product after a later
+// one), and a subsequent plain-typed reply must still resolve to whichever one was just acted on.
 function applySizeSelection(session, entry, sizeInput) {
     const product = entry.product;
+    markPendingTouched(session, String(product.id));
     const normalizedInput = normalizeSize(sizeInput);
     const sizeList = (Array.isArray(product.sizes)
         ? product.sizes
@@ -1653,18 +1712,20 @@ async function applyQtySelection(session, products, entry, qty) {
         price: Number(product.price),
         color: product.color || ''
     });
-    delete session.pendingSelections[String(product.id)];
+    const pid = String(product.id);
+    delete session.pendingSelections[pid];
+    session.pendingOrder = (session.pendingOrder || []).filter(id => id !== pid);
 
     const nextPrompt = await promptNextQueuedProduct(session, products);
     if (nextPrompt) return nextPrompt;
 
-    const remaining = Object.values(session.pendingSelections);
-    if (remaining.length > 0) {
+    if (session.pendingOrder.length > 0) {
         // Other product(s) are still mid-flow (e.g. an interleaved selection) — they already have
         // their own live prompt to answer, so just acknowledge this one rather than re-prompting.
-        // Sync session.state to the last-remaining entry so a plain typed reply (no product ID)
-        // still resolves to the right one via getMostRecentPending.
-        session.state = remaining[remaining.length - 1].step;
+        // Sync session.state to the last-remaining (most recently touched) entry so a plain typed
+        // reply (no product ID) still resolves to the right one via getMostRecentPending.
+        const lastPid = session.pendingOrder[session.pendingOrder.length - 1];
+        session.state = session.pendingSelections[lastPid].step;
         const addedName = `${product.color ? product.color + ' ' : ''}${product.name}`;
         return { replyText: `✅ *${addedName}* (${entry.size}) x${qty} added to cart.`, sendImages: [] };
     }
@@ -2751,6 +2812,7 @@ async function handleIntent(intentResult, session, products, from) {
                 session.fromCrossSell = false;
                 session.orderingQueue = [];
                 session.pendingSelections = {};
+                session.pendingOrder = [];
                 session.subCategories = null;
                 session.selectedParentCategory = null;
                 session.selectedSubCategory = null;
@@ -3108,6 +3170,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     session.promoCategory = session.promoCategory || null;
     session.orderingQueue = session.orderingQueue || [];
     session.pendingSelections = session.pendingSelections || {};
+    session.pendingOrder = session.pendingOrder || [];
 
     // Backward compatibility for stale recommendation states
     if (session.state === "AWAITING_RECOMMENDATION_CONFIRM" || session.state === "AWAITING_COMBO_CART_CONFIRM") {
@@ -3198,6 +3261,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.cart = [];
             session.orderingQueue = [];
             session.pendingSelections = {};
+            session.pendingOrder = [];
             session.pendingProduct = null;
             session.selectedSize = null;
             session.selectedColor = null;
@@ -3238,6 +3302,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         if (choice === 'cancel_continue_shopping' || choice.includes('continue') || choice === '1') {
             session.orderingQueue = [];
             session.pendingSelections = {};
+            session.pendingOrder = [];
             session.pendingProduct = null;
             session.selectedSize = null;
             session.selectedColor = null;
@@ -3259,6 +3324,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.cart = [];
             session.orderingQueue = [];
             session.pendingSelections = {};
+            session.pendingOrder = [];
             return {
                 replyText: "Your cart has been cleared. Goodbye! 😊",
                 sendImages: [],
@@ -3429,6 +3495,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.cart = [];
             session.orderingQueue = [];
             session.pendingSelections = {};
+            session.pendingOrder = [];
             session.pendingProduct = null;
             session.selectedSize = null;
             session.fromCrossSell = false;
@@ -3657,25 +3724,28 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         }
     }
 
-    // STATE: AWAITING_PRODUCT_SIZE (typed input, e.g. "M" — no product ID attached, unlike
-    // size_<id>_<value> button replies which are routed earlier in the function instead)
-    if (session.state === "AWAITING_PRODUCT_SIZE") {
-        const entry = getMostRecentPending(session, 'AWAITING_PRODUCT_SIZE');
+    // STATE: AWAITING_PRODUCT_SIZE / AWAITING_PRODUCT_QTY (typed input, e.g. "M" or "3" — no
+    // product ID attached, unlike size_<id>_<value>/qty_<id>_<value> button replies which are
+    // routed earlier in the function instead).
+    //
+    // session.state alone can't disambiguate which step to apply a typed reply to when two
+    // products are pending in *different* steps at once (e.g. product A is awaiting qty while
+    // product B, selected afterwards, is still awaiting size) — session.state only ever holds one
+    // value. So both states are handled in one place, keyed off the most-recently-touched pending
+    // entry's *own* step rather than session.state.
+    if (session.state === "AWAITING_PRODUCT_SIZE" || session.state === "AWAITING_PRODUCT_QTY") {
+        const entry = resolveTypedPendingEntry(session, textLower.trim());
         if (!entry) {
             return goToFlatSubcategoryList(session, products, "Something went wrong. Let's restart.");
         }
-        return applySizeSelection(session, entry, textLower.trim());
-    }
 
-    // STATE: AWAITING_PRODUCT_QTY (typed input, e.g. "3" — see note above)
-    if (session.state === "AWAITING_PRODUCT_QTY") {
-        const entry = getMostRecentPending(session, 'AWAITING_PRODUCT_QTY');
-        if (!entry) {
-            return goToFlatSubcategoryList(session, products, "Something went wrong. Let's restart.");
+        if (entry.step === 'AWAITING_PRODUCT_SIZE') {
+            return applySizeSelection(session, entry, textLower.trim());
         }
 
         const typedQty = parseInt(textLower.trim(), 10);
         if (isNaN(typedQty) || typedQty <= 0 || typedQty >= 100) {
+            session.state = entry.step;
             return {
                 replyText: `⚠️ Invalid quantity. Please select a quantity from the list or type a number:`,
                 ...renderQtyPrompt(entry)
@@ -3703,6 +3773,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.cart = [];
             session.orderingQueue = [];
             session.pendingSelections = {};
+            session.pendingOrder = [];
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
 
@@ -3711,6 +3782,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.cart = [];
             session.orderingQueue = [];
             session.pendingSelections = {};
+            session.pendingOrder = [];
             session.subCategories = getAllSubCategoriesList(products);
             session.selectedParentCategory = null;
             session.state = "AWAITING_SUBCATEGORY_SELECTION";
@@ -4180,6 +4252,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         session.cart = [];
         session.orderingQueue = [];
         session.pendingSelections = {};
+        session.pendingOrder = [];
         session.pendingProduct = null;
         session.selectedSize = null;
         session.crossSellShown = false;
