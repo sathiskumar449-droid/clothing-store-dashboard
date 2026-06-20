@@ -1144,7 +1144,7 @@ export const getAllSubCategoriesList = (products) => {
             counts[sub] = (counts[sub] || 0) + 1;
         }
     });
-    const subs = Object.keys(counts).filter(sub => counts[sub] > 0);
+    const subs = Object.keys(counts).filter(sub => counts[sub] > 0 && sub.toLowerCase().trim() !== 'men');
     subs.sort((a, b) => a.localeCompare(b));
     return subs;
 };
