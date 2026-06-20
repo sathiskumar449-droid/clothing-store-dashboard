@@ -1728,7 +1728,7 @@ async function getStatePrompt(session, products) {
             const emoji = getCategoryEmoji(session.selectedParentCategory || '');
             const capSub = selectedSub ? selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : 'Products';
 
-            let replyText = `${emoji} *${capSub} - Available Stock:*\n\n`;
+            let replyText = `${emoji} *${capSub}:*\n\n`;
             session.searchProducts.forEach((p, pIdx) => {
                 let displayName = p.name;
                 if (p.color && !displayName.toLowerCase().includes(p.color.toLowerCase())) {
@@ -1959,16 +1959,16 @@ async function getStatePrompt(session, products) {
                 {
                     title: "Select Quantity",
                     rows: [
-                        { id: "qty_1", title: "1", description: "Buy 1 item" },
-                        { id: "qty_2", title: "2", description: "Buy 2 items" },
-                        { id: "qty_3", title: "3", description: "Buy 3 items" },
-                        { id: "qty_4", title: "4", description: "Buy 4 items" },
-                        { id: "qty_5", title: "5", description: "Buy 5 items" },
-                        { id: "qty_6", title: "6", description: "Buy 6 items" },
-                        { id: "qty_7", title: "7", description: "Buy 7 items" },
-                        { id: "qty_8", title: "8", description: "Buy 8 items" },
-                        { id: "qty_9", title: "9", description: "Buy 9 items" },
-                        { id: "qty_10", title: "10", description: "Buy 10 items" }
+                        { id: "qty_1", title: "1", description: "Qty: 1" },
+                        { id: "qty_2", title: "2", description: "Qty: 2" },
+                        { id: "qty_3", title: "3", description: "Qty: 3" },
+                        { id: "qty_4", title: "4", description: "Qty: 4" },
+                        { id: "qty_5", title: "5", description: "Qty: 5" },
+                        { id: "qty_6", title: "6", description: "Qty: 6" },
+                        { id: "qty_7", title: "7", description: "Qty: 7" },
+                        { id: "qty_8", title: "8", description: "Qty: 8" },
+                        { id: "qty_9", title: "9", description: "Qty: 9" },
+                        { id: "qty_10", title: "10", description: "Qty: 10" }
                     ]
                 }
             ];
@@ -2761,7 +2761,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     session.searchProducts = matched;
                     const emoji = getCategoryEmoji(promoCategory);
                     const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-                    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub} - Available Stock`);
+                    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`);
                 }
             }
 
@@ -2942,7 +2942,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 const emoji = getCategoryEmoji(session.selectedParentCategory || '');
                 const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 
-                return await prepareProductsPageResponse(session, products, `${emoji} ${capSub} - Available Stock`);
+                return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`);
             } else {
                 return { replyText: "We are sorry, but this subcategory is currently out of stock. 😔", sendImages: [] };
             }
@@ -3082,16 +3082,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     {
                         title: "Select Quantity",
                         rows: [
-                            { id: "qty_1", title: "1", description: "Buy 1 item" },
-                            { id: "qty_2", title: "2", description: "Buy 2 items" },
-                            { id: "qty_3", title: "3", description: "Buy 3 items" },
-                            { id: "qty_4", title: "4", description: "Buy 4 items" },
-                            { id: "qty_5", title: "5", description: "Buy 5 items" },
-                            { id: "qty_6", title: "6", description: "Buy 6 items" },
-                            { id: "qty_7", title: "7", description: "Buy 7 items" },
-                            { id: "qty_8", title: "8", description: "Buy 8 items" },
-                            { id: "qty_9", title: "9", description: "Buy 9 items" },
-                            { id: "qty_10", title: "10", description: "Buy 10 items" }
+                            { id: "qty_1", title: "1", description: "Qty: 1" },
+                            { id: "qty_2", title: "2", description: "Qty: 2" },
+                            { id: "qty_3", title: "3", description: "Qty: 3" },
+                            { id: "qty_4", title: "4", description: "Qty: 4" },
+                            { id: "qty_5", title: "5", description: "Qty: 5" },
+                            { id: "qty_6", title: "6", description: "Qty: 6" },
+                            { id: "qty_7", title: "7", description: "Qty: 7" },
+                            { id: "qty_8", title: "8", description: "Qty: 8" },
+                            { id: "qty_9", title: "9", description: "Qty: 9" },
+                            { id: "qty_10", title: "10", description: "Qty: 10" }
                         ]
                     }
                 ];
