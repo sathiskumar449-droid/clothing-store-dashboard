@@ -1149,9 +1149,9 @@ export const getAllSubCategoriesList = (products) => {
     return subs;
 };
 
-// Number emojis don't exist beyond 10, so fall back to plain "11.", "12." etc.
-const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
-const numberPrefix = (idx) => idx < 10 ? NUMBER_EMOJIS[idx] : `${idx + 1}.`;
+// Plain "1.", "2.", "3." etc for every index — emoji digits render bold/highlighted
+// in WhatsApp for 1-10 but not 11+, so we avoid them to keep formatting consistent.
+const numberPrefix = (idx) => `${idx + 1}.`;
 
 function makeAllSubcategoriesPlainTextResponse(subs, bodyPrefix = "👋 Welcome to Super Collections.\n\nPlease select a category:") {
     let replyText = `${bodyPrefix}\n\n`;
