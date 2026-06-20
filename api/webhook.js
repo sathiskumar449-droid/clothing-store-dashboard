@@ -502,6 +502,8 @@ export async function sendCtaUrlWelcomeMessage(to) {
         throw new Error(`Environment variables missing! WHATSAPP_TOKEN: ${WHATSAPP_TOKEN ? 'exists' : 'missing'}, PHONE_NUMBER_ID: ${PHONE_NUMBER_ID ? 'exists' : 'missing'}`);
     }
 
+    console.log(`[sendCtaUrlWelcomeMessage] Payload being sent:`, JSON.stringify(payload, null, 2));
+
     const response = await axios.post(url, payload, {
         headers: {
             Authorization: `Bearer ${WHATSAPP_TOKEN}`,
@@ -2407,7 +2409,7 @@ async function handleIntent(intentResult, session, products, from) {
                 await sendCtaUrlWelcomeMessage(from);
                 console.log('[Welcome] ✅ cta_url welcome card sent to', from);
             } catch (err) {
-                console.error('[Welcome] ❌ cta_url welcome card failed, falling back to plain text welcome message:', err.message);
+                console.error('[Welcome] ❌ cta_url welcome card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
             }
 
             const welcomeMsg = await getWelcomeMessagePrefix();
@@ -3886,7 +3888,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             await sendCtaUrlWelcomeMessage(from);
             console.log('[Welcome] ✅ cta_url welcome card sent to', from);
         } catch (err) {
-            console.error('[Welcome] ❌ cta_url welcome card failed, falling back to plain text welcome message:', err.message);
+            console.error('[Welcome] ❌ cta_url welcome card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
         }
 
         const welcomeMsg = await getWelcomeMessagePrefix();
