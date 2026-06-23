@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { supabase } from '../lib/supabase.js';
 import { createProductCollage, createRecommendationCollage, createPromoCollage } from '../lib/collage.js';
+import { getCategoryUrl } from '../lib/categoryUrls.js';
 
 dotenv.config();
 
@@ -581,6 +582,45 @@ export async function sendCtaUrlWelcomeMessage(to) {
     });
 
     console.log(`[sendCtaUrlWelcomeMessage] Meta API response:`, JSON.stringify(response.data, null, 2));
+    return response.data;
+}
+
+// Generic cta_url card used to send a customer to a subcategory's page on supercollections.in
+// (see prepareProductsPageResponse's ctaOptions branch). Throws on failure so the caller can log
+// it instead of silently dropping the message.
+export async function sendCtaUrlMessage(to, bodyText, displayText, url) {
+    const apiUrl = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+    const payload = {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive: {
+            type: 'cta_url',
+            body: { text: bodyText },
+            action: {
+                name: 'cta_url',
+                parameters: {
+                    display_text: displayText,
+                    url
+                }
+            }
+        }
+    };
+
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        throw new Error(`Environment variables missing! WHATSAPP_TOKEN: ${WHATSAPP_TOKEN ? 'exists' : 'missing'}, PHONE_NUMBER_ID: ${PHONE_NUMBER_ID ? 'exists' : 'missing'}`);
+    }
+
+    console.log(`[sendCtaUrlMessage] Payload being sent:`, JSON.stringify(payload, null, 2));
+
+    const response = await axios.post(apiUrl, payload, {
+        headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    console.log(`[sendCtaUrlMessage] Meta API response:`, JSON.stringify(response.data, null, 2));
     return response.data;
 }
 
@@ -1492,10 +1532,10 @@ async function enterSubCategoryByIndex(session, products, idx, allSubs) {
         return await enqueueProductsForOrdering(session, products, [matched[0]]);
     }
 
-    session.state = "AWAITING_MODEL_SELECTION";
+    session.state = "AWAITING_SUBCATEGORY_SELECTION";
     const emoji = getCategoryEmoji(session.selectedParentCategory || '');
     const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`);
+    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`, { subCategoryDisplayName: capSub });
 }
 
 // =============================
@@ -2651,7 +2691,12 @@ function getShortProductName(p) {
     return name.trim();
 }
 
-async function prepareProductsPageResponse(session, productsPool, queryLabel) {
+// When ctaOptions is passed (only by the subcategory-browsing call sites — enterSubCategoryByIndex
+// and the AWAITING_SUBCATEGORY_SELECTION number handler), this skips the interactive product list
+// entirely and instead sends a cta_url button to that subcategory's page on supercollections.in.
+// Search results and AWAITING_MODEL_SELECTION pagination call this without ctaOptions and keep the
+// original list-based behavior untouched.
+async function prepareProductsPageResponse(session, productsPool, queryLabel, ctaOptions = null) {
     const pageSize = 9;
     const currentPage = session.currentPage || 0;
     const startIndex = currentPage * pageSize;
@@ -2703,6 +2748,22 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel) {
                 console.warn('[Collage] Cache save failed:', err.message);
             }
         }
+    }
+
+    if (ctaOptions) {
+        const displayName = ctaOptions.subCategoryDisplayName;
+        const url = getCategoryUrl(session.selectedSubCategory || displayName);
+        let buttonText = `Shop ${displayName}`;
+        if (buttonText.length > 20) buttonText = 'Shop Now';
+
+        return {
+            sendImages: collageUrl ? [{ url: collageUrl, caption: displayName }] : [],
+            sendCtaUrl: {
+                body: `🛍️ Browse all ${displayName} options, choose your size & place your order directly on our website! 👇`,
+                buttonText,
+                url
+            }
+        };
     }
 
     const totalProducts = session.searchProducts.length;
@@ -3674,11 +3735,11 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     return await enqueueProductsForOrdering(session, products, [matched[0]]);
                 }
 
-                session.state = "AWAITING_MODEL_SELECTION";
+                session.state = "AWAITING_SUBCATEGORY_SELECTION";
                 const emoji = getCategoryEmoji(session.selectedParentCategory || '');
                 const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 
-                return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`);
+                return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`, { subCategoryDisplayName: capSub });
             } else {
                 return { replyText: "We are sorry, but this subcategory is currently out of stock. 😔", sendImages: [] };
             }
@@ -4817,6 +4878,19 @@ async function handleMessage(msg) {
             }
             const listLog = `${listData.body}\n[${listData.buttonText}]`;
             await logChatMessage(from, 'bot', listLog, 'text', null, listMsgId);
+        }
+        if (aiResponse.sendCtaUrl) {
+            const ctaData = aiResponse.sendCtaUrl;
+            try {
+                const apiRes = await sendCtaUrlMessage(from, ctaData.body, ctaData.buttonText, ctaData.url);
+                const ctaMsgId = apiRes?.messages?.[0]?.id;
+                if (ctaMsgId) {
+                    sentMsgId = ctaMsgId;
+                }
+                await logChatMessage(from, 'bot', `${ctaData.body}\n[${ctaData.buttonText}]`, 'text', null, ctaMsgId);
+            } catch (err) {
+                console.error('[sendCtaUrl] Failed to send CTA URL message:', JSON.stringify(err.response?.data || err.message, null, 2));
+            }
         }
 
         // Store the context for this message
