@@ -72,7 +72,8 @@ export async function getProducts() {
                 price: row.price,
                 stock: row.stock,
                 sizes: row.sizes || [],
-                imageUri: row.image_uri
+                imageUri: row.image_uri,
+                permalink: row.permalink || null
             };
         });
     } catch (error) {
@@ -248,6 +249,7 @@ export async function getSession(phone) {
         cart: [],
         history: [],
         searchProducts: [],
+        searchResultMode: null,
         selectedColor: null,
         selectedSize: null,
         lastRecommendation: null,
@@ -621,6 +623,52 @@ export async function sendCtaUrlMessage(to, bodyText, displayText, url) {
     });
 
     console.log(`[sendCtaUrlMessage] Meta API response:`, JSON.stringify(response.data, null, 2));
+    return response.data;
+}
+
+// Per-product "View & Buy" card used for SEARCH results (see buildProductCardsPageResponse) —
+// same cta_url shape as sendCtaUrlMessage but with an image header showing that product's photo.
+// imageUrl may be null (no resolvable image for this product); the header is omitted rather than
+// sent with a broken link. Throws on failure so the caller can catch/log per-card instead of one
+// broken card aborting the rest of the result page.
+export async function sendProductCtaCard(to, imageUrl, bodyText, displayText, url) {
+    const apiUrl = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+    const interactive = {
+        type: 'cta_url',
+        body: { text: bodyText },
+        action: {
+            name: 'cta_url',
+            parameters: {
+                display_text: displayText,
+                url
+            }
+        }
+    };
+    if (imageUrl) {
+        interactive.header = { type: 'image', image: { link: imageUrl } };
+    }
+
+    const payload = {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive
+    };
+
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        throw new Error(`Environment variables missing! WHATSAPP_TOKEN: ${WHATSAPP_TOKEN ? 'exists' : 'missing'}, PHONE_NUMBER_ID: ${PHONE_NUMBER_ID ? 'exists' : 'missing'}`);
+    }
+
+    console.log(`[sendProductCtaCard] Sending card -> url=${url} image=${imageUrl || 'none'}`);
+
+    const response = await axios.post(apiUrl, payload, {
+        headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    console.log(`[sendProductCtaCard] Meta API response:`, JSON.stringify(response.data, null, 2));
     return response.data;
 }
 
@@ -2691,11 +2739,69 @@ function getShortProductName(p) {
     return name.trim();
 }
 
+// Builds one cta_url card per matched product for SEARCH results — image header (that
+// product's own photo), body text (name/color + price + sizes), and a "View & Buy" button
+// linking straight to that product's own page, instead of the old collage + "Select Product"
+// list. Falls back to the product's category page (lib/categoryUrls.js) when a product has no
+// permalink (sync gap), logging a warning, so a missing field never sends a broken link.
+function buildProductCardsPageResponse(session, productsPool, pageProducts, startIndex, pageSize, queryLabel) {
+    const totalProducts = session.searchProducts.length;
+    const totalPages = Math.ceil(totalProducts / pageSize);
+    const pageNum = (session.currentPage || 0) + 1;
+
+    const cards = pageProducts.map(p => {
+        let url = p.permalink;
+        if (!url) {
+            console.warn(`[ProductCards] Product ${p.id} ("${p.name}") has no permalink — falling back to category URL`);
+            url = getCategoryUrl(p.category);
+        }
+
+        const colorPrefix = p.color ? `${p.color} ` : '';
+        let body = `*${colorPrefix}${p.name}*\n💰 ₹${p.price}`;
+        const sizeList = (Array.isArray(p.sizes) ? p.sizes : []).filter(Boolean);
+        if (sizeList.length > 0) {
+            body += `\n📐 Sizes: ${sizeList.map(s => String(s).toUpperCase()).join(' ')}`;
+        }
+
+        return {
+            imageUrl: getProductImageUri(p, productsPool),
+            body,
+            buttonText: 'View & Buy',
+            url
+        };
+    });
+
+    const buttons = [];
+    if ((session.currentPage || 0) > 0) {
+        buttons.push({ id: 'prev_page', title: '⬅ Prev Page' });
+    }
+    if (startIndex + pageSize < totalProducts) {
+        buttons.push({ id: 'next_page', title: '➡ Next Page' });
+    }
+
+    const response = {
+        replyText: `👔 *${queryLabel}* (Page ${pageNum}/${totalPages})`,
+        sendProductCards: cards,
+        sendImages: []
+    };
+
+    if (buttons.length > 0) {
+        response.sendButtons = {
+            body: `Manage Pages:`,
+            buttons
+        };
+    }
+
+    return response;
+}
+
 // When ctaOptions is passed (only by the subcategory-browsing call sites — enterSubCategoryByIndex
 // and the AWAITING_SUBCATEGORY_SELECTION number handler), this skips the interactive product list
 // entirely and instead sends a cta_url button to that subcategory's page on supercollections.in.
-// Search results and AWAITING_MODEL_SELECTION pagination call this without ctaOptions and keep the
-// original list-based behavior untouched.
+// Search results render as individual product cards (see buildProductCardsPageResponse) when
+// session.searchResultMode === 'cards'; every other caller without ctaOptions (cross-sell,
+// "same category" continue, AWAITING_MODEL_SELECTION pagination of those) keeps the original
+// collage + list behavior untouched.
 async function prepareProductsPageResponse(session, productsPool, queryLabel, ctaOptions = null) {
     const pageSize = 9;
     const currentPage = session.currentPage || 0;
@@ -2707,6 +2813,14 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel, ct
             replyText: "No products were found on this page. 😔",
             sendImages: []
         };
+    }
+
+    // SEARCH results render as individual per-product CTA cards instead of a collage +
+    // "Select Product" list (see buildProductCardsPageResponse) — skip collage generation
+    // entirely for this mode since each card carries its own product image already.
+    // Category-browse (ctaOptions) and every other caller of this function are untouched.
+    if (!ctaOptions && session.searchResultMode === 'cards') {
+        return buildProductCardsPageResponse(session, productsPool, pageProducts, startIndex, pageSize, queryLabel);
     }
 
     const startNumber = startIndex + 1;
@@ -3180,6 +3294,7 @@ async function handleIntent(intentResult, session, products, from) {
                 session.searchProducts = matched;
                 session.currentPage = 0;
                 session.state = "AWAITING_MODEL_SELECTION";
+                session.searchResultMode = 'cards';
                 session.pendingProduct = null;
                 session.selectedSize = null;
                 session.isRecommendation = false;
@@ -3489,6 +3604,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         if (choice === "choose_same_cat" || choice.includes("same") || choice === "1") {
             session.state = "AWAITING_MODEL_SELECTION";
             session.currentPage = 0;
+            session.searchResultMode = null;
             session.fromCrossSell = false;
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
@@ -3561,6 +3677,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     session.selectedSubCategory = selectedSub;
                     session.state = "AWAITING_MODEL_SELECTION";
                     session.currentPage = 0;
+                    session.searchResultMode = null;
                     session.searchProducts = matched;
                     const emoji = getCategoryEmoji(promoCategory);
                     const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -4890,6 +5007,20 @@ async function handleMessage(msg) {
                 await logChatMessage(from, 'bot', `${ctaData.body}\n[${ctaData.buttonText}]`, 'text', null, ctaMsgId);
             } catch (err) {
                 console.error('[sendCtaUrl] Failed to send CTA URL message:', JSON.stringify(err.response?.data || err.message, null, 2));
+            }
+        }
+        if (Array.isArray(aiResponse.sendProductCards)) {
+            for (const card of aiResponse.sendProductCards) {
+                try {
+                    const apiRes = await sendProductCtaCard(from, card.imageUrl, card.body, card.buttonText, card.url);
+                    const cardMsgId = apiRes?.messages?.[0]?.id;
+                    if (cardMsgId) {
+                        sentMsgId = cardMsgId;
+                    }
+                    await logChatMessage(from, 'bot', `${card.body}\n[${card.buttonText}]`, 'text', null, cardMsgId);
+                } catch (err) {
+                    console.error('[sendProductCards] Failed to send product card:', JSON.stringify(err.response?.data || err.message, null, 2));
+                }
             }
         }
 

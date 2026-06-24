@@ -149,16 +149,17 @@ export const deleteProduct = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 function dbRowToProduct(row) {
     return {
-        id:       row.id,
-        name:     row.name,
-        code:     row.code,
-        category: row.category,
-        pattern:  row.pattern,
-        color:    row.color,
-        price:    row.price,
-        stock:    row.stock,
-        sizes:    row.sizes    || [],
-        imageUri: row.image_uri
+        id:        row.id,
+        name:      row.name,
+        code:      row.code,
+        category:  row.category,
+        pattern:   row.pattern,
+        color:     row.color,
+        price:     row.price,
+        stock:     row.stock,
+        sizes:     row.sizes    || [],
+        imageUri:  row.image_uri,
+        permalink: row.permalink || null
     };
 }
 
@@ -209,7 +210,8 @@ export const syncProducts = async (req, res) => {
                                 ? String(p.stock_quantity)
                                 : (p.stock_status === 'instock' ? '10' : '0'),
                 sizes:       sizes,
-                image_uri:   p.images?.[0]?.src || null
+                image_uri:   p.images?.[0]?.src || null,
+                permalink:   p.permalink || null
             };
         });
 
@@ -255,7 +257,8 @@ const mapWooProductToDb = (p) => {
                         ? String(p.stock_quantity)
                         : (p.stock_status === 'instock' ? '10' : '0'),
         sizes:       sizes,
-        image_uri:   p.images?.[0]?.src || null
+        image_uri:   p.images?.[0]?.src || null,
+        permalink:   p.permalink || null
     };
 };
 

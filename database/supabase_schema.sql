@@ -17,8 +17,12 @@ CREATE TABLE IF NOT EXISTS products (
     stock       TEXT,                        -- stored as text to match existing JSON (some rows have "4", some have 4)
     sizes       JSONB    DEFAULT '[]',       -- array of size strings e.g. ["S","M","L"]
     image_uri   TEXT,
+    permalink   TEXT,                        -- WooCommerce's direct product page URL (p.permalink)
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Safe to re-run: adds the column if this script is applied to an existing database
+ALTER TABLE products ADD COLUMN IF NOT EXISTS permalink TEXT;
 
 -- ============================================================
 -- 2. ORDERS TABLE
