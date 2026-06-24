@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { getOutfitMatches } from './api/matchOutfit.js';
 import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook, handleRazorpayWebhook } from './api/webhook.js';
 import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook } from './api/products.js';
+import { handleWooOrderWebhook } from './api/woocommerce-order-webhook.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
 import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat, editChatMessage, deleteChatMessage } from './api/chats.js';
 import { getWooSettings, saveWooSettings, getStoreSettings, saveStoreSettings } from './api/settings.js';
@@ -92,6 +93,9 @@ app.post('/webhook', receiveWebhook);
 
 // 👉 Razorpay Payment Webhook (POST)
 app.post('/api/webhook/razorpay', handleRazorpayWebhook);
+
+// 👉 WooCommerce "Order updated" Webhook — sends order confirmation via WhatsApp (POST)
+app.post('/api/woocommerce-order-webhook', handleWooOrderWebhook);
 
 
 // =============================
