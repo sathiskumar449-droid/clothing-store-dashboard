@@ -3345,14 +3345,6 @@ const hasMultipleNumbers = (text) => {
 
 const MULTIPLE_NUMBERS_REPLY = `😊 Please reply with just ONE number at a time.\n\nFor example, type *2* to see that category first. Once you're done, you can type another number like *7* to browse that category too!`;
 
-const ORDER_STATUS_MESSAGES = {
-    pending: 'Your order is being processed. It will be shipped soon!',
-    confirmed: 'Your order is confirmed and being prepared for shipping.',
-    shipped: 'Your order has been shipped! It should arrive within 2-5 days.',
-    delivered: 'Your order has been delivered. Thank you for shopping with us!',
-    cancelled: 'This order was cancelled.'
-};
-
 async function _handleSalesAssistantJS(from, userMessage, products, session) {
     const normalizedMessage = normalizeQuery(userMessage);
     const textLower = normalizedMessage.toLowerCase();
@@ -3394,13 +3386,8 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (trackedOrderId) {
         const order = await getOrderById(trackedOrderId);
         if (order) {
-            const statusKey = (order.status || '').toLowerCase();
-            const statusMsg = ORDER_STATUS_MESSAGES[statusKey] || 'We will check the latest status and update you shortly.';
-            const orderedOn = order.date
-                ? new Date(order.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
-                : 'N/A';
             return {
-                replyText: `📦 Order Status Update\n\nOrder ID: ${order.id}\nStatus: ${order.status}\nOrdered on: ${orderedOn}\n\n${statusMsg}`,
+                replyText: `📦 Thank you! We found your order (#${order.id}).\n\nOur team will dispatch it shortly and share the tracking ID with you here on WhatsApp once it's shipped. 🙏\n\nNeed anything else? Reply 'menu' to continue shopping.`,
                 sendImages: []
             };
         }
