@@ -11,7 +11,11 @@ export const getProducts = async (req, res) => {
 
         if (error) throw error;
 
-        res.json(data);
+        // Map snake_case DB columns to the camelCase shape every other consumer of a
+        // product object expects (dbRowToProduct is also used by addProduct/updateProduct
+        // below, and webhook.js's own getProducts() does the same image_uri -> imageUri
+        // mapping for the bot) — this endpoint was the one place still leaking raw rows.
+        res.json((data || []).map(dbRowToProduct));
     } catch (error) {
         console.error('❌ Get Products Error:', error);
         res.status(500).json({ success: false, message: error.message });
