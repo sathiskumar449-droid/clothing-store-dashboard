@@ -3289,16 +3289,14 @@ async function handleIntent(intentResult, session, products, from) {
 
                 return await prepareProductsPageResponse(session, products, `Search: ${query}`);
             } else {
-                let replyText = "We are sorry, but those products are currently out of stock. 😔";
+                const replyText = "We are sorry, but those products are currently out of stock. 😔";
                 if (!isAtTopLevelMenu(session)) {
-                    const statePrompt = await getStatePrompt(session, products);
-                    replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
-                    return {
-                        replyText,
-                        sendImages: statePrompt.sendImages || [],
-                        sendButtons: statePrompt.sendButtons || null,
-                        listContext: statePrompt.listContext || null
-                    };
+                    // Point at the always-valid category menu instead of echoing
+                    // getStatePrompt's session.selectedSubCategory + session.searchProducts —
+                    // those two fields can now drift independently under the search-cards
+                    // feature (a failed search never touches either), producing a mismatched
+                    // "category label from one moment, product list from another" suggestion.
+                    return goToFlatSubcategoryList(session, products, `${replyText}\n\nFeel free to continue shopping: 😊`);
                 }
                 return { replyText, sendImages: [] };
             }
