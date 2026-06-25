@@ -2912,7 +2912,13 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel, ct
     // array order ever drifts between requests, the key changes and the collage regenerates
     // instead of silently showing a stale order that no longer matches the list below.
     const orderSignature = crypto.createHash('md5').update(previewProducts.map(p => p.id).join(',')).digest('hex').substring(0, 12);
-    const cacheKey = (session.selectedSubCategory || '').toLowerCase().replace(/\s+/g, '_') + '_preview_' + orderSignature;
+    // COLLAGE_CACHE_VERSION is prefixed into the key so changing how createProductCollage()
+    // renders (e.g. removing the number badges) automatically invalidates every previously
+    // cached row instead of silently keeping stale-looking collages alive — bump this
+    // whenever the visual output of that function changes again. Old rows under the
+    // previous prefix just become unreachable dead rows; no manual cache-clearing needed.
+    const COLLAGE_CACHE_VERSION = 'v2';
+    const cacheKey = COLLAGE_CACHE_VERSION + '_' + (session.selectedSubCategory || '').toLowerCase().replace(/\s+/g, '_') + '_preview_' + orderSignature;
     let collageUrl = null;
     if (session.selectedSubCategory) {
         const { data: cachedCollage } = await supabase
