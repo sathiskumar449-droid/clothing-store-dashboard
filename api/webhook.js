@@ -1536,12 +1536,14 @@ export const getSortedParents = (categoryCounts) => {
 
 // Fixed display order + bold headers for the flat subcategory menu. Anything whose
 // getParentCategory() isn't one of these (e.g. New Arrivals leftovers) falls into "Other".
+// Emoji sits OUTSIDE the asterisks — some WhatsApp clients fail to bold the whole span when an
+// emoji touches the asterisk directly inside it (*👔 Shirts*), so only the plain text is bolded.
 const SUBCATEGORY_GROUP_ORDER = ['Shirts', 'T-Shirts', 'Pants', 'Shorts'];
 const SUBCATEGORY_GROUP_HEADERS = {
-    'Shirts': '*👔 Shirts*',
-    'T-Shirts': '*👕 T-Shirts*',
-    'Pants': '*🧍 Pants*',
-    'Shorts': '*🩳 Shorts*'
+    'Shirts': '👔 *Shirts*',
+    'T-Shirts': '👕 *T-Shirts*',
+    'Pants': '🧍 *Pants*',
+    'Shorts': '🩳 *Shorts*'
 };
 
 // Helper to compute the full flat list of WooCommerce subcategory names (in-stock only),
