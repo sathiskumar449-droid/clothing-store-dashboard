@@ -2333,6 +2333,17 @@ function detectIntent(text, products = [], session = null) {
     // 5. Category vs Search Intent
     // T-Shirts must be checked before Shirts: "t-shirts" contains a word boundary right after the
     // hyphen, so the \bShirt(s)?\b regex below would otherwise match it and misclassify as Shirts.
+    //
+    // Any mention of a parent-category word — including typing a category/subcategory name
+    // verbatim, e.g. "Casual Shirts", "Plain Shirts", "Track Pant" — always routes to SEARCH.
+    // There used to be a CATEGORY branch here that diverted short/plain-named text into the old
+    // "select a subcategory" menu (AWAITING_SUBCATEGORY_SELECTION), which produced inconsistent
+    // behavior: "plain shirt" went through search-cards but "Plain Shirts" (an exact match) hit
+    // the old menu. Free text is never a menu selection — only a numeric reply while a menu is
+    // actively awaiting one (handled separately, by session.state, not here) or a recognized
+    // command (greeting/menu, handled earlier above) should skip the search flow. The "Shop Now"
+    // button's flat category list + numeric browsing (SHOP_MORE / AWAITING_SUBCATEGORY_SELECTION)
+    // is untouched — it's a different intent type, not reachable through this branch.
     const parentCategories = ['New Arrivals', 'T-Shirts', 'Shirts', 'Shorts', 'Pants'];
     let foundCategory = parentCategories.find(cat => {
         const catSingular = cat.endsWith('s') ? cat.slice(0, -1) : cat;
@@ -2345,35 +2356,7 @@ function detectIntent(text, products = [], session = null) {
     }
 
     if (foundCategory) {
-        const descriptors = [
-            'black', 'white', 'red', 'blue', 'green', 'yellow', 'grey', 'gray', 'navy', 'pink',
-            'printed', 'check', 'checked', 'stripes', 'striped', 'pattern', 'linen', 'cotton', 'denim',
-            'under', 'below', 'less than', 'above', 'price', 'budget', '500', '600', '1000'
-        ];
-        const hasDescriptor = descriptors.some(desc => t.includes(desc));
-        const words = t.split(/\s+/).filter(w => w !== 'show' && w !== 'me' && w !== 'want' && w !== 'bro' && w !== 'anna');
-
-        // Any word naming a real subcategory (e.g. "plain", "polo", "round", "neck") means the
-        // customer is searching for something more specific than the bare parent category, so
-        // "plain shirt" must route to SEARCH the same as "i want plain shirt" — not fall through
-        // to the old subcategory menu just because it's short and the word count/descriptors
-        // list (above) doesn't happen to cover it. Derived live from `products` instead of a
-        // hand-maintained list, so new subcategories added via WooCommerce sync are covered
-        // automatically without needing this list touched again.
-        const parentOnlyWords = ['shirt', 'shirts', 'tshirt', 'tshirts', 'pant', 'pants', 'short', 'shorts', 'jean', 'jeans'];
-        const subcategoryWords = new Set();
-        for (const p of products) {
-            (p.category || '').toLowerCase().split(/[\s()\-]+/).forEach(w => {
-                if (w.length > 1 && !parentOnlyWords.includes(w)) subcategoryWords.add(w);
-            });
-        }
-        const matchesSubcategory = words.some(w => subcategoryWords.has(w));
-
-        if (hasDescriptor || matchesSubcategory || words.length > 2) {
-            return { type: 'SEARCH', query: t };
-        } else {
-            return { type: 'CATEGORY', category: foundCategory };
-        }
+        return { type: 'SEARCH', query: t };
     }
 
     const searchKeywords = ['printed', 'linen', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
