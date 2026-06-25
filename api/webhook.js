@@ -3218,8 +3218,10 @@ async function handleIntent(intentResult, session, products, from) {
                 'looking', 'for', 'tell', 'me', 'price', 'cost', 'how', 'much', 'under', 'below', 'less',
                 'than', 'find', 'display', 'search', 'some', 'can', 'give', 'look']);
             const TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku', 'iruke', 'pakanum',
-                'vaikanum', 'panunga', 'sollu', 'kodu', 'da', 'bro', 'anna', 'sir', 'madam', 'la', 'ku',
-                'ah', 'ha', 'na', 'tharinga', 'kudunga', 'venum', 'vendum', 'வேணும்', 'இருக்கா', 'பாருங்க']);
+                'vaikanum', 'panunga', 'sollu', 'kodu', 'kudu', 'da', 'bro', 'anna', 'sir', 'madam', 'la', 'ku',
+                'ah', 'ha', 'na', 'tharinga', 'kudunga', 'thareengala', 'venum', 'vendum', 'venam', 'vena',
+                'enaku', 'eanku', 'yenaku', 'enakku', 'yenakku', 'naaku', 'kaatu', 'kaattunga',
+                'வேணும்', 'இருக்கா', 'பாருங்க', 'எனக்கு']);
 
             // Step 2 — Normalize common spelling variants (applied to query AND product fields)
             const normalizeSpelling = (s) => s
