@@ -9,12 +9,6 @@ const WOOCOMMERCE_WEBHOOK_SECRET = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
 
 console.log('[Woo Order Webhook] WOOCOMMERCE_WEBHOOK_SECRET configured:', !!WOOCOMMERCE_WEBHOOK_SECRET);
 
-// Best-effort, single-instance dedup so a WooCommerce retry — or an admin re-saving an
-// order that's already processing/completed (which re-fires "order.updated") — doesn't
-// send the customer a second confirmation. Not durable across cold starts/instances;
-// acceptable since a duplicate message is a UX nuisance, not a correctness problem.
-const notifiedOrders = new Set();
-
 function verifySignature(rawBody, signatureHeader, secret) {
     const expected = crypto.createHmac('sha256', secret).update(rawBody || '').digest('base64');
     const expectedBuf = Buffer.from(expected);
@@ -111,6 +105,20 @@ function buildOrderConfirmationMessage(order) {
     return msg;
 }
 
+// Sent when an already-notified order's status later moves to "completed" — a
+// distinct message from buildOrderConfirmationMessage() so the customer isn't sent
+// the same "Order Confirmed!" text twice for one order.
+function buildOrderDeliveredMessage(order) {
+    const orderNumber = order.number || order.id;
+    const divider = '──────────────────────';
+    let msg = `${divider}\n`;
+    msg += `✅ *Order Delivered!*\n`;
+    msg += `${divider}\n\n`;
+    msg += `📦 Order #${orderNumber} has been delivered.\n\n`;
+    msg += `Thank you for shopping with Super Collections! We'd love to see you again. 🙏`;
+    return msg;
+}
+
 export async function handleWooOrderWebhook(req, res) {
     const topic = req.headers['x-wc-webhook-topic'] || '';
     console.log(`[Woo Order Webhook] Received — topic="${topic}"`);
@@ -150,30 +158,61 @@ export async function handleWooOrderWebhook(req, res) {
             return res.sendStatus(200);
         }
 
-        const dedupeKey = `${order.id}_${order.status}`;
-        if (notifiedOrders.has(dedupeKey)) {
-            console.log(`[Woo Order Webhook] Skipping — already notified for ${dedupeKey}`);
-            return res.sendStatus(200);
-        }
-
         const phone = normalizeIndianPhone(order.billing?.phone);
+        const row = buildOrderRow(order, phone);
 
-        // Save to the dashboard's orders table regardless of whether we can message the
-        // customer — a missing/bad phone shouldn't mean the owner never sees the order. Upsert
-        // (not insert) so a later status webhook for the same order, e.g. processing -> completed,
-        // updates this row instead of creating a duplicate. Failure here must never block the
-        // WhatsApp confirmation below, so it's caught and logged rather than thrown.
+        // Idempotency: WooCommerce can fire this webhook more than once for the same
+        // order (creation + a later stock/meta update event), and we must only message
+        // the customer when the order is genuinely new or its status genuinely changed.
+        // Each branch below is a single atomic SQL statement (insert-if-absent, then a
+        // conditional update guarded by `.neq('status', ...)`), so Postgres's row lock
+        // serializes two concurrent webhook calls for the same order — only one of them
+        // can ever observe the "old" status and decide to notify; the other sees the
+        // already-applied update and no-ops. This mirrors acquireSessionLock's
+        // conditional-UPDATE pattern elsewhere in this codebase.
+        let notifyKind = null; // 'new' | 'status_changed' | null (no notification)
         try {
-            const { error: orderInsertError } = await supabase
-                .from('orders')
-                .upsert([buildOrderRow(order, phone)], { onConflict: 'id' });
-            if (orderInsertError) {
-                console.error(`[Woo Order Webhook] ❌ Failed to save order #${order.id} to dashboard:`, orderInsertError.message);
+            const { error: insertError } = await supabase.from('orders').insert([row]);
+
+            if (!insertError) {
+                notifyKind = 'new';
+                console.log(`[Woo Order Webhook] ✅ Saved new order #${order.id} to dashboard (orders table)`);
+            } else if (insertError.code === '23505') {
+                // Row already exists — update it, but only treat it as a notify-worthy
+                // change if the stored status actually differs from the incoming one.
+                const { data: changedRows, error: updateError } = await supabase
+                    .from('orders')
+                    .update(row)
+                    .eq('id', row.id)
+                    .neq('status', row.status)
+                    .select('id');
+
+                if (updateError) {
+                    console.error(`[Woo Order Webhook] ❌ Failed to update order #${order.id}:`, updateError.message);
+                } else if (changedRows && changedRows.length > 0) {
+                    notifyKind = 'status_changed';
+                    console.log(`[Woo Order Webhook] ✅ Order #${order.id} status changed to "${row.status}"`);
+                } else {
+                    // Status unchanged (e.g. admin re-saved the order) — refresh the other
+                    // fields silently, no customer notification.
+                    const { error: silentUpdateError } = await supabase
+                        .from('orders')
+                        .update(row)
+                        .eq('id', row.id);
+                    if (silentUpdateError) {
+                        console.error(`[Woo Order Webhook] ❌ Failed to refresh order #${order.id}:`, silentUpdateError.message);
+                    }
+                    console.log(`[Woo Order Webhook] Skipping notification — order #${order.id} already has status "${row.status}"`);
+                }
             } else {
-                console.log(`[Woo Order Webhook] ✅ Saved order #${order.id} to dashboard (orders table)`);
+                console.error(`[Woo Order Webhook] ❌ Failed to save order #${order.id} to dashboard:`, insertError.message);
             }
         } catch (dbErr) {
             console.error(`[Woo Order Webhook] ❌ Unexpected error saving order #${order.id}:`, dbErr.message);
+        }
+
+        if (!notifyKind) {
+            return res.sendStatus(200);
         }
 
         if (!phone) {
@@ -181,13 +220,14 @@ export async function handleWooOrderWebhook(req, res) {
             return res.sendStatus(200);
         }
 
-        const message = buildOrderConfirmationMessage(order);
+        const message = (notifyKind === 'status_changed' && row.status === 'delivered')
+            ? buildOrderDeliveredMessage(order)
+            : buildOrderConfirmationMessage(order);
 
         await sendText(phone, message);
         await logChatMessage(phone, 'bot', message);
-        notifiedOrders.add(dedupeKey);
 
-        console.log(`[Woo Order Webhook] ✅ Sent order confirmation for #${order.number || order.id} to ${phone}`);
+        console.log(`[Woo Order Webhook] ✅ Sent ${notifyKind === 'status_changed' ? 'status update' : 'order confirmation'} for #${order.number || order.id} to ${phone}`);
         return res.sendStatus(200);
     } catch (err) {
         console.error('[Woo Order Webhook] ❌ Processing error:', err.message);
