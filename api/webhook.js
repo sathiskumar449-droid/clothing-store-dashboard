@@ -1683,11 +1683,10 @@ async function enterSubCategoryByIndex(session, products, idx, allSubs) {
     session.selectedParentCategory = getParentCategory(selectedSub);
     session.searchProducts = matched;
 
-    // Auto-select if only 1 product — skip the product list and go straight to size
-    if (matched.length === 1) {
-        return await enqueueProductsForOrdering(session, products, [matched[0]]);
-    }
-
+    // Every subcategory — regardless of how many products match — goes through the same
+    // collage + "Shop [Category]" CTA flow (website redirect). A single-match shortcut into
+    // the old size/qty/cart flow used to live here; removed so category browsing never
+    // re-enters that dormant flow (see prepareProductsPageResponse's ctaOptions branch).
     session.state = "AWAITING_SUBCATEGORY_SELECTION";
     const emoji = getCategoryEmoji(session.selectedParentCategory || '');
     const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -3860,11 +3859,10 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 session.selectedParentCategory = session.selectedParentCategory || getParentCategory(selectedSub);
                 session.searchProducts = matched;
 
-                // Auto-select if only 1 product — skip the product list and go straight to size
-                if (matched.length === 1) {
-                    return await enqueueProductsForOrdering(session, products, [matched[0]]);
-                }
-
+                // Every subcategory — regardless of match count — goes through the same
+                // collage + "Shop [Category]" CTA flow. A single-match shortcut into the old
+                // size/qty/cart flow used to live here; removed for the same reason as the
+                // matching shortcut in enterSubCategoryByIndex above.
                 session.state = "AWAITING_SUBCATEGORY_SELECTION";
                 const emoji = getCategoryEmoji(session.selectedParentCategory || '');
                 const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
