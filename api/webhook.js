@@ -2308,7 +2308,7 @@ function detectIntent(text, products = [], session = null) {
         t.includes('delivery duration') || t.includes('how long') || t.includes('how many days');
 
     if (isDeliveryTime) {
-        return { type: 'FAQ', reply: '🚚 Delivery usually takes 2-5 working days.' };
+        return { type: 'FAQ', reply: '🚚 Delivery usually takes 7 working days.' };
     }
 
     // ─── SHIPPING CHARGES Combination Match ───
@@ -2981,7 +2981,7 @@ async function handleOrderHelpChoice(choice, customerPhone) {
         case '3':
             console.log('[OrderHelp] Delivery Time FAQ sent to', customerPhone);
             return {
-                replyText: `🚚 *Delivery Time*\n\nOrders are usually delivered within 2-5 working days.${followUp}`,
+                replyText: `🚚 *Delivery Time*\n\nOrders are usually delivered within 7 working days.${followUp}`,
                 sendImages: []
             };
         case '4': {
@@ -4364,7 +4364,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
     // FAQ MATCHES
     if (textLower.includes("delivery eppo") || textLower.includes("delivery time") || textLower.includes("evlo naal") || textLower.includes("evvalavu naal") || textLower.includes("kku evlo naal") || textLower.includes("vanthudum")) {
-        return { replyText: "🚚 Delivery usually takes 2-5 working days.", sendImages: [] };
+        return { replyText: "🚚 Delivery usually takes 7 working days.", sendImages: [] };
     }
     if (textLower.includes("delivery charge") || textLower.includes("delivery rate") || textLower.includes("delivery fee") || textLower.includes("shipping charge") || textLower.includes("courier charge")) {
         return { replyText: "🚚 Delivery charge is ₹80.", sendImages: [] };
