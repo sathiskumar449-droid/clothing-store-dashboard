@@ -2353,7 +2353,23 @@ function detectIntent(text, products = [], session = null) {
         const hasDescriptor = descriptors.some(desc => t.includes(desc));
         const words = t.split(/\s+/).filter(w => w !== 'show' && w !== 'me' && w !== 'want' && w !== 'bro' && w !== 'anna');
 
-        if (hasDescriptor || words.length > 2) {
+        // Any word naming a real subcategory (e.g. "plain", "polo", "round", "neck") means the
+        // customer is searching for something more specific than the bare parent category, so
+        // "plain shirt" must route to SEARCH the same as "i want plain shirt" — not fall through
+        // to the old subcategory menu just because it's short and the word count/descriptors
+        // list (above) doesn't happen to cover it. Derived live from `products` instead of a
+        // hand-maintained list, so new subcategories added via WooCommerce sync are covered
+        // automatically without needing this list touched again.
+        const parentOnlyWords = ['shirt', 'shirts', 'tshirt', 'tshirts', 'pant', 'pants', 'short', 'shorts', 'jean', 'jeans'];
+        const subcategoryWords = new Set();
+        for (const p of products) {
+            (p.category || '').toLowerCase().split(/[\s()\-]+/).forEach(w => {
+                if (w.length > 1 && !parentOnlyWords.includes(w)) subcategoryWords.add(w);
+            });
+        }
+        const matchesSubcategory = words.some(w => subcategoryWords.has(w));
+
+        if (hasDescriptor || matchesSubcategory || words.length > 2) {
             return { type: 'SEARCH', query: t };
         } else {
             return { type: 'CATEGORY', category: foundCategory };
