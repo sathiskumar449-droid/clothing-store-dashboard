@@ -1,6 +1,6 @@
 // api/chats.js  — Supabase version (replaces fs-based implementation)
 // All getChats/saveChats calls are now async
-import { getChats, saveChats, sendText, sendImage, userSessions, deleteSession } from './webhook.js';
+import { getChats, getChatByPhone, saveChats, sendText, sendImage, userSessions, deleteSession } from './webhook.js';
 import { supabase } from '../lib/supabase.js';
 
 // Chat rows default to the generic "Customer" name (the `chats` table's column default,
@@ -46,7 +46,6 @@ export const getAllChats = async (req, res) => {
     try {
         const chats = await getChats();
         const chatList = Object.values(chats)
-            .filter(chat => chat.customerPhone && !chat.customerPhone.startsWith('session_'))
             .map(chat => ({
                 customerPhone: chat.customerPhone,
                 customerName:  chat.customerName  || 'Customer',
@@ -65,12 +64,11 @@ export const getAllChats = async (req, res) => {
     }
 };
 
-// GET /chats/:phone
+// GET /chats/:phone — single phone-filtered lookup (not the full chats table)
 export const getChatHistory = async (req, res) => {
     try {
         const { phone } = req.params;
-        const chats     = await getChats();
-        const chat      = chats[phone] || {
+        const chat = await getChatByPhone(phone) || {
             customerPhone: phone,
             customerName:  'Customer',
             lastMessage:   '',

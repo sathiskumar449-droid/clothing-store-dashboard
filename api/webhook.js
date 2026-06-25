@@ -176,11 +176,17 @@ async function getOrderById(orderId) {
 // Chats Database Helpers  (async — Supabase)
 // =============================
 
+// Used for the chat list (dashboard sidebar) and the bot's per-message botPaused check —
+// neither needs the (potentially large) `messages` JSONB blob, so it's left out of the
+// select entirely rather than fetched and discarded. session_<phone> rows (bot session
+// state, stored in this same table — see getSession/saveSession below) are filtered out
+// at the query level with `.not(...)` instead of in JS after fetching every row.
 export async function getChats() {
     try {
         const { data, error } = await supabase
             .from('chats')
-            .select('*');
+            .select('customer_phone, customer_name, last_message, last_updated, bot_paused')
+            .not('customer_phone', 'like', 'session_%');
 
         if (error) throw error;
 
@@ -192,14 +198,41 @@ export async function getChats() {
                 customerName: row.customer_name,
                 lastMessage: row.last_message,
                 lastUpdated: row.last_updated,
-                botPaused: row.bot_paused,
-                messages: row.messages || []
+                botPaused: row.bot_paused
             };
         }
         return chatsObj;
     } catch (error) {
         console.error('❌ Error reading chats:', error.message);
         return {};
+    }
+}
+
+// Phone-filtered single-row lookup for one chat's full record (including its message
+// history) — used by the chat detail view, which previously called getChats() and pulled
+// every customer's full chat row just to pick one out of the resulting object.
+export async function getChatByPhone(phone) {
+    try {
+        const { data, error } = await supabase
+            .from('chats')
+            .select('*')
+            .eq('customer_phone', phone)
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return null;
+
+        return {
+            customerPhone: data.customer_phone,
+            customerName: data.customer_name,
+            lastMessage: data.last_message,
+            lastUpdated: data.last_updated,
+            botPaused: data.bot_paused,
+            messages: data.messages || []
+        };
+    } catch (error) {
+        console.error(`❌ Error reading chat for ${phone}:`, error.message);
+        return null;
     }
 }
 

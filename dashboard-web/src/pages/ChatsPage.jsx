@@ -59,7 +59,9 @@ export default function ChatsPage() {
     }
   }, []);
 
-  useAutoRefresh(fetchChats, 8000);
+  // 20s (was 8s) — the list doesn't need second-level freshness, and this now pauses
+  // entirely while the tab is hidden (see useAutoRefresh).
+  useAutoRefresh(fetchChats, 20000);
 
   const openChat = useCallback(async (phone) => {
     setLoadingMsgs(true);
@@ -77,19 +79,19 @@ export default function ChatsPage() {
     }
   }, [navigate]);
 
-  // Auto-refresh messages for active chat
-  useEffect(() => {
+  // Auto-refresh messages for the open conversation — 15s (was 5s), paused while the tab
+  // is hidden. `immediate: false` since openChat() above already fetched it once.
+  const refreshActiveChat = useCallback(async () => {
     if (!activeChat?.customerPhone) return;
-    const id = setInterval(async () => {
-      try {
-        const res = await getChatHistory(activeChat.customerPhone);
-        const chat = res.data?.chat || {};
-        setActiveChat(chat);
-        setMessages(chat.messages || []);
-      } catch {/* silent */}
-    }, 5000);
-    return () => clearInterval(id);
+    try {
+      const res = await getChatHistory(activeChat.customerPhone);
+      const chat = res.data?.chat || {};
+      setActiveChat(chat);
+      setMessages(chat.messages || []);
+    } catch {/* silent */}
   }, [activeChat?.customerPhone]);
+
+  useAutoRefresh(refreshActiveChat, 15000, [activeChat?.customerPhone], { immediate: false });
 
   // Scroll to bottom on initial load and when message length increases
   useEffect(() => {
