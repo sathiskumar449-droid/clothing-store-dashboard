@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 
 import { getOutfitMatches } from './api/matchOutfit.js';
-import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook, handleRazorpayWebhook } from './api/webhook.js';
+import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook, handleRazorpayWebhook, handleImageProxy } from './api/webhook.js';
 import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook } from './api/products.js';
 import { handleWooOrderWebhook } from './api/woocommerce-order-webhook.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
@@ -96,6 +96,10 @@ app.post('/api/webhook/razorpay', handleRazorpayWebhook);
 
 // 👉 WooCommerce "Order updated" Webhook — sends order confirmation via WhatsApp (POST)
 app.post('/api/woocommerce-order-webhook', handleWooOrderWebhook);
+
+// 👉 Image proxy — lets Meta's WhatsApp media fetcher pull product images via our domain
+// instead of supercollections.in directly (see handleImageProxy in api/webhook.js for why)
+app.get('/api/image-proxy', handleImageProxy);
 
 
 // =============================

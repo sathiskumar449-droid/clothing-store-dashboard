@@ -628,6 +628,57 @@ export async function sendCtaUrlMessage(to, bodyText, displayText, url) {
     return response.data;
 }
 
+// Hosts we'll fetch on the store's behalf for /api/image-proxy — keeps the proxy from being an
+// open relay for arbitrary URLs.
+const PROXY_ALLOWED_HOSTS = new Set(['www.supercollections.in', 'supercollections.in']);
+
+// cta_url interactive headers require Meta's own servers to fetch the image by link (passing a
+// media id instead gets rejected with "header image must contain link" — error 131008), but
+// Meta's fetcher gets a 503 trying to reach supercollections.in directly even though the same URL
+// is reachable from here (error 131053). Rewriting the link to point at our own /api/image-proxy
+// route sidesteps that: Meta fetches from our already-reachable Vercel domain, and we do the real
+// fetch to supercollections.in server-side, where it works.
+const getProxiedImageUrl = (rawUrl) => {
+    const base = process.env.PUBLIC_BASE_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+    if (!base || !rawUrl) return rawUrl;
+    return `${base}/api/image-proxy?url=${encodeURIComponent(rawUrl)}`;
+};
+
+// Express handler for GET /api/image-proxy?url=<supercollections.in image URL> — fetches the
+// image server-side (where supercollections.in is reachable) and re-serves the bytes, so Meta's
+// WhatsApp media fetcher can pull it from our domain instead of failing against the store's host.
+export async function handleImageProxy(req, res) {
+    const target = req.query?.url;
+    if (!target) {
+        res.status(400).send('Missing url parameter');
+        return;
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(target);
+    } catch {
+        res.status(400).send('Invalid url parameter');
+        return;
+    }
+
+    if (!PROXY_ALLOWED_HOSTS.has(parsed.hostname)) {
+        res.status(403).send('Host not allowed');
+        return;
+    }
+
+    try {
+        const imageRes = await axios.get(target, { responseType: 'arraybuffer', timeout: 15000 });
+        res.set('Content-Type', imageRes.headers['content-type'] || 'image/jpeg');
+        res.set('Cache-Control', 'public, max-age=86400');
+        res.send(Buffer.from(imageRes.data));
+    } catch (err) {
+        console.error('[image-proxy] Failed to fetch upstream image:', err.message);
+        res.status(502).send('Upstream fetch failed');
+    }
+}
+
 // Per-product "View & Buy" card used for SEARCH results (see buildProductCardsPageResponse) —
 // same cta_url shape as sendCtaUrlMessage but with an image header showing that product's photo.
 // imageUrl may be null (no resolvable image for this product); the header is omitted rather than
@@ -647,16 +698,7 @@ export async function sendProductCtaCard(to, imageUrl, bodyText, displayText, ur
         }
     };
     if (imageUrl) {
-        // Passing a raw weblink here makes Meta's own servers fetch the image, and in production
-        // that fetch fails with error 131053 ("Downloading media from weblink failed with http
-        // code 503") against this store's hosting — even though the same URL is reachable from
-        // our server. uploadMedia() (already used by sendImage for collages) sidesteps this by
-        // downloading the bytes ourselves and uploading them to Meta directly, so the header only
-        // ever depends on a link as a last-resort fallback if that upload itself fails.
-        const mediaId = await uploadMedia(imageUrl);
-        interactive.header = mediaId
-            ? { type: 'image', image: { id: mediaId } }
-            : { type: 'image', image: { link: imageUrl } };
+        interactive.header = { type: 'image', image: { link: getProxiedImageUrl(imageUrl) } };
     }
 
     const payload = {
