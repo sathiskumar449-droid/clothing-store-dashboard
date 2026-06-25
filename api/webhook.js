@@ -1574,9 +1574,15 @@ export const getAllSubCategoriesList = (products) => {
     return subs;
 };
 
-// Plain "1.", "2.", "3." etc for every index — emoji digits render bold/highlighted
-// in WhatsApp for 1-10 but not 11+, so we avoid them to keep formatting consistent.
-const numberPrefix = (idx) => `${idx + 1}.`;
+// Emoji keycap digits (1️⃣...9️⃣), 🔟 for ten, and digit-by-digit concatenation for 11+
+// (e.g. 11 -> "1️⃣1️⃣", 20 -> "2️⃣0️⃣") — purely a display choice; selection still parses the
+// plain number the customer types back, untouched by this.
+const KEYCAP_DIGITS = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'];
+function getEmojiNumber(n) {
+    if (n === 10) return '🔟';
+    if (n >= 0 && n <= 9) return KEYCAP_DIGITS[n];
+    return String(n).split('').map(d => KEYCAP_DIGITS[Number(d)]).join('');
+}
 
 function makeAllSubcategoriesPlainTextResponse(subs, bodyPrefix = "📋 *Select a Category*") {
     const groupNames = [...SUBCATEGORY_GROUP_ORDER, 'Other'];
@@ -1594,7 +1600,7 @@ function makeAllSubcategoriesPlainTextResponse(subs, bodyPrefix = "📋 *Select 
         }
         groupSubs.forEach(sub => {
             const capSub = sub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-            lines.push(`${numberPrefix(idx)} ${capSub}`);
+            lines.push(`${getEmojiNumber(idx + 1)} ${capSub}`);
             idx++;
         });
         groupBlocks.push(lines.join('\n'));
