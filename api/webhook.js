@@ -3684,17 +3684,19 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             session.fromCrossSell = true;
             session.selectedParentCategory = promoCategory;
 
-            // If only 1 subcategory, skip the list and go directly to products
+            // If only 1 subcategory, skip the list and go directly to that subcategory — through
+            // the same collage + "Shop [Category]" CTA flow every other subcategory selection
+            // uses (passing ctaOptions), not the old full product-cards list.
             if (subs.length === 1) {
                 const selectedSub = subs[0];
                 const matched = products.filter(p => Number(p.stock) > 0 && productMatchesSubCategory(p, selectedSub));
                 if (matched.length > 0) {
                     session.selectedSubCategory = selectedSub;
-                    session.state = "AWAITING_MODEL_SELECTION";
+                    session.state = "AWAITING_SUBCATEGORY_SELECTION";
                     session.searchProducts = matched;
                     const emoji = getCategoryEmoji(promoCategory);
                     const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-                    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`);
+                    return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`, { subCategoryDisplayName: capSub });
                 }
             }
 
