@@ -63,7 +63,8 @@ function dbRowToOrder(row) {
         customerAddress:row.customer_address,
         items:          row.items || [],
         totalPrice:     row.total_price,
-        date:           row.date
+        date:           row.date,
+        source:         row.source || 'whatsapp'
     };
 
     // Attach legacy fields if they exist (non-null) so the dashboard still works

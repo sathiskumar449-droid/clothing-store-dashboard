@@ -55,8 +55,14 @@ CREATE TABLE IF NOT EXISTS orders (
     pant_color          TEXT,
     customer_details    TEXT,        -- legacy comma-separated details string
     payment_method      TEXT,
-    created_at          TIMESTAMPTZ DEFAULT NOW()
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+
+    -- Where the order originated — "whatsapp" (bot checkout) or "website" (WooCommerce)
+    source              TEXT     DEFAULT 'whatsapp'
 );
+
+-- Safe to re-run: adds the column if this script is applied to an existing database
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'whatsapp';
 
 -- ============================================================
 -- 3. CHATS TABLE

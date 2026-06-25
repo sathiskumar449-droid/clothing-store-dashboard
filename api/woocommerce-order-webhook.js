@@ -3,6 +3,7 @@
 // to the customer over WhatsApp once the order reaches processing/completed.
 import crypto from 'crypto';
 import { sendText, logChatMessage } from './webhook.js';
+import { supabase } from '../lib/supabase.js';
 
 const WOOCOMMERCE_WEBHOOK_SECRET = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
 
@@ -32,6 +33,59 @@ function normalizeIndianPhone(rawPhone) {
     if (digits.length === 10) return `91${digits}`;
     if (digits.length === 11 && digits.startsWith('0')) return `91${digits.slice(1)}`;
     return digits;
+}
+
+// Joins WooCommerce's billing address fields into the same single free-text line the
+// WhatsApp checkout flow stores in customer_address (see api/webhook.js's order-confirm step).
+function buildCustomerAddress(billing) {
+    if (!billing) return '';
+    const parts = [billing.address_1, billing.address_2, billing.city, billing.state]
+        .map(p => (p || '').trim())
+        .filter(Boolean);
+    const line = parts.join(', ');
+    return billing.postcode ? `${line}${line ? ', Pin: ' : 'Pin: '}${billing.postcode}` : line;
+}
+
+// WooCommerce variation attributes (size/color) ride along in each line item's meta_data as
+// {key, value} pairs — pull them out the same way mapWooProductToDb() does for products.
+function extractMetaValue(metaData, keyPattern) {
+    if (!Array.isArray(metaData)) return null;
+    const entry = metaData.find(m => keyPattern.test(String(m.key || '').toLowerCase()));
+    return entry ? String(entry.value) : null;
+}
+
+// This handler only ever reaches here for "processing"/"completed" orders (see the status
+// check above), so map onto the dashboard's two "order is real" statuses — matching the
+// STATUS_OPTIONS dashboard-web/src/pages/OrdersPage.jsx already knows how to render/filter.
+function mapWooStatusToDashboardStatus(wooStatus) {
+    return wooStatus === 'completed' ? 'delivered' : 'confirmed';
+}
+
+// Shapes a WooCommerce order into the exact same row shape the WhatsApp-bot checkout flow
+// writes (see the `newOrder` object in api/webhook.js) so the dashboard renders it identically.
+function buildOrderRow(order, phone) {
+    const firstName = order.billing?.first_name || '';
+    const lastName = order.billing?.last_name || '';
+    const lineItems = Array.isArray(order.line_items) ? order.line_items : [];
+
+    return {
+        id: `WOO-${order.id}`,
+        customer_phone: phone || '',
+        customer_name: `${firstName} ${lastName}`.trim() || 'Customer',
+        customer_address: buildCustomerAddress(order.billing),
+        items: lineItems.map(item => ({
+            productId: item.product_id,
+            product: item.name,
+            color: extractMetaValue(item.meta_data, /colou?r/) || '',
+            size: extractMetaValue(item.meta_data, /size/) || 'N/A',
+            price: Number(item.price),
+            qty: item.quantity || 1
+        })),
+        total_price: Number(order.total) || 0,
+        status: mapWooStatusToDashboardStatus(order.status),
+        date: order.date_created || new Date().toISOString(),
+        source: 'website'
+    };
 }
 
 function buildOrderConfirmationMessage(order) {
@@ -103,6 +157,25 @@ export async function handleWooOrderWebhook(req, res) {
         }
 
         const phone = normalizeIndianPhone(order.billing?.phone);
+
+        // Save to the dashboard's orders table regardless of whether we can message the
+        // customer — a missing/bad phone shouldn't mean the owner never sees the order. Upsert
+        // (not insert) so a later status webhook for the same order, e.g. processing -> completed,
+        // updates this row instead of creating a duplicate. Failure here must never block the
+        // WhatsApp confirmation below, so it's caught and logged rather than thrown.
+        try {
+            const { error: orderInsertError } = await supabase
+                .from('orders')
+                .upsert([buildOrderRow(order, phone)], { onConflict: 'id' });
+            if (orderInsertError) {
+                console.error(`[Woo Order Webhook] ❌ Failed to save order #${order.id} to dashboard:`, orderInsertError.message);
+            } else {
+                console.log(`[Woo Order Webhook] ✅ Saved order #${order.id} to dashboard (orders table)`);
+            }
+        } catch (dbErr) {
+            console.error(`[Woo Order Webhook] ❌ Unexpected error saving order #${order.id}:`, dbErr.message);
+        }
+
         if (!phone) {
             console.error(`[Woo Order Webhook] ❌ No usable billing phone on order #${order.id} — cannot notify customer`);
             return res.sendStatus(200);
