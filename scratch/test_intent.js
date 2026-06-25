@@ -114,41 +114,9 @@ const sessionHeal = {
 };
 await runTest('Self-Healing image in size selection', '1', sessionHeal);
 
-// Test 11: Pagination - Next Page
-const sessionNext = {
-    state: 'AWAITING_MODEL_SELECTION',
-    currentPage: 0,
-    searchProducts: Array.from({ length: 20 }, (_, i) => ({
-        id: 100 + i,
-        name: `Product ${i + 1}`,
-        price: '100',
-        stock: '10',
-        sizes: 'M',
-        category: 'Casual Shirt',
-        imageUri: 'null'
-    })),
-    selectedSubCategory: 'Casual Shirt',
-    selectedParentCategory: 'Shirts'
-};
-await runTest('Pagination - Next Page', 'next', sessionNext);
-
-// Test 12: Pagination - Prev Page
-const sessionPrev = {
-    state: 'AWAITING_MODEL_SELECTION',
-    currentPage: 1,
-    searchProducts: Array.from({ length: 20 }, (_, i) => ({
-        id: 100 + i,
-        name: `Product ${i + 1}`,
-        price: '100',
-        stock: '10',
-        sizes: 'M',
-        category: 'Casual Shirt',
-        imageUri: 'null'
-    })),
-    selectedSubCategory: 'Casual Shirt',
-    selectedParentCategory: 'Shirts'
-};
-await runTest('Pagination - Prev Page', 'prev', sessionPrev);
+// Pagination ("Next Page"/"Prev Page") was removed entirely — every matching product now
+// renders as its own card in a single response, no page cap. See
+// scratch/test_search_pagination_bugfix.js for coverage of that behavior.
 
 // Test 13: Standard Shirt added to cart -> Triggers Pants cross-sell promo teaser
 const sessionRec1 = {

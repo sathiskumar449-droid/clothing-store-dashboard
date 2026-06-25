@@ -249,9 +249,6 @@ export async function getSession(phone) {
         cart: [],
         history: [],
         searchProducts: [],
-        searchResultMode: null,
-        searchPage: 0,
-        searchQueryLabel: null,
         selectedColor: null,
         selectedSize: null,
         lastRecommendation: null,
@@ -1643,7 +1640,6 @@ async function enterSubCategoryByIndex(session, products, idx, allSubs) {
 
     session.selectedSubCategory = selectedSub;
     session.selectedParentCategory = getParentCategory(selectedSub);
-    session.currentPage = 0;
     session.searchProducts = matched;
 
     // Auto-select if only 1 product — skip the product list and go straight to size
@@ -2810,20 +2806,14 @@ function getShortProductName(p) {
     return name.trim();
 }
 
-// Builds one cta_url card per matched product for SEARCH results — image header (that
-// product's own photo), body text (name/color + price + sizes), and a "View & Buy" button
-// linking straight to that product's own page, instead of the old collage + "Select Product"
-// list. Falls back to the product's category page (lib/categoryUrls.js) when a product has no
-// permalink (sync gap), logging a warning, so a missing field never sends a broken link.
-function buildProductCardsPageResponse(session, productsPool, pageProducts, startIndex, pageSize, queryLabel) {
-    const totalProducts = session.searchProducts.length;
-    const totalPages = Math.ceil(totalProducts / pageSize);
-    // Derived purely from startIndex/pageSize (not session.currentPage, which belongs to the
-    // separate category-browsing pagination — see session.searchPage) so this card view can
-    // never show a page number that drifted from a different flow's state.
-    const pageNum = Math.floor(startIndex / pageSize) + 1;
-
-    const cards = pageProducts.map(p => {
+// Builds one cta_url card per matched product — image header (that product's own photo), body
+// text (name/color + price + sizes), and a "View & Buy" button linking straight to that
+// product's own page. Falls back to the product's category page (lib/categoryUrls.js) when a
+// product has no permalink (sync gap), logging a warning, so a missing field never sends a
+// broken link. Every matched product gets a card in one go — there's no pagination, so there's
+// nothing to page through.
+function buildProductCardsResponse(productsPool, products, queryLabel) {
+    const cards = products.map(p => {
         let url = p.permalink;
         if (!url) {
             console.warn(`[ProductCards] Product ${p.id} ("${p.name}") has no permalink — falling back to category URL`);
@@ -2845,70 +2835,44 @@ function buildProductCardsPageResponse(session, productsPool, pageProducts, star
         };
     });
 
-    const buttons = [];
-    if (startIndex > 0) {
-        buttons.push({ id: 'prev_page', title: '⬅ Prev Page' });
-    }
-    if (startIndex + pageSize < totalProducts) {
-        buttons.push({ id: 'next_page', title: '➡ Next Page' });
-    }
-
-    const response = {
-        replyText: `👔 *${queryLabel}* (Page ${pageNum}/${totalPages})`,
+    return {
+        replyText: `👔 *${queryLabel}*`,
         sendProductCards: cards,
         sendImages: []
     };
-
-    if (buttons.length > 0) {
-        response.sendButtons = {
-            body: `Manage Pages:`,
-            buttons
-        };
-    }
-
-    return response;
 }
 
 // When ctaOptions is passed (only by the subcategory-browsing call sites — enterSubCategoryByIndex
-// and the AWAITING_SUBCATEGORY_SELECTION number handler), this skips the interactive product list
-// entirely and instead sends a cta_url button to that subcategory's page on supercollections.in.
-// Search results render as individual product cards (see buildProductCardsPageResponse) when
-// session.searchResultMode === 'cards'; every other caller without ctaOptions (cross-sell,
-// "same category" continue, AWAITING_MODEL_SELECTION pagination of those) keeps the original
-// collage + list behavior untouched.
+// and the AWAITING_SUBCATEGORY_SELECTION number handler), this sends a representative collage
+// preview alongside a single cta_url button to that subcategory's page on supercollections.in.
+// Every other caller — search results AND plain category-browsing alike — renders the full match
+// list as individual product cards (see buildProductCardsResponse): no pagination, since
+// WhatsApp's interactive list message (the old UI this replaced for category-browsing) caps out
+// at 10 rows and cards have no such limit.
 async function prepareProductsPageResponse(session, productsPool, queryLabel, ctaOptions = null) {
-    const pageSize = 9;
-    // Search-result cards (session.searchResultMode === 'cards') and category-browsing
-    // (collage/list) pagination are tracked in separate session fields — searchPage vs
-    // currentPage — so leftover page state from one flow can never bleed into the other.
-    const isCardsMode = !ctaOptions && session.searchResultMode === 'cards';
-    const currentPage = isCardsMode ? (session.searchPage || 0) : (session.currentPage || 0);
-    const startIndex = currentPage * pageSize;
-    const pageProducts = session.searchProducts.slice(startIndex, startIndex + pageSize);
+    const allProducts = session.searchProducts || [];
 
-    if (pageProducts.length === 0) {
+    if (allProducts.length === 0) {
         return {
-            replyText: "No products were found on this page. 😔",
+            replyText: "No products were found. 😔",
             sendImages: []
         };
     }
 
-    // SEARCH results render as individual per-product CTA cards instead of a collage +
-    // "Select Product" list (see buildProductCardsPageResponse) — skip collage generation
-    // entirely for this mode since each card carries its own product image already.
-    // Category-browse (ctaOptions) and every other caller of this function are untouched.
-    if (isCardsMode) {
-        return buildProductCardsPageResponse(session, productsPool, pageProducts, startIndex, pageSize, queryLabel);
+    if (!ctaOptions) {
+        return buildProductCardsResponse(productsPool, allProducts, queryLabel);
     }
 
-    const startNumber = startIndex + 1;
-    console.log('[Collage] Order going into createProductCollage:', pageProducts.map((p, i) => `${startNumber + i}=${p.color || ''} ${p.name}`.trim()));
+    // Collage is just a visual preview alongside the website link — capped at 9 products since
+    // it was never paginated to begin with (ctaOptions never exposed Next/Prev buttons).
+    const previewProducts = allProducts.slice(0, 9);
+    console.log('[Collage] Order going into createProductCollage:', previewProducts.map((p, i) => `${i + 1}=${p.color || ''} ${p.name}`.trim()));
     // Include the ordered product IDs in the cache key so a cache hit only ever serves a
     // collage that was built from this exact same product order — if the underlying products
     // array order ever drifts between requests, the key changes and the collage regenerates
     // instead of silently showing a stale order that no longer matches the list below.
-    const orderSignature = crypto.createHash('md5').update(pageProducts.map(p => p.id).join(',')).digest('hex').substring(0, 12);
-    const cacheKey = (session.selectedSubCategory || '').toLowerCase().replace(/\s+/g, '_') + '_page_' + currentPage + '_' + orderSignature;
+    const orderSignature = crypto.createHash('md5').update(previewProducts.map(p => p.id).join(',')).digest('hex').substring(0, 12);
+    const cacheKey = (session.selectedSubCategory || '').toLowerCase().replace(/\s+/g, '_') + '_preview_' + orderSignature;
     let collageUrl = null;
     if (session.selectedSubCategory) {
         const { data: cachedCollage } = await supabase
@@ -2923,7 +2887,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel, ct
     }
     if (!collageUrl) {
         console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);
-        collageUrl = await createProductCollage(pageProducts, startNumber, productsPool);
+        collageUrl = await createProductCollage(previewProducts, 1, productsPool);
         if (collageUrl && session.selectedSubCategory) {
             try {
                 const { error } = await supabase
@@ -2942,78 +2906,19 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel, ct
         }
     }
 
-    if (ctaOptions) {
-        const displayName = ctaOptions.subCategoryDisplayName;
-        const url = getCategoryUrl(session.selectedSubCategory || displayName);
-        let buttonText = `Shop ${displayName}`;
-        if (buttonText.length > 20) buttonText = 'Shop Now';
+    const displayName = ctaOptions.subCategoryDisplayName;
+    const url = getCategoryUrl(session.selectedSubCategory || displayName);
+    let buttonText = `Shop ${displayName}`;
+    if (buttonText.length > 20) buttonText = 'Shop Now';
 
-        return {
-            sendImages: collageUrl ? [{ url: collageUrl, caption: displayName }] : [],
-            sendCtaUrl: {
-                body: `🛍️ Browse all ${displayName} options, choose your size & place your order directly on our website! 👇`,
-                buttonText,
-                url
-            }
-        };
-    }
-
-    const totalProducts = session.searchProducts.length;
-    const totalPages = Math.ceil(totalProducts / pageSize);
-    const pageNum = currentPage + 1;
-
-    const body = `👔 *${queryLabel}* (Page ${pageNum}/${totalPages})`;
-    const buttonText = "Select Product";
-    console.log('[ProductList] Order going into sendList rows:', pageProducts.map((p, i) => `${startIndex + i + 1}=${p.color || ''} ${p.name}`.trim()));
-    const sections = [
-        {
-            title: "Products",
-            rows: pageProducts.map((p, idx) => {
-                const globalIdx = startIndex + idx + 1;
-                const shortName = getShortProductName(p);
-                return {
-                    id: String(globalIdx),
-                    title: `${globalIdx}. ${shortName}`.substring(0, 24),
-                    description: `₹${p.price} | Stock: ${p.stock}`
-                };
-            })
-        }
-    ];
-
-    const buttons = [];
-    if (currentPage > 0) {
-        buttons.push({ id: 'prev_page', title: '⬅ Prev Page' });
-    }
-    if (startIndex + pageSize < totalProducts) {
-        buttons.push({ id: 'next_page', title: '➡ Next Page' });
-    }
-
-    const response = {
-        sendList: {
-            body,
+    return {
+        sendImages: collageUrl ? [{ url: collageUrl, caption: displayName }] : [],
+        sendCtaUrl: {
+            body: `🛍️ Browse all ${displayName} options, choose your size & place your order directly on our website! 👇`,
             buttonText,
-            sections
-        },
-        sendImages: collageUrl ? [{ url: collageUrl, caption: `${queryLabel} - Page ${pageNum}` }] : [],
-        searchProducts: session.searchProducts
+            url
+        }
     };
-
-    if (buttons.length > 0) {
-        response.sendButtons = {
-            body: `Manage Pages:`,
-            buttons: buttons
-        };
-    }
-
-    response.listContext = {
-        type: 'products',
-        data: session.searchProducts,
-        currentPage: currentPage,
-        selectedSubCategory: session.selectedSubCategory,
-        selectedParentCategory: session.selectedParentCategory
-    };
-
-    return response;
 }
 
 // Static FAQ-style replies for the "Order Help" submenu (placeholders — wording to be customized later).
@@ -3370,10 +3275,7 @@ async function handleIntent(intentResult, session, products, from) {
 
             if (matched.length > 0) {
                 session.searchProducts = matched;
-                session.searchPage = 0;
-                session.searchQueryLabel = `Search: ${query}`;
                 session.state = "AWAITING_MODEL_SELECTION";
-                session.searchResultMode = 'cards';
                 session.pendingProduct = null;
                 session.selectedSize = null;
                 session.isRecommendation = false;
@@ -3381,7 +3283,7 @@ async function handleIntent(intentResult, session, products, from) {
                 session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
                 session.cartCrossSellShown = false;
 
-                return await prepareProductsPageResponse(session, products, session.searchQueryLabel);
+                return await prepareProductsPageResponse(session, products, `Search: ${query}`);
             } else {
                 let replyText = "We are sorry, but those products are currently out of stock. 😔";
                 if (!isAtTopLevelMenu(session)) {
@@ -3682,8 +3584,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const choice = textLower.trim();
         if (choice === "choose_same_cat" || choice.includes("same") || choice === "1") {
             session.state = "AWAITING_MODEL_SELECTION";
-            session.currentPage = 0;
-            session.searchResultMode = null;
             session.fromCrossSell = false;
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
@@ -3755,8 +3655,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 if (matched.length > 0) {
                     session.selectedSubCategory = selectedSub;
                     session.state = "AWAITING_MODEL_SELECTION";
-                    session.currentPage = 0;
-                    session.searchResultMode = null;
                     session.searchProducts = matched;
                     const emoji = getCategoryEmoji(promoCategory);
                     const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -3923,7 +3821,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             if (matched.length > 0) {
                 session.selectedSubCategory = selectedSub;
                 session.selectedParentCategory = session.selectedParentCategory || getParentCategory(selectedSub);
-                session.currentPage = 0;
                 session.searchProducts = matched;
 
                 // Auto-select if only 1 product — skip the product list and go straight to size
@@ -3945,47 +3842,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 replyText: `⚠️ Invalid selection. Please choose a subcategory number from 1 to ${max}. 😊`,
                 sendImages: []
             };
-        }
-    }
-
-    // Handle pagination in AWAITING_MODEL_SELECTION
-    if (session.state === "AWAITING_MODEL_SELECTION") {
-        const isNext = /^(next|next page|next_page|➡ next page)$/i.test(textLower);
-        const isPrev = /^(prev|previous|prev page|previous page|prev_page|⬅ prev page)$/i.test(textLower);
-
-        if (isNext || isPrev) {
-            const pageSize = 9;
-            const totalProducts = session.searchProducts?.length || 0;
-            const totalPages = Math.ceil(totalProducts / pageSize);
-            // Search-result cards and category-browsing pagination are tracked in separate
-            // session fields (searchPage vs currentPage) — pick the one that actually owns the
-            // page the customer is looking at, so leftover state from the other flow never
-            // hijacks "Next Page" into an unrelated category/search.
-            const isCardsMode = session.searchResultMode === 'cards';
-            let page = (isCardsMode ? session.searchPage : session.currentPage) || 0;
-
-            if (isNext) {
-                if ((page + 1) * pageSize < totalProducts) {
-                    page = page + 1;
-                } else {
-                    return { replyText: `⚠️ You have reached the end of the search results. This is the last page (Page ${page + 1}/${totalPages}).`, sendImages: [] };
-                }
-            } else if (isPrev) {
-                if (page > 0) {
-                    page = page - 1;
-                } else {
-                    return { replyText: `⚠️ You are already on the first page. 😊`, sendImages: [] };
-                }
-            }
-
-            if (isCardsMode) {
-                session.searchPage = page;
-            } else {
-                session.currentPage = page;
-            }
-
-            const label = isCardsMode ? (session.searchQueryLabel || 'Search Results') : (session.selectedSubCategory || "Products");
-            return await prepareProductsPageResponse(session, products, label);
         }
     }
 

@@ -4,9 +4,12 @@ import { handleSalesAssistantJS } from '../api/webhook.js';
 
 dotenv.config();
 
-// 10 "five sleeve t shirt" variants -> pageSize=9 gives exactly 2 pages (9 + 1), matching the
-// bug report's "Page 1/2" / "Page 2/2". Variant #1 deliberately has NO imageUri of its own
-// (mirrors real prod row id 3597) to confirm the image-fallback fix (Bug 1) kicks in.
+// Pagination ("Next Page" / "Manage Pages") was removed entirely per user request — every
+// matching product now renders as its own card in a single response, no page cap. This test
+// covers what's left: all matches show up at once, with images, and a leftover category from
+// earlier in the conversation never leaks into the result label.
+// Variant #1 deliberately has NO imageUri of its own (mirrors real prod row id 3597) to confirm
+// the image-fallback fix still kicks in.
 const sleeveVariants = [
     { id: 3597, name: "five sleeve t shirt", category: "Men", categories: ["Men"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: null },
     { id: 3564, name: "five sleeve t shirt (black)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-black.jpg" },
@@ -29,53 +32,34 @@ const kurgaPant = [
 const mockProducts = [...sleeveVariants, ...kurgaPant];
 
 async function run() {
-    // Session carries leftover category-browsing pagination state from earlier in the
-    // conversation: the customer had been browsing "kurga pant" page 2 before starting this
-    // new search.
+    // Session carries leftover category-browsing state from earlier in the conversation: the
+    // customer had been browsing "kurga pant" before starting this new search.
     const session = {
         state: "AWAITING_SUBCATEGORY_SELECTION",
         cart: [],
         selectedSubCategory: "kurga pant",
         selectedParentCategory: "Pants",
-        currentPage: 1,
         searchProducts: []
     };
 
-    console.log("\n--- Step 1: search 'I want Five Sleeve T Shirt' ---");
-    const res1 = await handleSalesAssistantJS("919999911111", "I want Five Sleeve T Shirt", mockProducts, session);
-    console.log("replyText:", res1.replyText);
-    console.log("card count:", res1.sendProductCards?.length);
-    console.log("card image headers:", res1.sendProductCards?.map(c => c.imageUrl || 'MISSING'));
+    console.log("\n--- search 'I want Five Sleeve T Shirt' ---");
+    const res = await handleSalesAssistantJS("919999911111", "I want Five Sleeve T Shirt", mockProducts, session);
+    console.log("replyText:", res.replyText);
+    console.log("card count:", res.sendProductCards?.length);
+    console.log("card image headers:", res.sendProductCards?.map(c => c.imageUrl || 'MISSING'));
+    console.log("sendButtons:", res.sendButtons);
 
-    assert.ok(res1.sendProductCards, "Step1: should render per-product cards");
-    assert.strictEqual(res1.sendProductCards.length, 9, "Step1: page 1 should hold 9 cards");
-    assert.ok(res1.replyText.includes("Page 1/2"), `Step1: label should show Page 1/2, got: ${res1.replyText}`);
-    assert.ok(res1.replyText.toLowerCase().includes("five sleeve"), `Step1: label should reference the search, got: ${res1.replyText}`);
-    assert.ok(!res1.replyText.toLowerCase().includes("kurga"), "Step1: label must NOT leak the leftover category");
-    res1.sendProductCards.forEach((c, i) => {
-        assert.ok(c.imageUrl, `Step1: card ${i} ("${c.body}") must have an image header`);
+    assert.ok(res.sendProductCards, "should render per-product cards");
+    assert.strictEqual(res.sendProductCards.length, 10, "all 10 matching variants should be sent at once, no page cap");
+    assert.ok(!/\(Page \d+\/\d+\)/.test(res.replyText), `label must not show page numbers anymore, got: ${res.replyText}`);
+    assert.ok(res.replyText.toLowerCase().includes("five sleeve"), `label should reference the search, got: ${res.replyText}`);
+    assert.ok(!res.replyText.toLowerCase().includes("kurga"), "label must NOT leak the leftover category");
+    assert.ok(!res.sendButtons, "there must be no 'Manage Pages' / Next-Prev buttons");
+    res.sendProductCards.forEach((c, i) => {
+        assert.ok(c.imageUrl, `card ${i} ("${c.body}") must have an image header`);
     });
-    assert.strictEqual(session.searchResultMode, 'cards', "Step1: session should be in cards mode");
-    assert.strictEqual(session.searchPage, 0, "Step1: dedicated search page counter should be 0");
-    // The leftover category-browse field must be left untouched by the search flow itself.
-    assert.strictEqual(session.currentPage, 1, "Step1: category-browsing currentPage must NOT be touched by search");
 
-    console.log("\n--- Step 2: click 'Next Page' ---");
-    const res2 = await handleSalesAssistantJS("919999911111", "next_page", mockProducts, session);
-    console.log("replyText:", res2.replyText);
-    console.log("card count:", res2.sendProductCards?.length);
-    console.log("card image headers:", res2.sendProductCards?.map(c => c.imageUrl || 'MISSING'));
-
-    assert.ok(res2.sendProductCards, "Step2: Next Page should still render per-product cards");
-    assert.strictEqual(res2.sendProductCards.length, 1, "Step2: page 2 should hold the remaining 1 card");
-    assert.ok(res2.replyText.includes("Page 2/2"), `Step2: label should show Page 2/2, got: ${res2.replyText}`);
-    assert.ok(res2.replyText.toLowerCase().includes("five sleeve"), `Step2: must stay within the search, got: ${res2.replyText}`);
-    assert.ok(!res2.replyText.toLowerCase().includes("kurga"), `Step2 (the actual bug): must NOT jump to kurga pant, got: ${res2.replyText}`);
-    assert.ok(res2.sendProductCards[0].imageUrl, "Step2: the lone card on page 2 must have an image header");
-    assert.strictEqual(session.searchPage, 1, "Step2: dedicated search page counter should advance to 1");
-    assert.strictEqual(session.currentPage, 1, "Step2: category-browsing currentPage must remain untouched");
-
-    console.log("\n✅ Both bugs verified fixed: images present on every card, and pagination stayed within the search results.");
+    console.log("\n✅ All matching products are sent as cards in one response, with images, and no pagination UI.");
 }
 
 run().catch(err => {
