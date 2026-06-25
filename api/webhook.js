@@ -647,7 +647,16 @@ export async function sendProductCtaCard(to, imageUrl, bodyText, displayText, ur
         }
     };
     if (imageUrl) {
-        interactive.header = { type: 'image', image: { link: imageUrl } };
+        // Passing a raw weblink here makes Meta's own servers fetch the image, and in production
+        // that fetch fails with error 131053 ("Downloading media from weblink failed with http
+        // code 503") against this store's hosting — even though the same URL is reachable from
+        // our server. uploadMedia() (already used by sendImage for collages) sidesteps this by
+        // downloading the bytes ourselves and uploading them to Meta directly, so the header only
+        // ever depends on a link as a last-resort fallback if that upload itself fails.
+        const mediaId = await uploadMedia(imageUrl);
+        interactive.header = mediaId
+            ? { type: 'image', image: { id: mediaId } }
+            : { type: 'image', image: { link: imageUrl } };
     }
 
     const payload = {
