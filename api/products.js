@@ -163,7 +163,11 @@ function dbRowToProduct(row) {
     };
 }
 
-const GENERIC_CATEGORIES = ['men', 'menu', 'general', 'uncategorized'];
+// Generic umbrella categories ("Men") and marketing tags ("New Arrival") aren't real
+// WooCommerce category pages, so skip them when picking the primary category — otherwise a
+// product like ["New Arrival", "white shirts"] gets stored with category "New Arrival",
+// which has no entry in lib/categoryUrls.js and falls all the way back to the generic shop page.
+const GENERIC_CATEGORIES = ['men', 'menu', 'general', 'uncategorized', 'new arrival', 'new arrivals'];
 
 // Returns the most specific WooCommerce category (skips generic umbrella ones like "Men").
 const getPrimaryCategory = (categories) => {
@@ -215,6 +219,10 @@ export const syncProducts = async (req, res) => {
             };
         });
 
+        if (dbProducts.length > 0) {
+            console.log('[SyncProducts] First mapped row about to be upserted:', JSON.stringify(dbProducts[0]));
+        }
+
         // Batch upsert to Supabase
         const { data, error } = await supabase
             .from('products')
@@ -222,6 +230,9 @@ export const syncProducts = async (req, res) => {
             .select();
 
         if (error) throw error;
+
+        const sample = (data || []).find(r => r.id === dbProducts[0]?.id);
+        console.log('[SyncProducts] Row returned by Supabase after upsert:', JSON.stringify(sample));
 
         console.log(`✅ Successfully synced ${dbProducts.length} products to database!`);
 
@@ -281,6 +292,7 @@ export const handleWooWebhook = async (req, res) => {
             }
 
             const dbProduct = mapWooProductToDb(payload);
+            console.log('[WooWebhook] Mapped row about to be upserted:', JSON.stringify(dbProduct));
             const { error } = await supabase
                 .from('products')
                 .upsert([dbProduct], { onConflict: 'id' });
