@@ -4,23 +4,14 @@ import { handleSalesAssistantJS } from '../api/webhook.js';
 
 dotenv.config();
 
-// Pagination ("Next Page" / "Manage Pages") was removed entirely per user request — every
-// matching product now renders as its own card in a single response, no page cap. This test
-// covers what's left: all matches show up at once, with images, and a leftover category from
-// earlier in the conversation never leaks into the result label.
+// Search results now always send exactly ONE representative card (the first match in existing
+// order), regardless of how many products matched — no pagination, no list, no "Manage Pages".
 // Variant #1 deliberately has NO imageUri of its own (mirrors real prod row id 3597) to confirm
-// the image-fallback fix still kicks in.
+// the image-fallback fix still kicks in when that happens to be the picked product.
 const sleeveVariants = [
     { id: 3597, name: "five sleeve t shirt", category: "Men", categories: ["Men"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: null },
     { id: 3564, name: "five sleeve t shirt (black)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-black.jpg" },
-    { id: 3603, name: "five sleeve t shirt (orange)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-orange.jpg" },
-    { id: 3610, name: "five sleeve t shirt (brown)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-brown.jpg" },
-    { id: 3617, name: "five sleeve t shirt (purple)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-purple.jpg" },
-    { id: 3622, name: "five sleeve t shirt (mint rose)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-mint.jpg" },
-    { id: 3625, name: "five sleeve t shirt (cream)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-cream.jpg" },
-    { id: 3638, name: "five sleeve t shirt (petrol blue)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-petrol.jpg" },
-    { id: 3639, name: "five sleeve t shirt (navy blue)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-navy.jpg" },
-    { id: 3654, name: "five sleeve t shirt (olive green)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-olive.jpg" }
+    { id: 3603, name: "five sleeve t shirt (orange)", category: "five sleeve t shirt", categories: ["five sleeve t shirt"], color: null, price: "399", stock: "10", sizes: ["M", "L"], imageUri: "https://example.com/sleeve-orange.jpg" }
 ];
 
 // Unrelated category, used to simulate leftover category-browsing session state.
@@ -42,24 +33,25 @@ async function run() {
         searchProducts: []
     };
 
-    console.log("\n--- search 'I want Five Sleeve T Shirt' ---");
+    console.log("\n--- search 'I want Five Sleeve T Shirt' (3 matches) ---");
     const res = await handleSalesAssistantJS("919999911111", "I want Five Sleeve T Shirt", mockProducts, session);
     console.log("replyText:", res.replyText);
     console.log("card count:", res.sendProductCards?.length);
-    console.log("card image headers:", res.sendProductCards?.map(c => c.imageUrl || 'MISSING'));
+    console.log("card:", res.sendProductCards?.[0]);
     console.log("sendButtons:", res.sendButtons);
 
-    assert.ok(res.sendProductCards, "should render per-product cards");
-    assert.strictEqual(res.sendProductCards.length, 10, "all 10 matching variants should be sent at once, no page cap");
-    assert.ok(!/\(Page \d+\/\d+\)/.test(res.replyText), `label must not show page numbers anymore, got: ${res.replyText}`);
+    assert.ok(res.sendProductCards, "should render a product card");
+    assert.strictEqual(res.sendProductCards.length, 1, "exactly ONE card must be sent, regardless of how many products matched");
+    assert.ok(!/\(Page \d+\/\d+\)/.test(res.replyText), `label must not show page numbers, got: ${res.replyText}`);
     assert.ok(res.replyText.toLowerCase().includes("five sleeve"), `label should reference the search, got: ${res.replyText}`);
     assert.ok(!res.replyText.toLowerCase().includes("kurga"), "label must NOT leak the leftover category");
-    assert.ok(!res.sendButtons, "there must be no 'Manage Pages' / Next-Prev buttons");
-    res.sendProductCards.forEach((c, i) => {
-        assert.ok(c.imageUrl, `card ${i} ("${c.body}") must have an image header`);
-    });
+    assert.ok(!res.sendButtons, "there must be no pagination buttons");
+    // Picked product (id 3597) has no image of its own — confirms the sibling-name fallback
+    // in getProductImageUri() still resolves an image for the single picked card.
+    assert.strictEqual(session.searchProducts.length, 1, "session.searchProducts should be trimmed to the single picked product");
+    assert.ok(res.sendProductCards[0].imageUrl, "the single card must have an image header");
 
-    console.log("\n✅ All matching products are sent as cards in one response, with images, and no pagination UI.");
+    console.log("\n✅ Exactly one card is sent, with an image, and no pagination UI.");
 }
 
 run().catch(err => {

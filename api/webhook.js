@@ -3274,7 +3274,11 @@ async function handleIntent(intentResult, session, products, from) {
             }
 
             if (matched.length > 0) {
-                session.searchProducts = matched;
+                // Search results always send exactly ONE representative card — the first match
+                // in existing order, no special "best match" ranking — regardless of how many
+                // products matched. (Other prepareProductsPageResponse callers, e.g. cross-sell/
+                // same-category continuation, are untouched and still send every match.)
+                session.searchProducts = [matched[0]];
                 session.state = "AWAITING_MODEL_SELECTION";
                 session.pendingProduct = null;
                 session.selectedSize = null;
