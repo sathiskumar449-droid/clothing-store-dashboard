@@ -250,6 +250,8 @@ export async function getSession(phone) {
         history: [],
         searchProducts: [],
         searchResultMode: null,
+        searchPage: 0,
+        searchQueryLabel: null,
         selectedColor: null,
         selectedSize: null,
         lastRecommendation: null,
@@ -980,6 +982,9 @@ const getTargetRecommendationTags = (tag) => {
     }
 };
 
+// Strips a trailing "(color)" variant suffix, e.g. "five sleeve t shirt (black)" -> "five sleeve t shirt".
+const stripVariantSuffix = (name) => (name || '').toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
+
 // Helper to retrieve fallback/self-healing image URI if the database row has 'null' or missing image
 const getProductImageUri = (product, allProducts = []) => {
     if (product.imageUri && product.imageUri.startsWith('http') && product.imageUri !== 'null' && product.imageUri !== 'undefined') {
@@ -996,6 +1001,21 @@ const getProductImageUri = (product, allProducts = []) => {
         p.imageUri && p.imageUri.startsWith('http') && p.imageUri !== 'null' && p.imageUri !== 'undefined'
     );
     if (backup) return getProductImageUri(backup, allProducts);
+
+    // Same base name ignoring a trailing "(color)" suffix — catches generic/parent rows (e.g. a
+    // plain "five sleeve t shirt" row with no image of its own, created by a sync/search gap)
+    // that share a name root with color-specific siblings (e.g. "five sleeve t shirt (black)")
+    // which do have a valid image.
+    const baseName = stripVariantSuffix(product.name);
+    if (baseName) {
+        const backupBase = allProducts.find(p =>
+            p.id !== product.id &&
+            stripVariantSuffix(p.name) === baseName &&
+            getProductTag(p) === prodTag &&
+            p.imageUri && p.imageUri.startsWith('http') && p.imageUri !== 'null' && p.imageUri !== 'undefined'
+        );
+        if (backupBase) return getProductImageUri(backupBase, allProducts);
+    }
 
     // Fuzzier match: same category and color
     const backup2 = allProducts.find(p =>
@@ -2747,7 +2767,10 @@ function getShortProductName(p) {
 function buildProductCardsPageResponse(session, productsPool, pageProducts, startIndex, pageSize, queryLabel) {
     const totalProducts = session.searchProducts.length;
     const totalPages = Math.ceil(totalProducts / pageSize);
-    const pageNum = (session.currentPage || 0) + 1;
+    // Derived purely from startIndex/pageSize (not session.currentPage, which belongs to the
+    // separate category-browsing pagination — see session.searchPage) so this card view can
+    // never show a page number that drifted from a different flow's state.
+    const pageNum = Math.floor(startIndex / pageSize) + 1;
 
     const cards = pageProducts.map(p => {
         let url = p.permalink;
@@ -2772,7 +2795,7 @@ function buildProductCardsPageResponse(session, productsPool, pageProducts, star
     });
 
     const buttons = [];
-    if ((session.currentPage || 0) > 0) {
+    if (startIndex > 0) {
         buttons.push({ id: 'prev_page', title: '⬅ Prev Page' });
     }
     if (startIndex + pageSize < totalProducts) {
@@ -2804,7 +2827,11 @@ function buildProductCardsPageResponse(session, productsPool, pageProducts, star
 // collage + list behavior untouched.
 async function prepareProductsPageResponse(session, productsPool, queryLabel, ctaOptions = null) {
     const pageSize = 9;
-    const currentPage = session.currentPage || 0;
+    // Search-result cards (session.searchResultMode === 'cards') and category-browsing
+    // (collage/list) pagination are tracked in separate session fields — searchPage vs
+    // currentPage — so leftover page state from one flow can never bleed into the other.
+    const isCardsMode = !ctaOptions && session.searchResultMode === 'cards';
+    const currentPage = isCardsMode ? (session.searchPage || 0) : (session.currentPage || 0);
     const startIndex = currentPage * pageSize;
     const pageProducts = session.searchProducts.slice(startIndex, startIndex + pageSize);
 
@@ -2819,7 +2846,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel, ct
     // "Select Product" list (see buildProductCardsPageResponse) — skip collage generation
     // entirely for this mode since each card carries its own product image already.
     // Category-browse (ctaOptions) and every other caller of this function are untouched.
-    if (!ctaOptions && session.searchResultMode === 'cards') {
+    if (isCardsMode) {
         return buildProductCardsPageResponse(session, productsPool, pageProducts, startIndex, pageSize, queryLabel);
     }
 
@@ -3292,7 +3319,8 @@ async function handleIntent(intentResult, session, products, from) {
 
             if (matched.length > 0) {
                 session.searchProducts = matched;
-                session.currentPage = 0;
+                session.searchPage = 0;
+                session.searchQueryLabel = `Search: ${query}`;
                 session.state = "AWAITING_MODEL_SELECTION";
                 session.searchResultMode = 'cards';
                 session.pendingProduct = null;
@@ -3302,7 +3330,7 @@ async function handleIntent(intentResult, session, products, from) {
                 session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
                 session.cartCrossSellShown = false;
 
-                return await prepareProductsPageResponse(session, products, `Search: ${query}`);
+                return await prepareProductsPageResponse(session, products, session.searchQueryLabel);
             } else {
                 let replyText = "We are sorry, but those products are currently out of stock. 😔";
                 if (!isAtTopLevelMenu(session)) {
@@ -3878,23 +3906,34 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             const pageSize = 9;
             const totalProducts = session.searchProducts?.length || 0;
             const totalPages = Math.ceil(totalProducts / pageSize);
-            let page = session.currentPage || 0;
+            // Search-result cards and category-browsing pagination are tracked in separate
+            // session fields (searchPage vs currentPage) — pick the one that actually owns the
+            // page the customer is looking at, so leftover state from the other flow never
+            // hijacks "Next Page" into an unrelated category/search.
+            const isCardsMode = session.searchResultMode === 'cards';
+            let page = (isCardsMode ? session.searchPage : session.currentPage) || 0;
 
             if (isNext) {
                 if ((page + 1) * pageSize < totalProducts) {
-                    session.currentPage = page + 1;
+                    page = page + 1;
                 } else {
                     return { replyText: `⚠️ You have reached the end of the search results. This is the last page (Page ${page + 1}/${totalPages}).`, sendImages: [] };
                 }
             } else if (isPrev) {
                 if (page > 0) {
-                    session.currentPage = page - 1;
+                    page = page - 1;
                 } else {
                     return { replyText: `⚠️ You are already on the first page. 😊`, sendImages: [] };
                 }
             }
 
-            const label = session.selectedSubCategory || "Products";
+            if (isCardsMode) {
+                session.searchPage = page;
+            } else {
+                session.currentPage = page;
+            }
+
+            const label = isCardsMode ? (session.searchQueryLabel || 'Search Results') : (session.selectedSubCategory || "Products");
             return await prepareProductsPageResponse(session, products, label);
         }
     }
