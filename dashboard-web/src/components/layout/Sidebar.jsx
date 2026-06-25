@@ -10,7 +10,7 @@ export default function Sidebar() {
           <Store size={18} className="text-white" />
         </div>
         <div>
-          <p className="text-sm font-bold text-white leading-tight">Clothing Store</p>
+          <p className="text-sm font-bold text-white leading-tight">Super Collections</p>
           <p className="text-xs text-[#00a884] font-semibold">Owner Dashboard</p>
         </div>
       </div>
