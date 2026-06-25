@@ -3,6 +3,44 @@
 import { getChats, saveChats, sendText, sendImage, userSessions, deleteSession } from './webhook.js';
 import { supabase } from '../lib/supabase.js';
 
+// Chat rows default to the generic "Customer" name (the `chats` table's column default,
+// since the bot never asks anyone for their real name). When an order exists for that phone,
+// its customer_name is an actual name worth showing instead; when it doesn't (chatted but
+// never bought), the phone number is still more identifying than the literal word "Customer".
+// Batches all lookups into a single query so listing N chats never costs N order queries.
+async function resolveCustomerNamesFromOrders(chatEntries) {
+    const genericPhones = chatEntries
+        .filter(c => !c.customerName || c.customerName === 'Customer')
+        .map(c => c.customerPhone);
+
+    if (genericPhones.length === 0) return;
+
+    const nameByPhone = new Map();
+    try {
+        const { data, error } = await supabase
+            .from('orders')
+            .select('customer_phone, customer_name, date')
+            .in('customer_phone', genericPhones)
+            .order('date', { ascending: false });
+
+        if (error) throw error;
+
+        for (const row of (data || [])) {
+            // Ordered newest-first, so the first row seen per phone is its most recent order.
+            if (!nameByPhone.has(row.customer_phone) && row.customer_name) {
+                nameByPhone.set(row.customer_phone, row.customer_name);
+            }
+        }
+    } catch (error) {
+        console.error('❌ Error batch-resolving customer names from orders:', error.message);
+    }
+
+    for (const chat of chatEntries) {
+        if (chat.customerName && chat.customerName !== 'Customer') continue;
+        chat.customerName = nameByPhone.get(chat.customerPhone) || chat.customerPhone;
+    }
+}
+
 // GET /chats
 export const getAllChats = async (req, res) => {
     try {
@@ -17,6 +55,8 @@ export const getAllChats = async (req, res) => {
                 botPaused:     chat.botPaused     || false
             }))
             .sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
+
+        await resolveCustomerNamesFromOrders(chatList);
 
         res.json({ success: true, chats: chatList });
     } catch (error) {
@@ -43,6 +83,8 @@ export const getChatHistory = async (req, res) => {
         if (chat.messages) {
             chat.messages = chat.messages.filter(m => m.type !== 'session_state');
         }
+
+        await resolveCustomerNamesFromOrders([chat]);
 
         res.json({ success: true, chat });
     } catch (error) {
