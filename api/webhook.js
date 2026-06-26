@@ -2051,6 +2051,13 @@ async function handleQtyReply(session, products, productId, qty) {
 // True when the session is sitting at the flat top-level category menu (no parent/subcategory chosen yet)
 const isAtTopLevelMenu = (session) => session.state === "AWAITING_SUBCATEGORY_SELECTION" && !session.selectedParentCategory;
 
+// True when the customer is just browsing a category/product list (subcategory menu or product
+// list) rather than mid-way through a required multi-step input like checkout. Unlike
+// isAtTopLevelMenu, this is also true once a parent category is selected (e.g. browsing "Shirts"
+// subcategories or viewing a product list) — there's no specific data the customer still owes the
+// bot, so an FAQ answer doesn't need to drag the whole category/product menu back into the reply.
+const isPassivelyBrowsing = (session) => session.state === "AWAITING_SUBCATEGORY_SELECTION" || session.state === "AWAITING_MODEL_SELECTION";
+
 const isFormalPantProduct = (p) => {
     const nameLower = (p?.name || '').toLowerCase();
     const catLower = (p?.category || '').toLowerCase();
@@ -3136,7 +3143,11 @@ async function handleIntent(intentResult, session, products, from) {
         }
         case 'FAQ': {
             let replyText = intentResult.reply;
-            if (!isAtTopLevelMenu(session)) {
+            // Only drag the current step's prompt back into the reply when the customer is mid
+            // multi-step input (checkout, size/qty, order confirmation) — there's nothing they
+            // still owe the bot while just browsing a category/product list, so re-dumping the
+            // subcategory menu after a plain FAQ answer is unnecessary noise.
+            if (!isAtTopLevelMenu(session) && !isPassivelyBrowsing(session)) {
                 const statePrompt = await getStatePrompt(session, products);
                 if (statePrompt.replyText) {
                     replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
@@ -4664,9 +4675,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         };
     }
     if (session.state === "AWAITING_MODEL_SELECTION") {
-        // No real product list behind this state (stale/idle session) — use the friendly
-        // generic reply instead of telling the customer to pick from a list that was never shown.
-        if (!(session.searchProducts?.length > 0)) {
+        // Only nudge "reply with a number" when (a) a real product list is actually active, AND
+        // (b) the message contains a digit at all — i.e. it at least looks like an attempted
+        // selection. Free text with no digits (typo'd FAQ, random question, etc.) was never a
+        // selection attempt, so it gets the friendly generic reply regardless of list state —
+        // a stale/idle session has no list, and even a real list shouldn't force non-numeric
+        // text through list-validation wording.
+        if (!(session.searchProducts?.length > 0) || !/\d/.test(textLower)) {
             return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
         }
         return {
@@ -4676,8 +4691,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
     if (session.state === "AWAITING_SUBCATEGORY_SELECTION") {
         // Same idea — AWAITING_SUBCATEGORY_SELECTION doubles as the default/idle state, so an
-        // empty subCategories list means no menu is actually active right now.
-        if (!(session.subCategories?.length > 0)) {
+        // empty subCategories list means no menu is actually active right now. And digit-free text
+        // was never a list-selection attempt, so it shouldn't get list-validation wording either.
+        if (!(session.subCategories?.length > 0) || !/\d/.test(textLower)) {
             return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
         }
         return {
