@@ -572,6 +572,27 @@ export async function sendText(to, text) {
     }
 }
 
+// Sent alongside buildOrderDeliveredMessage() — gives the customer a way to flag a
+// problem right from the delivery notification instead of needing to type something the
+// bot has to interpret. The button id carries the order's row id (for the Supabase flag)
+// and display number (for the reply text), e.g. "order_not_delivered_WOO-123|123" — see
+// the matching detectIntent() check and the ORDER_DELIVERY_COMPLAINT case in handleIntent().
+export async function sendOrderDeliveredWithFeedback(to, bodyText, orderRowId, orderDisplayNumber) {
+    return await sendRequest({
+        to,
+        type: 'interactive',
+        interactive: {
+            type: 'button',
+            body: { text: bodyText },
+            action: {
+                buttons: [
+                    { type: 'reply', reply: { id: `order_not_delivered_${orderRowId}|${orderDisplayNumber}`, title: '❌ Not Delivered' } }
+                ]
+            }
+        }
+    });
+}
+
 // Rich welcome card (logo + contact info + "Visit Website" CTA button) sent on greeting.
 // Throws on failure so the caller can fall back to the plain text welcome message.
 export async function sendCtaUrlWelcomeMessage(to) {
@@ -2237,6 +2258,23 @@ const startCheckout = async (session, from = null, products = []) => {
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
 
+    // "Order not delivered" button from the delivery notification (see
+    // sendOrderDeliveredWithFeedback) — must resolve regardless of session state, since
+    // the WooCommerce webhook calls deleteSession() right after sending that message, so
+    // there's no session context left for this reply to be evaluated against. Without this
+    // check it used to fall through to free-text product search and return a confusing
+    // "out of stock" reply.
+    const notDeliveredMatch = t.match(/^order_not_delivered_(.+)\|([^|]+)$/);
+    if (notDeliveredMatch) {
+        return { type: 'ORDER_DELIVERY_COMPLAINT', orderRowId: notDeliveredMatch[1], orderDisplayNumber: notDeliveredMatch[2] };
+    }
+    // Bare-id/plain-text fallback — covers a button reply that doesn't carry our
+    // "<rowId>|<displayNumber>" suffix (e.g. an externally configured WhatsApp template
+    // button), so the complaint still gets acknowledged instead of falling through.
+    if (['order_not_delivered', 'not delivered', 'order not delivered', '❌ not delivered', '❌ order not delivered'].includes(t)) {
+        return { type: 'ORDER_DELIVERY_COMPLAINT', orderRowId: null, orderDisplayNumber: null };
+    }
+
     // Global Cancel trigger
     const excludeIntents = ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'];
     if (!excludeIntents.includes(t) && (t === 'cancel' || t === '❌ cancel' || t === 'cancel_shopping' || t === 'cancel_order' || t === 'confirm_order_cancel')) {
@@ -3023,6 +3061,28 @@ async function handleOrderHelpChoice(choice, customerPhone) {
 
 async function handleIntent(intentResult, session, products, from) {
     switch (intentResult.type) {
+        case 'ORDER_DELIVERY_COMPLAINT': {
+            const { orderRowId, orderDisplayNumber } = intentResult;
+            console.log(`[OrderComplaint] ⚠️ ${from} reported order ${orderRowId || '(unknown — no order id on the button reply)'} as NOT delivered — flagging for review.`);
+            if (orderRowId) {
+                try {
+                    const { error } = await supabase
+                        .from('orders')
+                        .update({ delivery_complaint_at: new Date().toISOString() })
+                        .ilike('id', orderRowId);
+                    if (error) {
+                        console.error('[OrderComplaint] ❌ Failed to flag order in Supabase:', error.message);
+                    }
+                } catch (err) {
+                    console.error('[OrderComplaint] ❌ Unexpected error flagging order:', err.message);
+                }
+            }
+            const orderRef = orderDisplayNumber ? ` (#${orderDisplayNumber})` : '';
+            return {
+                replyText: `😔 Sorry to hear that! We've flagged your order${orderRef} for review. Our team will contact you shortly to resolve this. 🙏`,
+                sendImages: []
+            };
+        }
         case 'CANCEL_SHOPPING': {
             if (session.cart && session.cart.length > 0) {
                 // Change 2: You have items pending in your cart

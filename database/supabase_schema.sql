@@ -58,11 +58,16 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at          TIMESTAMPTZ DEFAULT NOW(),
 
     -- Where the order originated — "whatsapp" (bot checkout) or "website" (WooCommerce)
-    source              TEXT     DEFAULT 'whatsapp'
+    source              TEXT     DEFAULT 'whatsapp',
+
+    -- Set when a customer taps "Not Delivered" on the delivery notification — surfaces the
+    -- complaint to the shop owner (e.g. in the dashboard) without a separate alerting system
+    delivery_complaint_at TIMESTAMPTZ DEFAULT NULL
 );
 
 -- Safe to re-run: adds the column if this script is applied to an existing database
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'whatsapp';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_complaint_at TIMESTAMPTZ DEFAULT NULL;
 
 -- ============================================================
 -- 3. CHATS TABLE

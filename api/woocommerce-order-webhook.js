@@ -2,7 +2,7 @@
 // Receives WooCommerce "Order updated" webhooks and sends an order confirmation
 // to the customer over WhatsApp once the order reaches processing/completed.
 import crypto from 'crypto';
-import { sendText, logChatMessage, deleteSession } from './webhook.js';
+import { sendText, sendOrderDeliveredWithFeedback, logChatMessage, deleteSession } from './webhook.js';
 import { supabase } from '../lib/supabase.js';
 
 const WOOCOMMERCE_WEBHOOK_SECRET = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
@@ -220,11 +220,16 @@ export async function handleWooOrderWebhook(req, res) {
             return res.sendStatus(200);
         }
 
-        const message = (notifyKind === 'status_changed' && row.status === 'delivered')
+        const isDelivered = notifyKind === 'status_changed' && row.status === 'delivered';
+        const message = isDelivered
             ? buildOrderDeliveredMessage(order)
             : buildOrderConfirmationMessage(order);
 
-        await sendText(phone, message);
+        if (isDelivered) {
+            await sendOrderDeliveredWithFeedback(phone, message, row.id, order.number || order.id);
+        } else {
+            await sendText(phone, message);
+        }
         await logChatMessage(phone, 'bot', message);
 
         // This order was just confirmed/delivered, so any WhatsApp bot conversation this
