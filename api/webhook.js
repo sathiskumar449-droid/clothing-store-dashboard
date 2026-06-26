@@ -3416,7 +3416,7 @@ async function handleIntent(intentResult, session, products, from) {
 
                 return await prepareProductsPageResponse(session, products, `Search: ${query}`);
             } else {
-                const replyText = "We are sorry, but those products are currently out of stock. 😔";
+                const replyText = "😔 We couldn't find any matching products.";
                 if (!isAtTopLevelMenu(session)) {
                     // Point at the always-valid category menu instead of echoing
                     // getStatePrompt's session.selectedSubCategory + session.searchProducts —
@@ -4184,7 +4184,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             };
         } else {
             const sizeList = Array.isArray(product.sizes) ? product.sizes.join(', ') : product.sizes;
-            let errorText = `❌ This size is currently out of stock.\n\nAvailable sizes:\n${sizeList}`;
+            let errorText = `❌ We didn't recognize that as a valid size.\n\nAvailable sizes:\n${sizeList}`;
             if (session.isRecommendation) {
                 errorText += `\n\nReply with a size or type "skip" to skip.`;
             }
