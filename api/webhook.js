@@ -2248,8 +2248,10 @@ function detectIntent(text, products = [], session = null) {
     }
 
     // Intro menu triggers (the two buttons shown on greeting)
-    if (t === 'order_help') {
-        console.log('[IntroMenu] order_help button clicked');
+    // Accept the typed phrase too (not just the button id) — referenced by the generic
+    // fallback reply, so it needs to actually resolve to the order-help menu.
+    if (t === 'order_help' || t === 'order help') {
+        console.log('[IntroMenu] order_help triggered');
         return { type: 'ORDER_HELP' };
     }
     if (t === 'shop_now') {
@@ -2321,9 +2323,16 @@ function detectIntent(text, products = [], session = null) {
     }
 
     // ─── COD Combination Match ───
-    const codGroupA = ['cod', 'cash', 'pay on delivery', 'payment on delivery', 'pod', 'delivery cash'];
+    // Multi-word/concatenated phrases (e.g. "delivery cash", "cashondelivery") must be checked
+    // against the full text, not via matchesGroup's per-word fuzzy containment — otherwise a
+    // single word like "delivery" gets treated as a match just because it's a substring of a
+    // longer group entry (e.g. "cashondelivery".includes("delivery")), wrongly flagging plain
+    // delivery-related messages as COD requests.
+    const codGroupA = ['cod', 'cash', 'pod'];
+    const codPhraseGroupA = ['pay on delivery', 'payment on delivery', 'delivery cash', 'cashondelivery'];
     const codGroupB = ['available', 'iruka', 'irukka', 'delivery', 'deliv', 'delei', 'delci'];
-    const isCOD = matchesGroup(words, ['cod', 'cashondelivery']) ||
+    const isCOD = words.includes('cod') ||
+        codPhraseGroupA.some(p => t.includes(p)) ||
         (matchesGroup(words, codGroupA) && matchesGroup(words, codGroupB));
 
     if (isCOD) {
@@ -3383,6 +3392,13 @@ const hasMultipleNumbers = (text) => {
 
 const MULTIPLE_NUMBERS_REPLY = `😊 Please reply with just ONE number at a time.\n\nFor example, type *2* to see that category first. Once you're done, you can type another number like *7* to browse that category too!`;
 
+// Used when session.state nominally expects a numbered-list reply (e.g. AWAITING_SUBCATEGORY_SELECTION,
+// AWAITING_MODEL_SELECTION) but there's no actual list backing it (session.subCategories /
+// session.searchProducts is empty) — typically a freshly reset/idle session left over after checkout.
+// Showing "reply with a number from the list" when no list was ever shown is confusing, so we use this
+// friendlier, neutral nudge instead.
+const GENERIC_FALLBACK_REPLY = `Sorry, I didn't quite get that! 😊 Type *menu* to browse our shop, or *order help* if you have a question about your order.`;
+
 async function _handleSalesAssistantJS(from, userMessage, products, session) {
     const normalizedMessage = normalizeQuery(userMessage);
     const textLower = normalizedMessage.toLowerCase();
@@ -3850,9 +3866,12 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
 
     // STATE: AWAITING_SUBCATEGORY_SELECTION (expects a number)
-    if (session.state === "AWAITING_SUBCATEGORY_SELECTION" && isNumber) {
+    // Only treat this as a real menu reply when a subcategory list was actually shown — a freshly
+    // reset/idle session (e.g. right after checkout) defaults to this state with no list behind it,
+    // and a stray number there should fall through to the generic fallback, not a stale "1 to 1" error.
+    if (session.state === "AWAITING_SUBCATEGORY_SELECTION" && isNumber && Array.isArray(session.subCategories) && session.subCategories.length > 0) {
         const idx = parseInt(textLower, 10) - 1;
-        if (session.subCategories && idx >= 0 && idx < session.subCategories.length) {
+        if (idx >= 0 && idx < session.subCategories.length) {
             const selectedSub = session.subCategories[idx];
             const matched = products.filter(p => Number(p.stock) > 0 && productMatchesSubCategory(p, selectedSub));
 
@@ -3903,9 +3922,14 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                     if (categoryJump) return categoryJump;
                 }
 
-                const max = session.searchProducts?.length || 1;
+                // No real product list behind this state (stale/idle session) — don't show a
+                // fabricated "1 to 1" range, fall back to the friendly generic reply instead.
+                if (maxVal === 0) {
+                    return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
+                }
+
                 return {
-                    replyText: `⚠️ Invalid selection. Please choose a product number from 1 to ${max}. 😊`,
+                    replyText: `⚠️ Invalid selection. Please choose a product number from 1 to ${maxVal}. 😊`,
                     sendImages: []
                 };
             }
@@ -4640,12 +4664,22 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         };
     }
     if (session.state === "AWAITING_MODEL_SELECTION") {
+        // No real product list behind this state (stale/idle session) — use the friendly
+        // generic reply instead of telling the customer to pick from a list that was never shown.
+        if (!(session.searchProducts?.length > 0)) {
+            return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
+        }
         return {
             replyText: hasMultipleNumbers(textLower) ? MULTIPLE_NUMBERS_REPLY : `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
             sendImages: []
         };
     }
     if (session.state === "AWAITING_SUBCATEGORY_SELECTION") {
+        // Same idea — AWAITING_SUBCATEGORY_SELECTION doubles as the default/idle state, so an
+        // empty subCategories list means no menu is actually active right now.
+        if (!(session.subCategories?.length > 0)) {
+            return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
+        }
         return {
             replyText: hasMultipleNumbers(textLower) ? MULTIPLE_NUMBERS_REPLY : `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
             sendImages: []
@@ -4941,6 +4975,9 @@ async function handleMessage(msg) {
             bill += `🙏 Thanks for shopping at\n`;
             bill += `*Super Collections!* ❤️`;
 
+            // Order placed — wipe the session row entirely (cart, subcategory/numeric-list
+            // context, checkout fields, everything) so the customer's next message starts from a
+            // clean, neutral state instead of being validated against stale leftover context.
             await deleteSession(from);
             await sendText(from, bill);
             await logChatMessage(from, 'bot', bill);
