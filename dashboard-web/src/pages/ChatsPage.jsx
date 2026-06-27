@@ -21,14 +21,21 @@ function formatDate(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
-// Chat list timestamp: always DD/MM/YYYY + time, regardless of whether the last message
-// was today or older, so the owner can tell at a glance how stale a conversation is.
+// Chat list timestamp: "Today"/"Yesterday" for the last two calendar days, DD/MM/YYYY
+// for anything older.
 function formatChatListTimestamp(ts) {
   if (!ts) return '';
   const d = new Date(ts);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'Today';
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}/${mm}/${d.getFullYear()}, ${formatTime(ts)}`;
+  return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
 export default function ChatsPage() {
