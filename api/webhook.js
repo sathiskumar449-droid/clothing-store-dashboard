@@ -3013,7 +3013,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel, ct
     return {
         sendImages: collageUrl ? [{ url: collageUrl, caption: displayName }] : [],
         sendCtaUrl: {
-            body: `🛍️ Browse all ${displayName} options, choose your size & place your order directly on our website! 👇`,
+            body: displayName,
             buttonText,
             url
         }
