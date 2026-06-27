@@ -21,17 +21,23 @@ function formatDate(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
-// Chat list timestamp: time-only for today's activity (matches WhatsApp), but a short
-// date for anything older — chats aren't filtered by date (an owner needs to reach a
+// Chat list timestamp: time-only for today's activity (matches WhatsApp), "Yesterday" for
+// the previous calendar day, and DD/MM/YYYY (matching the rest of the dashboard's date
+// formatting) for anything older — chats aren't filtered by date (an owner needs to reach a
 // conversation regardless of when it was last active), so the date is shown inline instead.
 function formatChatListTimestamp(ts) {
   if (!ts) return '';
   const d = new Date(ts);
   const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  if (isToday) return formatTime(ts);
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return d.toLocaleDateString('en-IN', sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+  if (d.toDateString() === now.toDateString()) return formatTime(ts);
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
 export default function ChatsPage() {
