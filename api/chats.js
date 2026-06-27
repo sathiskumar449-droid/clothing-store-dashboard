@@ -44,10 +44,13 @@ async function resolveCustomerNamesFromOrders(chatEntries) {
 // GET /chats — optionally filtered to chats last active within ?startDate=&endDate=
 // (used by the dashboard's "Active Chats" stat; the chats inbox itself calls this with no
 // params so an owner can still reach any conversation regardless of last-active date).
+// Always excludes notification-only rows (e.g. a WooCommerce order-confirmation sent to a
+// customer who never messaged the bot) — this is the chat *list*, so a one-way notification
+// isn't a conversation. The order itself still shows up on the Orders page either way.
 export const getAllChats = async (req, res) => {
     try {
         const { startDate, endDate } = req.query;
-        const chats = await getChats(startDate, endDate);
+        const chats = await getChats(startDate, endDate, true);
         const chatList = Object.values(chats)
             .map(chat => ({
                 customerPhone: chat.customerPhone,

@@ -185,7 +185,12 @@ async function getOrderById(orderId) {
 // last_updated falls in that range — used for the dashboard's "Active Chats" stat so it can
 // reflect the selected date filter without the chats inbox itself losing access to older
 // conversations (callers that need the full list just omit the args, as before).
-export async function getChats(startDate, endDate) {
+// requireInboundMessage, when true, excludes rows whose `messages` array has no entry from
+// the customer — e.g. a WooCommerce order-confirmation notification sent to someone who
+// never actually messaged the bot. Uses a jsonb containment filter (`messages @> [{sender:
+// "customer"}]`) so the (potentially large) messages blob still doesn't need to be selected
+// or scanned in JS just to decide membership.
+export async function getChats(startDate, endDate, requireInboundMessage = false) {
     try {
         let query = supabase
             .from('chats')
@@ -194,6 +199,7 @@ export async function getChats(startDate, endDate) {
 
         if (startDate) query = query.gte('last_updated', startDate);
         if (endDate) query = query.lte('last_updated', endDate);
+        if (requireInboundMessage) query = query.contains('messages', [{ sender: 'customer' }]);
 
         const { data, error } = await query;
 
