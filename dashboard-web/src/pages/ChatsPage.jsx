@@ -21,6 +21,18 @@ function formatDate(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
+// Chat list timestamp: time-only for today's activity (matches WhatsApp), but a short
+// date for anything older — chats aren't filtered by date (an owner needs to reach a
+// conversation regardless of when it was last active), so the date is shown inline instead.
+function formatChatListTimestamp(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) return formatTime(ts);
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString('en-IN', sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 export default function ChatsPage() {
   const { phone: phoneParam } = useParams();
@@ -278,7 +290,7 @@ export default function ChatsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold text-[#111b21] truncate">{chat.customerName || chat.customerPhone}</p>
-                      <span className="text-xs text-[#667781] shrink-0 ml-2">{formatTime(chat.lastUpdated)}</span>
+                      <span className="text-xs text-[#667781] shrink-0 ml-2">{formatChatListTimestamp(chat.lastUpdated)}</span>
                     </div>
                     <div className="flex items-center justify-between mt-1">
                       <p className="text-xs text-[#667781] truncate pr-4">{chat.lastMessage || 'No messages'}</p>

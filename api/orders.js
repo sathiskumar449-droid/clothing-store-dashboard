@@ -1,13 +1,23 @@
 // api/orders.js  — Supabase version (replaces fs-based implementation)
 import { supabase } from '../lib/supabase.js';
 
-// ✅ Get all orders
+// ✅ Get all orders — optionally filtered to a date range via ?startDate=&endDate=
+// (ISO timestamps, inclusive on both ends). Filtering happens in the Supabase query itself
+// rather than in-memory so the "Today"/date-picker views on the dashboard stay fast as the
+// orders table grows, instead of always pulling every row.
 export const getOrders = async (req, res) => {
     try {
-        const { data, error } = await supabase
+        const { startDate, endDate } = req.query;
+
+        let query = supabase
             .from('orders')
             .select('*')
             .order('date', { ascending: false, nullsFirst: false });
+
+        if (startDate) query = query.gte('date', startDate);
+        if (endDate) query = query.lte('date', endDate);
+
+        const { data, error } = await query;
 
         if (error) throw error;
 

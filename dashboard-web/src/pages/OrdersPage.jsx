@@ -3,9 +3,11 @@ import { useSearchParams } from 'react-router-dom';
 import { ShoppingBag, RefreshCw, ChevronDown } from 'lucide-react';
 import { getOrders, updateOrderStatus } from '../api/ordersApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import Badge from '../components/ui/Badge';
+import DateFilterBar from '../components/ui/DateFilterBar';
 
 const TABS = ['all', 'pending', 'confirmed', 'delivered', 'cancelled'];
 const STATUS_OPTIONS = ['pending', 'confirmed', 'delivered', 'cancelled'];
@@ -22,21 +24,22 @@ export default function OrdersPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [updating, setUpdating] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [dateFilter, setDateFilter] = useState(DEFAULT_DATE_FILTER);
 
   const activeTab = searchParams.get('tab') || 'all';
 
   const fetchOrders = useCallback(async () => {
     setRefreshing(true);
     try {
-      const res = await getOrders();
+      const res = await getOrders(getDateRangeParams(dateFilter));
       setOrders(res.data || []);
     } catch {/* silent */} finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [dateFilter]);
 
-  useAutoRefresh(fetchOrders, 15000);
+  useAutoRefresh(fetchOrders, 15000, [dateFilter.mode, dateFilter.date]);
 
   const handleStatusUpdate = async (order, newStatus) => {
     const id = order.id || order.orderId;
@@ -71,6 +74,9 @@ export default function OrdersPage() {
           Refresh
         </button>
       </div>
+
+      {/* Date Filter */}
+      <DateFilterBar filter={dateFilter} onChange={setDateFilter} />
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl overflow-x-auto">

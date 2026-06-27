@@ -6,18 +6,24 @@ import {
 import { getOrders } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
 import StatCard from '../components/ui/StatCard';
 import Loader from '../components/ui/Loader';
+import DateFilterBar from '../components/ui/DateFilterBar';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dateFilter, setDateFilter] = useState(DEFAULT_DATE_FILTER);
 
   const fetchStats = useCallback(async () => {
     try {
-      const [ordersRes, chatsRes] = await Promise.all([getOrders(), getAllChats()]);
+      const [ordersRes, chatsRes] = await Promise.all([
+        getOrders(getDateRangeParams(dateFilter)),
+        getAllChats(),
+      ]);
       const orders = ordersRes.data || [];
       const chats = chatsRes.data?.chats || [];
 
@@ -52,9 +58,9 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateFilter]);
 
-  useAutoRefresh(fetchStats, 10000);
+  useAutoRefresh(fetchStats, 10000, [dateFilter.mode, dateFilter.date]);
 
   if (loading) return <Loader text="Loading dashboard..." />;
 
@@ -68,10 +74,13 @@ export default function DashboardPage() {
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500 mt-1">Welcome back! Here's what's happening today.</p>
       </div>
+
+      {/* Date Filter */}
+      <DateFilterBar filter={dateFilter} onChange={setDateFilter} />
 
       {/* Stats Grid */}
       {stats && (
