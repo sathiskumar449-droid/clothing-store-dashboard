@@ -181,12 +181,21 @@ async function getOrderById(orderId) {
 // select entirely rather than fetched and discarded. session_<phone> rows (bot session
 // state, stored in this same table — see getSession/saveSession below) are filtered out
 // at the query level with `.not(...)` instead of in JS after fetching every row.
-export async function getChats() {
+// startDate/endDate (ISO timestamps, inclusive) optionally scope the result to chats whose
+// last_updated falls in that range — used for the dashboard's "Active Chats" stat so it can
+// reflect the selected date filter without the chats inbox itself losing access to older
+// conversations (callers that need the full list just omit the args, as before).
+export async function getChats(startDate, endDate) {
     try {
-        const { data, error } = await supabase
+        let query = supabase
             .from('chats')
             .select('customer_phone, customer_name, last_message, last_updated, bot_paused')
             .not('customer_phone', 'like', 'session_%');
+
+        if (startDate) query = query.gte('last_updated', startDate);
+        if (endDate) query = query.lte('last_updated', endDate);
+
+        const { data, error } = await query;
 
         if (error) throw error;
 

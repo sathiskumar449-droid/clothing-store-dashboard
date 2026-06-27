@@ -20,9 +20,10 @@ export default function DashboardPage() {
 
   const fetchStats = useCallback(async () => {
     try {
+      const dateRangeParams = getDateRangeParams(dateFilter);
       const [ordersRes, chatsRes] = await Promise.all([
-        getOrders(getDateRangeParams(dateFilter)),
-        getAllChats(),
+        getOrders(dateRangeParams),
+        getAllChats(dateRangeParams),
       ]);
       const orders = ordersRes.data || [];
       const chats = chatsRes.data?.chats || [];

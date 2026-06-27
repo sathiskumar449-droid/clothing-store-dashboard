@@ -1,7 +1,9 @@
 import api from './axiosInstance';
 
-// GET /chats — list all conversations
-export const getAllChats = () => api.get('/chats');
+// GET /chats — list all conversations. params may include { startDate, endDate } (ISO
+// strings) to scope to chats last active in that range; axios omits undefined keys, so
+// calling with {} returns the full unfiltered list exactly like before.
+export const getAllChats = (params = {}) => api.get('/chats', { params });
 
 // GET /chats/:phone — get full chat history
 export const getChatHistory = (phone) => api.get(`/chats/${phone}`);

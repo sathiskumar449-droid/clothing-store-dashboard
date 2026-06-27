@@ -41,10 +41,13 @@ async function resolveCustomerNamesFromOrders(chatEntries) {
     }
 }
 
-// GET /chats
+// GET /chats — optionally filtered to chats last active within ?startDate=&endDate=
+// (used by the dashboard's "Active Chats" stat; the chats inbox itself calls this with no
+// params so an owner can still reach any conversation regardless of last-active date).
 export const getAllChats = async (req, res) => {
     try {
-        const chats = await getChats();
+        const { startDate, endDate } = req.query;
+        const chats = await getChats(startDate, endDate);
         const chatList = Object.values(chats)
             .map(chat => ({
                 customerPhone: chat.customerPhone,
