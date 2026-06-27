@@ -21,23 +21,14 @@ function formatDate(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
-// Chat list timestamp: time-only for today's activity (matches WhatsApp), "Yesterday" for
-// the previous calendar day, and DD/MM/YYYY (matching the rest of the dashboard's date
-// formatting) for anything older — chats aren't filtered by date (an owner needs to reach a
-// conversation regardless of when it was last active), so the date is shown inline instead.
+// Chat list timestamp: always DD/MM/YYYY + time, regardless of whether the last message
+// was today or older, so the owner can tell at a glance how stale a conversation is.
 function formatChatListTimestamp(ts) {
   if (!ts) return '';
   const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return formatTime(ts);
-
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}/${mm}/${d.getFullYear()}`;
+  return `${dd}/${mm}/${d.getFullYear()}, ${formatTime(ts)}`;
 }
 
 export default function ChatsPage() {
