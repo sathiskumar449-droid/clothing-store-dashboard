@@ -199,7 +199,11 @@ export async function getChats(startDate, endDate, requireInboundMessage = false
 
         if (startDate) query = query.gte('last_updated', startDate);
         if (endDate) query = query.lte('last_updated', endDate);
-        if (requireInboundMessage) query = query.contains('messages', [{ sender: 'customer' }]);
+        // .contains() mis-serializes a jsonb array-of-objects value (sends it in postgres
+        // array literal syntax instead of JSON, which Postgres then rejects with 22P02) —
+        // .filter(..., 'cs', JSON.stringify(...)) sends the same `cs` containment operator
+        // but with a proper JSON-encoded operand, which Postgres accepts.
+        if (requireInboundMessage) query = query.filter('messages', 'cs', JSON.stringify([{ sender: 'customer' }]));
 
         const { data, error } = await query;
 
