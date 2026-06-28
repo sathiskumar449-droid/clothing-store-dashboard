@@ -65,14 +65,16 @@ Please reply with a number:
 🔟 Size Guide`;
 
 // Sent when the customer replies "10" (🔟 Size Guide) to the main menu.
-const SIZE_GUIDE_TEXT = `📏 Size Guide
+const SIZE_GUIDE_TEXT = `📏 Size Guide (in inches)
 
-Size | Chest (inch) | Length (inch)
-S    | 38            | 28
-M    | 40            | 29
-L    | 42            | 30
-XL   | 44            | 31
-XXL  | 46            | 32
+\`\`\`
+Size  Chest  Length
+S     38     28
+M     40     29
+L     42     30
+XL    44     31
+XXL   46     32
+\`\`\`
 
 💡 Tip: Chest measure panna armpit kulla irundhu round ah measure pannunga.
 If in-between sizes la irundha, next size eduthukonga.`;
