@@ -43,6 +43,7 @@ export async function getWelcomeMessagePrefix() {
 }
 
 const INTRO_WELCOME_TEXT = "Welcome to *Super Collections*!";
+const ORDER_GUIDANCE_VIDEO_ENABLED = false;
 const INTRO_BUTTON_GROUPS = [
     {
         body: "Choose an option:",
@@ -56,7 +57,7 @@ const INTRO_BUTTON_GROUPS = [
     {
         body: "More options:",
         buttons: [
-            { id: 'order_guidance_video', title: 'Order Guidance Video' },
+            ...(ORDER_GUIDANCE_VIDEO_ENABLED ? [{ id: 'order_guidance_video', title: 'Order Guidance Video' }] : []),
             { id: 'location', title: 'Location' }
         ],
         addCancel: false
@@ -2350,7 +2351,7 @@ function detectIntent(text, products = [], session = null) {
         console.log('[IntroMenu] customer_support triggered');
         return { type: 'CUSTOMER_SUPPORT' };
     }
-    if (t === 'order_guidance_video' || t === 'order guidance video' || t === 'video guide' || t === 'order video') {
+    if (ORDER_GUIDANCE_VIDEO_ENABLED && (t === 'order_guidance_video' || t === 'order guidance video' || t === 'video guide' || t === 'order video')) {
         console.log('[IntroMenu] order_guidance_video triggered');
         return { type: 'ORDER_GUIDANCE_VIDEO' };
     }
@@ -3222,6 +3223,12 @@ async function handleIntent(intentResult, session, products, from) {
             };
         }
         case 'ORDER_GUIDANCE_VIDEO': {
+            if (!ORDER_GUIDANCE_VIDEO_ENABLED) {
+                return {
+                    replyText: "Order guidance video is currently unavailable.",
+                    sendImages: []
+                };
+            }
             try {
                 await sendVideoGuideCard(from);
                 await logChatMessage(from, 'bot', ORDER_GUIDANCE_VIDEO_FALLBACK);
@@ -3366,12 +3373,14 @@ async function handleIntent(intentResult, session, products, from) {
                 console.error('[Welcome] ❌ cta_url welcome card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
             }
 
-            try {
-                await sendVideoGuideCard(from);
-                console.log('[Welcome] ✅ video guide card sent to', from);
-            } catch (err) {
-                videoCardFailed = true;
-                console.error('[Welcome] ❌ video guide card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+            if (ORDER_GUIDANCE_VIDEO_ENABLED) {
+                try {
+                    await sendVideoGuideCard(from);
+                    console.log('[Welcome] ✅ video guide card sent to', from);
+                } catch (err) {
+                    videoCardFailed = true;
+                    console.error('[Welcome] ❌ video guide card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+                }
             }
 
             try {
@@ -4676,12 +4685,14 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             console.error('[Welcome] ❌ cta_url welcome card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
         }
 
-        try {
-            await sendVideoGuideCard(from);
-            console.log('[Welcome] ✅ video guide card sent to', from);
-        } catch (err) {
-            videoCardFailed = true;
-            console.error('[Welcome] ❌ video guide card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+        if (ORDER_GUIDANCE_VIDEO_ENABLED) {
+            try {
+                await sendVideoGuideCard(from);
+                console.log('[Welcome] ✅ video guide card sent to', from);
+            } catch (err) {
+                videoCardFailed = true;
+                console.error('[Welcome] ❌ video guide card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+            }
         }
 
         try {
