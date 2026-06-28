@@ -2327,6 +2327,88 @@ const startCheckout = async (session, from = null, products = []) => {
 // Intent Detection & Routing Layer
 // =============================
 
+// Shared with the SEARCH case in handleIntent below — hoisted so detectIntent's catalog check
+// (looksLikeProductQuery) uses the exact same cleaning/stopword rules as the real match, instead
+// of a second, drifting copy.
+const SEARCH_EN_STOP = new Set(['is', 'are', 'available', 'do', 'you', 'have', 'any', 'the', 'a', 'an',
+    'in', 'stock', 'please', 'send', 'show', 'get', 'got', 'what', 'which', 'want', 'need',
+    'needed', 'wanted', 'wants', 'i', 'my', 'me', 'us', 'we', 'this', 'that', 'one', 'ones',
+    'looking', 'for', 'tell', 'me', 'price', 'cost', 'how', 'much', 'under', 'below', 'less',
+    'than', 'find', 'display', 'search', 'some', 'can', 'give', 'look']);
+const SEARCH_TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku', 'iruke', 'pakanum',
+    'vaikanum', 'panunga', 'sollu', 'kodu', 'kudu', 'da', 'bro', 'anna', 'sir', 'madam', 'la', 'ku',
+    'ah', 'ha', 'na', 'tharinga', 'kudunga', 'thareengala', 'venum', 'vendum', 'venam', 'vena',
+    'enaku', 'eanku', 'yenaku', 'enakku', 'yenakku', 'naaku', 'kaatu', 'kaattunga',
+    // Common misspellings of "colour"/"color" — meaningless for matching (the actual color comes
+    // from a COLOR_KEYWORDS term like "cream"), so they're dropped rather than left to veto an
+    // otherwise-good AND match (see makeSearchTerms' noise filtering below).
+    'colur', 'colour', 'color', 'culer', 'colr',
+    'வேணும்', 'இருக்கா', 'பாருங்க', 'எனக்கு']);
+
+// Normalizes common spelling variants — applied to both the customer's query and product fields
+// so e.g. "t-shirt"/"tshirts"/"T-Shirts" all collapse to the same comparable token.
+const normalizeSearchSpelling = (s) => s
+    .replace(/\blinen\b/g, 'lenin')
+    .replace(/\bt[\s-]?shirts?\b/g, 'tshirt')
+    .replace(/\bphants?\b/g, 'pant')
+    .replace(/\bpants?\b/g, 'pant')
+    .replace(/\bfoot\s*bal+s?\b/g, 'football')
+    .replace(/\bjeans?\b/g, 'jeans')
+    .replace(/\bjens\b/g, 'jeans')
+    .replace(/\bshrt\b/g, 'shirt')
+    .replace(/\bshir\b/g, 'shirt')
+    .replace(/\btrousers?\b/g, 'trouser');
+
+function cleanSearchQuery(rawText) {
+    return normalizeSearchSpelling(
+        (rawText || '').toLowerCase()
+            .replace(/(?:under|below|less than)\s*₹?\s*\d+/g, '')
+            .replace(/[?!.,'"]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+    );
+}
+
+// Stop-word-filtered terms from free text, with one extra pass for multi-term queries: any term
+// that doesn't appear anywhere in the catalog at all gets dropped as noise (a typo or filler word
+// like "colur") so it can't silently veto an otherwise-good AND match — see Bug 1 in the commit
+// that added this. Single-term queries skip this pass since the SEARCH case already has its own
+// looser single-term fallback.
+function makeSearchTerms(rawText, inStockProducts) {
+    const rawTerms = cleanSearchQuery(rawText).split(/\s+/)
+        .filter(w => w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w));
+    if (rawTerms.length <= 1) return rawTerms;
+    const inCatalog = (term) => COLOR_KEYWORDS.includes(term) || inStockProducts.some(p => searchTermMatches(p, term));
+    const cleanedTerms = rawTerms.filter(inCatalog);
+    return cleanedTerms.length > 0 ? cleanedTerms : rawTerms;
+}
+
+function searchTermMatches(p, term) {
+    const cats = Array.isArray(p.categories) && p.categories.length > 0
+        ? p.categories : [p.category];
+    return normalizeSearchSpelling((p.name || '').toLowerCase()).includes(term) ||
+        cats.some(c => normalizeSearchSpelling((c || '').toLowerCase()).includes(term)) ||
+        (p.color || '').toLowerCase().includes(term) ||
+        (p.pattern || '').toLowerCase().includes(term);
+}
+
+// Routing-only check (used by detectIntent below): true if the message contains a real catalog
+// word — matches some in-stock product's name/category/color/pattern, or a known color — even
+// without an exact parent-category word like "shirt"/"pant" (e.g. "polo fit cream" matches the
+// "Polo Fit Pant" category via "polo"/"fit"). Terms of length <= 2 are ignored so short noise
+// words can never trigger this on their own.
+function looksLikeProductQuery(rawText, products) {
+    const inStock = products.filter(p => Number(p.stock) > 0);
+    const terms = cleanSearchQuery(rawText).split(/\s+/)
+        .filter(w => w.length > 2 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w));
+    return terms.some(term => COLOR_KEYWORDS.includes(term) || inStock.some(p => searchTermMatches(p, term)));
+}
+
+// Generic short fallback for "we have no idea what this means" — replaces the old behavior of
+// dumping the entire numbered category+subcategory list in chat (see Bug 3 in the commit that
+// added this); the customer is pointed at the website instead of an in-chat list.
+const SHORT_NOT_FOUND_REPLY = `😔 Couldn't find that exact item.\nType *menu* to see our full collection, or visit our website:\nhttps://supercollections.in/shop/`;
+
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
 
@@ -2546,6 +2628,14 @@ function detectIntent(text, products = [], session = null) {
 
     const searchKeywords = ['printed', 'linen', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
     if (searchKeywords.some(kw => t.includes(kw))) {
+        return { type: 'SEARCH', query: t };
+    }
+
+    // Catalog-driven fallback for the two checks above — those only know a fixed 5-category list
+    // plus a dozen hardcoded keywords, so a real subcategory name with no parent-category word in
+    // it (e.g. "polo fit cream" for the "Polo Fit Pant" category) fell all the way through to
+    // UNKNOWN instead of SEARCH. This checks the actual catalog instead of a hardcoded list.
+    if (looksLikeProductQuery(t, products)) {
         return { type: 'SEARCH', query: t };
     }
 
@@ -3514,53 +3604,13 @@ async function handleIntent(intentResult, session, products, from) {
                 });
             };
 
-            // Step 1 — Remove English and Tamil/Tanglish stop words
-            const EN_STOP = new Set(['is', 'are', 'available', 'do', 'you', 'have', 'any', 'the', 'a', 'an',
-                'in', 'stock', 'please', 'send', 'show', 'get', 'got', 'what', 'which', 'want', 'need',
-                'needed', 'wanted', 'wants', 'i', 'my', 'me', 'us', 'we', 'this', 'that', 'one', 'ones',
-                'looking', 'for', 'tell', 'me', 'price', 'cost', 'how', 'much', 'under', 'below', 'less',
-                'than', 'find', 'display', 'search', 'some', 'can', 'give', 'look']);
-            const TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku', 'iruke', 'pakanum',
-                'vaikanum', 'panunga', 'sollu', 'kodu', 'kudu', 'da', 'bro', 'anna', 'sir', 'madam', 'la', 'ku',
-                'ah', 'ha', 'na', 'tharinga', 'kudunga', 'thareengala', 'venum', 'vendum', 'venam', 'vena',
-                'enaku', 'eanku', 'yenaku', 'enakku', 'yenakku', 'naaku', 'kaatu', 'kaattunga',
-                'வேணும்', 'இருக்கா', 'பாருங்க', 'எனக்கு']);
-
-            // Step 2 — Normalize common spelling variants (applied to query AND product fields)
-            const normalizeSpelling = (s) => s
-                .replace(/\blinen\b/g, 'lenin')
-                .replace(/\bt[\s-]?shirts?\b/g, 'tshirt')
-                .replace(/\bphants?\b/g, 'pant')
-                .replace(/\bpants?\b/g, 'pant')
-                .replace(/\bfoot\s*bal+s?\b/g, 'football')
-                .replace(/\bjeans?\b/g, 'jeans')
-                .replace(/\bjens\b/g, 'jeans')
-                .replace(/\bshrt\b/g, 'shirt')
-                .replace(/\bshir\b/g, 'shirt')
-                .replace(/\btrousers?\b/g, 'trouser');
-
-            const cleaned = normalizeSpelling(
-                query.toLowerCase()
-                    .replace(/(?:under|below|less than)\s*₹?\s*\d+/g, '')
-                    .replace(/[?!.,'"]/g, ' ')
-                    .replace(/\s+/g, ' ')
-                    .trim()
-            );
-
-            // Step 3 — Build search terms (stop words removed)
-            const terms = cleaned.split(/\s+/)
-                .filter(w => w.length > 0 && !EN_STOP.has(w) && !TA_STOP.has(w));
-
             const inStock = products.filter(p => Number(p.stock) > 0);
 
-            const termMatches = (p, term) => {
-                const cats = Array.isArray(p.categories) && p.categories.length > 0
-                    ? p.categories : [p.category];
-                return normalizeSpelling((p.name || '').toLowerCase()).includes(term) ||
-                    cats.some(c => normalizeSpelling((c || '').toLowerCase()).includes(term)) ||
-                    (p.color || '').toLowerCase().includes(term) ||
-                    (p.pattern || '').toLowerCase().includes(term);
-            };
+            // Stop-word removal, spelling normalization, and noise-term dropping are shared with
+            // detectIntent's looksLikeProductQuery (see makeSearchTerms above) so both use the
+            // exact same rules instead of two drifting copies.
+            const terms = makeSearchTerms(query, inStock);
+            const termMatches = searchTermMatches;
 
             const matchAllTerms = (termList) => applyPriceFilter(
                 inStock.filter(p => termList.every(term => termMatches(p, term)))
@@ -3610,16 +3660,9 @@ async function handleIntent(intentResult, session, products, from) {
                 return buildCategoryAvailableReply(categoryMatched[0], products);
             }
 
-            const replyText = "😔 We couldn't find any matching products.";
-            if (!isAtTopLevelMenu(session)) {
-                // Point at the always-valid category menu instead of echoing
-                // getStatePrompt's session.selectedSubCategory + session.searchProducts —
-                // those two fields can now drift independently under the search-cards
-                // feature (a failed search never touches either), producing a mismatched
-                // "category label from one moment, product list from another" suggestion.
-                return goToFlatSubcategoryList(session, products, `${replyText}\n\nFeel free to continue shopping: 😊`);
-            }
-            return { replyText, sendImages: [] };
+            // Nothing recognizable at all — short pointer to the menu/website instead of dumping
+            // the entire numbered category+subcategory list in chat (see Bug 3).
+            return { replyText: SHORT_NOT_FOUND_REPLY, sendImages: [] };
         }
         default:
             return null;
@@ -4934,8 +4977,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             sendImages: []
         };
     }
-    // Dynamic general fallback
-    return goToFlatSubcategoryList(session, products, "😊 How can we help you today?\n\nLooking for clothing?");
+    // Dynamic general fallback — short pointer to the menu/website instead of dumping the entire
+    // numbered category+subcategory list in chat (see Bug 3).
+    return { replyText: SHORT_NOT_FOUND_REPLY, sendImages: [] };
 }
 
 export async function handleSalesAssistantJS(from, userMessage, products, session) {
