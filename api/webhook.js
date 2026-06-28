@@ -3159,6 +3159,53 @@ async function handleOrderHelpChoice(choice, customerPhone) {
     }
 }
 
+// Common shirt/pant colors recognized in free-text product queries (see SEARCH case below) —
+// distinguishes a generic category mention ("plain shirt iruka") from a specific color/variant
+// request ("plain shirt cream") so the right reply (category page vs. exact product page) goes out.
+const COLOR_KEYWORDS = ['cream', 'white', 'black', 'blue', 'navy', 'grey', 'gray', 'maroon', 'green',
+    'beige', 'pink', 'yellow', 'red', 'orange', 'brown', 'purple', 'mustard', 'khaki', 'wine', 'olive'];
+
+// Product Availability Check, Scenario B (exact category + color match) — replies with that one
+// product's own image/price and a button straight to its own page. Returned as a declarative
+// reply object (sendProductCards) so the existing dispatcher sends it via sendProductCtaCard,
+// the same cta_url path every other product card already goes through.
+function buildSpecificProductReply(product, productsPool) {
+    const colorPrefix = product.color ? `${product.color} ` : '';
+    let url = product.permalink;
+    if (!url) {
+        console.warn(`[ProductAvailability] Product ${product.id} ("${product.name}") has no permalink — falling back to category URL`);
+        url = getCategoryUrl(product.category);
+    }
+    return {
+        replyText: null,
+        sendImages: [],
+        sendProductCards: [{
+            imageUrl: getProductImageUri(product, productsPool),
+            body: `*${colorPrefix}${product.name}*\n💰 ₹${product.price}`,
+            buttonText: 'View & Buy 🛒',
+            url
+        }]
+    };
+}
+
+// Product Availability Check, Scenario A (category mentioned with no color, or a mentioned color
+// that isn't in stock) — replies "Yes, available" with one sample in-stock product's image and a
+// button to that category's page on the website. Never lists products in chat text.
+function buildCategoryAvailableReply(sampleProduct, productsPool) {
+    const categoryName = sampleProduct.category || 'this category';
+    const capName = categoryName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    return {
+        replyText: null,
+        sendImages: [],
+        sendProductCards: [{
+            imageUrl: getProductImageUri(sampleProduct, productsPool),
+            body: `Yes, available ✅\n\n👔 *${capName}*`,
+            buttonText: 'See More 👀',
+            url: getCategoryUrl(categoryName)
+        }]
+    };
+}
+
 async function handleIntent(intentResult, session, products, from) {
     switch (intentResult.type) {
         case 'ORDER_DELIVERY_COMPLAINT': {
@@ -3515,13 +3562,15 @@ async function handleIntent(intentResult, session, products, from) {
                     (p.pattern || '').toLowerCase().includes(term);
             };
 
+            const matchAllTerms = (termList) => applyPriceFilter(
+                inStock.filter(p => termList.every(term => termMatches(p, term)))
+            );
+
             let matched = [];
 
             if (terms.length > 0) {
                 // AND logic: every term must match
-                matched = applyPriceFilter(
-                    inStock.filter(p => terms.every(term => termMatches(p, term)))
-                );
+                matched = matchAllTerms(terms);
 
                 // Step 4 — Fallback: only if single term search
                 if (matched.length === 0 && terms.length === 1) {
@@ -3531,33 +3580,46 @@ async function handleIntent(intentResult, session, products, from) {
                 }
             }
 
-            if (matched.length > 0) {
-                // Search results always send exactly ONE representative card — the first match
-                // in existing order, no special "best match" ranking — regardless of how many
-                // products matched. (Other prepareProductsPageResponse callers, e.g. cross-sell/
-                // same-category continuation, are untouched and still send every match.)
-                session.searchProducts = [matched[0]];
-                session.state = "AWAITING_MODEL_SELECTION";
-                session.pendingProduct = null;
-                session.selectedSize = null;
-                session.isRecommendation = false;
-                session.fromCrossSell = false;
-                session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
-                session.cartCrossSellShown = false;
+            // Reset per-flow state regardless of which branch below fires — mirrors the
+            // housekeeping the old single-card path always did, minus AWAITING_MODEL_SELECTION/
+            // searchProducts (neither scenario below offers an in-chat "reply 1 to select" step;
+            // the CTA button sends the customer straight to the website instead).
+            session.pendingProduct = null;
+            session.selectedSize = null;
+            session.isRecommendation = false;
+            session.fromCrossSell = false;
+            session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
+            session.cartCrossSellShown = false;
 
-                return await prepareProductsPageResponse(session, products, `Search: ${query}`);
-            } else {
-                const replyText = "😔 We couldn't find any matching products.";
-                if (!isAtTopLevelMenu(session)) {
-                    // Point at the always-valid category menu instead of echoing
-                    // getStatePrompt's session.selectedSubCategory + session.searchProducts —
-                    // those two fields can now drift independently under the search-cards
-                    // feature (a failed search never touches either), producing a mismatched
-                    // "category label from one moment, product list from another" suggestion.
-                    return goToFlatSubcategoryList(session, products, `${replyText}\n\nFeel free to continue shopping: 😊`);
-                }
-                return { replyText, sendImages: [] };
+            // Product Availability Check — a color/variant word among the search terms (see
+            // COLOR_KEYWORDS) decides Scenario B (specific product page) vs. Scenario A (generic
+            // "yes, available" + category page). Neither scenario lists products in chat text.
+            const colorTerm = terms.find(t => COLOR_KEYWORDS.includes(t));
+
+            if (colorTerm && matched.length > 0) {
+                return buildSpecificProductReply(matched[0], products);
             }
+
+            // Category-only match — re-run without the color term so a mentioned-but-out-of-stock
+            // color (e.g. "stripes shirt blue" with no blue in stock) still resolves to the
+            // category instead of a dead-end "not found".
+            const categoryTerms = colorTerm ? terms.filter(t => t !== colorTerm) : terms;
+            const categoryMatched = colorTerm ? matchAllTerms(categoryTerms) : matched;
+
+            if (categoryMatched.length > 0) {
+                return buildCategoryAvailableReply(categoryMatched[0], products);
+            }
+
+            const replyText = "😔 We couldn't find any matching products.";
+            if (!isAtTopLevelMenu(session)) {
+                // Point at the always-valid category menu instead of echoing
+                // getStatePrompt's session.selectedSubCategory + session.searchProducts —
+                // those two fields can now drift independently under the search-cards
+                // feature (a failed search never touches either), producing a mismatched
+                // "category label from one moment, product list from another" suggestion.
+                return goToFlatSubcategoryList(session, products, `${replyText}\n\nFeel free to continue shopping: 😊`);
+            }
+            return { replyText, sendImages: [] };
         }
         default:
             return null;
