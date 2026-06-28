@@ -801,7 +801,7 @@ export async function handleImageProxy(req, res) {
     }
 }
 
-// Per-product "View & Buy" card used for SEARCH results (see buildProductCardsPageResponse) —
+// Per-product "See More" card used for SEARCH results (see buildProductCardsPageResponse) —
 // same cta_url shape as sendCtaUrlMessage but with an image header showing that product's photo.
 // imageUrl may be null (no resolvable image for this product); the header is omitted rather than
 // sent with a broken link. Throws on failure so the caller can catch/log per-card instead of one
@@ -3000,7 +3000,7 @@ function getShortProductName(p) {
 }
 
 // Builds one cta_url card per matched product — image header (that product's own photo), body
-// text (name/color + price + sizes), and a "View & Buy" button linking straight to that
+// text (name/color + price + sizes), and a "See More" button linking straight to that
 // product's own page. Falls back to the product's category page (lib/categoryUrls.js) when a
 // product has no permalink (sync gap), logging a warning, so a missing field never sends a
 // broken link. Every matched product gets a card in one go — there's no pagination, so there's
@@ -3023,7 +3023,7 @@ function buildProductCardsResponse(productsPool, products, queryLabel) {
         return {
             imageUrl: getProductImageUri(p, productsPool),
             body,
-            buttonText: 'View & Buy',
+            buttonText: 'See More',
             url
         };
     });
