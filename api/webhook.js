@@ -61,7 +61,21 @@ Please reply with a number:
 7️⃣ New Arrivals
 
 8️⃣ Order Status
-9️⃣ Talk to Support`;
+9️⃣ Talk to Support
+🔟 Size Guide`;
+
+// Sent when the customer replies "10" (🔟 Size Guide) to the main menu.
+const SIZE_GUIDE_TEXT = `📏 Size Guide
+
+Size | Chest (inch) | Length (inch)
+S    | 38            | 28
+M    | 40            | 29
+L    | 42            | 30
+XL   | 44            | 31
+XXL  | 46            | 32
+
+💡 Tip: Chest measure panna armpit kulla irundhu round ah measure pannunga.
+If in-between sizes la irundha, next size eduthukonga.`;
 
 // Verified against the live https://www.supercollections.in/product_cat-sitemap.xml — note the
 // T-Shirts parent category's real slug is "t-shirts-2" (not "t-shirts"), a pre-existing slug
@@ -2348,10 +2362,10 @@ function detectIntent(text, products = [], session = null) {
         session.awaitingOrderHelpChoice = false;
     }
 
-    // Main welcome-menu numeric selection: while awaiting a 1-9 reply to the redesigned main
+    // Main welcome-menu numeric selection: while awaiting a 1-10 reply to the redesigned main
     // menu, intercept it before any other routing (category-name search, greetings, etc.) so a
     // bare digit always resolves to the menu choice instead of being mistaken for something else.
-    if (session && session.state === "AWAITING_MAIN_MENU_SELECTION" && /^[1-9]$/.test(t)) {
+    if (session && session.state === "AWAITING_MAIN_MENU_SELECTION" && /^(?:[1-9]|10)$/.test(t)) {
         return { type: 'MAIN_MENU_SELECT', choice: t };
     }
 
@@ -3393,6 +3407,12 @@ async function handleIntent(intentResult, session, products, from) {
             }
             if (intentResult.choice === '9') {
                 return await handleIntent({ type: 'CUSTOMER_SUPPORT' }, session, products, from);
+            }
+            if (intentResult.choice === '10') {
+                return {
+                    replyText: `${SIZE_GUIDE_TEXT}\n\nReply with a number to continue shopping.`,
+                    sendImages: []
+                };
             }
             return { replyText: MAIN_MENU_TEXT, sendImages: [] };
         }
