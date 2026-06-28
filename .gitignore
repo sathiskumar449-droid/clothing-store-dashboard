@@ -26,3 +26,4 @@ owner-mobile-app/
 node_modules/
 server-error.log
 server-output.log
+.vercel

@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(node -e ' *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(node tmp_measure_images.mjs)",
+      "Bash(awk -F: '$1 > 4630 && $1 < 4660')",
+      "Bash(node scratch/test_interleaved_flow.mjs)",
+      "Bash(node scratch/test_pendingorder_fix.mjs)",
+      "Bash(node --check \"api/webhook.js\")"
     ]
   }
 }

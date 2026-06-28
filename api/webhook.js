@@ -2477,6 +2477,15 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'SEARCH', query: t };
     }
 
+    // ─── THANK YOU Acknowledgment ───
+    // Checked last, right before the UNKNOWN fallback, so a plain "thanks"/"tq"/"nandri" gets a
+    // warm acknowledgment instead of the generic "Sorry, I didn't quite get that!" — cheap keyword
+    // match on word boundaries, no AI call needed for something this simple.
+    const thankYouKeywords = ['tq', 'thank', 'thanks', 'thanku', 'thankyou', 'thnku', 'thnx', 'thx', 'tnx', 'nandri', 'nanri', 'நன்றி'];
+    if (words.some(w => thankYouKeywords.includes(w))) {
+        return { type: 'THANKS' };
+    }
+
     return { type: 'UNKNOWN' };
 }
 
@@ -3195,6 +3204,12 @@ async function handleIntent(intentResult, session, products, from) {
                 replyText: "Sure! 🙋‍♂️ We have paused the chat assistant. Our representative will connect with you shortly.",
                 sendImages: [],
                 isHumanHandoff: true
+            };
+        }
+        case 'THANKS': {
+            return {
+                replyText: "🙏 You're welcome! Happy shopping with Super Collections. Type *menu* anytime to browse more, or *order help* for order questions. 😊",
+                sendImages: []
             };
         }
         case 'CHECKOUT': {
