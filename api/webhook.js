@@ -42,6 +42,27 @@ export async function getWelcomeMessagePrefix() {
     return "";
 }
 
+const INTRO_WELCOME_TEXT = "Welcome to *Super Collections*!";
+const INTRO_BUTTON_GROUPS = [
+    {
+        body: "Choose an option:",
+        buttons: [
+            { id: 'shop_now', title: 'Shop Now' },
+            { id: 'order_enquiry', title: 'Order Enquiry' },
+            { id: 'customer_support', title: 'Customer Support' }
+        ],
+        addCancel: false
+    },
+    {
+        body: "Need our location?",
+        buttons: [
+            { id: 'location', title: 'Location' }
+        ],
+        addCancel: false
+    }
+];
+const CUSTOMER_SUPPORT_MESSAGE = "Customer Support\n+91 8668066503\n+91 7418755096";
+
 export async function getProducts() {
     try {
         // 'id' is a tiebreaker: rows sharing the same created_at (common with bulk imports)
@@ -937,7 +958,8 @@ export async function sendImage(to, imageUrl, caption = '') {
     }
 }
 
-async function sendButtons(to, bodyText, buttons) {
+async function sendButtons(to, bodyText, buttons, options = {}) {
+    const { addCancel = true } = options;
     const finalButtons = buttons ? [...buttons] : [];
     const hasCancel = finalButtons.some(b =>
         b.id === 'cancel_shopping' ||
@@ -945,7 +967,7 @@ async function sendButtons(to, bodyText, buttons) {
         b.title.toLowerCase().includes('cancel') ||
         ['cancel_continue_shopping', 'cancel_exit_shopping', 'cancel_clear_exit', 'cancel_checkout'].includes(b.id)
     );
-    if (!hasCancel) {
+    if (addCancel && !hasCancel) {
         finalButtons.push({ id: 'cancel_shopping', title: '❌ Cancel' });
     }
 
@@ -2314,13 +2336,21 @@ function detectIntent(text, products = [], session = null) {
     // Intro menu triggers (the two buttons shown on greeting)
     // Accept the typed phrase too (not just the button id) — referenced by the generic
     // fallback reply, so it needs to actually resolve to the order-help menu.
-    if (t === 'order_help' || t === 'order help') {
-        console.log('[IntroMenu] order_help triggered');
+    if (t === 'order_enquiry' || t === 'order enquiry' || t === 'order inquiry' || t === 'order_help' || t === 'order help') {
+        console.log('[IntroMenu] order enquiry triggered');
         return { type: 'ORDER_HELP' };
     }
     if (t === 'shop_now') {
         console.log('[IntroMenu] shop_now button clicked — routing to flat subcategory list');
         return { type: 'SHOP_MORE' };
+    }
+    if (t === 'customer_support' || t === 'customer support') {
+        console.log('[IntroMenu] customer_support triggered');
+        return { type: 'CUSTOMER_SUPPORT' };
+    }
+    if (t === 'location' || t === 'store location') {
+        console.log('[IntroMenu] location triggered');
+        return { type: 'LOCATION' };
     }
 
     // Global Shop More trigger — always navigate to category list regardless of current state
@@ -3179,6 +3209,28 @@ async function handleIntent(intentResult, session, products, from) {
                 sendImages: []
             };
         }
+        case 'CUSTOMER_SUPPORT': {
+            return {
+                replyText: CUSTOMER_SUPPORT_MESSAGE,
+                sendImages: []
+            };
+        }
+        case 'LOCATION': {
+            try {
+                await sendLocationCard(from);
+                await logChatMessage(from, 'bot', 'Store Location\n127 Srinivasa Street, Udumalpet - 642126');
+                return {
+                    replyText: "Store location shared above.",
+                    sendImages: []
+                };
+            } catch (err) {
+                console.error('[Location] Failed to send location card:', JSON.stringify(err.response?.data || err.message, null, 2));
+                return {
+                    replyText: "Store Location\n127 Srinivasa Street, Udumalpet - 642126",
+                    sendImages: []
+                };
+            }
+        }
         case 'ORDER_HELP_CHOICE': {
             // Keep the flag armed after 1-3 so the customer can immediately type another digit
             // (the FAQ reply text itself invites this: "Reply 4 to talk to our team"). Only
@@ -3272,6 +3324,13 @@ async function handleIntent(intentResult, session, products, from) {
             session.lastRecommendation = null;
             session.selectedSubCategory = null;
             session.isRecommendation = false;
+
+            console.log('[IntroMenu] Greeting detected â€” showing welcome menu for', from);
+            return {
+                replyText: INTRO_WELCOME_TEXT,
+                sendButtonGroups: INTRO_BUTTON_GROUPS,
+                sendImages: []
+            };
 
             let welcomeCardFailed = false;
             let videoCardFailed = false;
@@ -4576,6 +4635,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         session.cartCrossSellShown = false;
         session.awaitingOrderHelpChoice = false;
 
+        console.log('[IntroMenu] Greeting detected â€” showing welcome menu for', from);
+        return {
+            replyText: INTRO_WELCOME_TEXT,
+            sendButtonGroups: INTRO_BUTTON_GROUPS,
+            sendImages: []
+        };
+
         let welcomeCardFailed = false;
         let videoCardFailed = false;
         let locationCardFailed = false;
@@ -5167,12 +5233,27 @@ async function handleMessage(msg) {
             await saveSession(from, session);
         }
         if (aiResponse.sendButtons) {
-            await sendButtons(from, aiResponse.sendButtons.body, aiResponse.sendButtons.buttons);
+            await sendButtons(
+                from,
+                aiResponse.sendButtons.body,
+                aiResponse.sendButtons.buttons,
+                { addCancel: aiResponse.sendButtons.addCancel !== false }
+            );
             let buttonMsg = aiResponse.sendButtons.body;
             if (aiResponse.sendButtons.buttons) {
                 buttonMsg += '\n' + aiResponse.sendButtons.buttons.map(b => `[${b.title}]`).join(' ');
             }
             await logChatMessage(from, 'bot', buttonMsg);
+        }
+        if (Array.isArray(aiResponse.sendButtonGroups)) {
+            for (const group of aiResponse.sendButtonGroups) {
+                await sendButtons(from, group.body, group.buttons, { addCancel: group.addCancel !== false });
+                let buttonMsg = group.body;
+                if (group.buttons) {
+                    buttonMsg += '\n' + group.buttons.map(b => `[${b.title}]`).join(' ');
+                }
+                await logChatMessage(from, 'bot', buttonMsg);
+            }
         }
 
     } catch (err) {
