@@ -3412,7 +3412,7 @@ async function handleIntent(intentResult, session, products, from) {
             }
             if (intentResult.choice === '10') {
                 return {
-                    replyText: `${SIZE_GUIDE_TEXT}\n\nReply with a number to continue shopping.`,
+                    replyText: SIZE_GUIDE_TEXT,
                     sendImages: []
                 };
             }
