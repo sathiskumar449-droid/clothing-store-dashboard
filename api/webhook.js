@@ -54,14 +54,16 @@ const INTRO_BUTTON_GROUPS = [
         addCancel: false
     },
     {
-        body: "Need our location?",
+        body: "More options:",
         buttons: [
+            { id: 'order_guidance_video', title: 'Order Guidance Video' },
             { id: 'location', title: 'Location' }
         ],
         addCancel: false
     }
 ];
 const CUSTOMER_SUPPORT_MESSAGE = "Customer Support\n+91 8668066503\n+91 7418755096";
+const ORDER_GUIDANCE_VIDEO_FALLBACK = "Order Guidance Video\nhttps://drive.google.com/file/d/1wXwDqhYUpB_uv6v38kl9Gdh6mX2fTykG/view?usp=drivesdk";
 
 export async function getProducts() {
     try {
@@ -2348,6 +2350,10 @@ function detectIntent(text, products = [], session = null) {
         console.log('[IntroMenu] customer_support triggered');
         return { type: 'CUSTOMER_SUPPORT' };
     }
+    if (t === 'order_guidance_video' || t === 'order guidance video' || t === 'video guide' || t === 'order video') {
+        console.log('[IntroMenu] order_guidance_video triggered');
+        return { type: 'ORDER_GUIDANCE_VIDEO' };
+    }
     if (t === 'location' || t === 'store location') {
         console.log('[IntroMenu] location triggered');
         return { type: 'LOCATION' };
@@ -3203,9 +3209,9 @@ async function handleIntent(intentResult, session, products, from) {
             return goToFlatSubcategoryList(session, products);
         }
         case 'ORDER_HELP': {
-            session.awaitingOrderHelpChoice = true;
+            session.awaitingOrderHelpChoice = false;
             return {
-                replyText: "1. Order Status\n2. Returns & Exchange\n3. Delivery Time\n4. Talk to our team\n\nPlease reply with the number.",
+                replyText: "Please type your order details here. We will check and help you with your order.",
                 sendImages: []
             };
         }
@@ -3214,6 +3220,22 @@ async function handleIntent(intentResult, session, products, from) {
                 replyText: CUSTOMER_SUPPORT_MESSAGE,
                 sendImages: []
             };
+        }
+        case 'ORDER_GUIDANCE_VIDEO': {
+            try {
+                await sendVideoGuideCard(from);
+                await logChatMessage(from, 'bot', ORDER_GUIDANCE_VIDEO_FALLBACK);
+                return {
+                    replyText: "Order guidance video shared above.",
+                    sendImages: []
+                };
+            } catch (err) {
+                console.error('[OrderGuidanceVideo] Failed to send video guide card:', JSON.stringify(err.response?.data || err.message, null, 2));
+                return {
+                    replyText: ORDER_GUIDANCE_VIDEO_FALLBACK,
+                    sendImages: []
+                };
+            }
         }
         case 'LOCATION': {
             try {
