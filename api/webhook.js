@@ -42,27 +42,39 @@ export async function getWelcomeMessagePrefix() {
     return "";
 }
 
-const INTRO_WELCOME_TEXT = "Welcome to *Super Collections*!";
 const ORDER_GUIDANCE_VIDEO_ENABLED = false;
-const INTRO_BUTTON_GROUPS = [
-    {
-        body: "Choose an option:",
-        buttons: [
-            { id: 'shop_now', title: 'Shop Now' },
-            { id: 'order_enquiry', title: 'Order Enquiry' },
-            { id: 'customer_support', title: 'Customer Support' }
-        ],
-        addCancel: false
-    },
-    {
-        body: "More options:",
-        buttons: [
-            ...(ORDER_GUIDANCE_VIDEO_ENABLED ? [{ id: 'order_guidance_video', title: 'Order Guidance Video' }] : []),
-            { id: 'location', title: 'Location' }
-        ],
-        addCancel: false
-    }
-];
+
+// Top-level welcome menu shown on every greeting — 7 product categories + 2 utility options.
+// Numbers 1-7 map 1:1 with CATEGORY_LINKS below; 8/9 route to the existing ORDER_HELP /
+// CUSTOMER_SUPPORT intents (see handleIntent's MAIN_MENU_SELECT case) instead of new logic.
+const MAIN_MENU_TEXT = `👋 Welcome to Super Collection!
+We offer premium shirts, t-shirts, pants & more with FREE Shipping 🚚
+
+Please reply with a number:
+
+1️⃣ Shirts
+2️⃣ T-Shirts
+3️⃣ Pants
+4️⃣ Track Pants
+5️⃣ Imported Shorts
+6️⃣ Men
+7️⃣ New Arrivals
+
+8️⃣ Order Status
+9️⃣ Talk to Support`;
+
+// Verified against the live https://www.supercollections.in/product_cat-sitemap.xml — note the
+// T-Shirts parent category's real slug is "t-shirts-2" (not "t-shirts"), a pre-existing slug
+// collision on the WooCommerce site, not a typo here.
+const CATEGORY_LINKS = {
+    "1": { name: "Shirts", label: "shirts", emoji: "👔", url: "https://www.supercollections.in/product-category/shirts/" },
+    "2": { name: "T-Shirts", label: "t-shirts", emoji: "👕", url: "https://www.supercollections.in/product-category/t-shirts-2/" },
+    "3": { name: "Pants", label: "pants", emoji: "👖", url: "https://www.supercollections.in/product-category/pants/" },
+    "4": { name: "Track Pants", label: "track pants", emoji: "🏃", url: "https://www.supercollections.in/product-category/track-pants/" },
+    "5": { name: "Imported Shorts", label: "imported shorts", emoji: "🩳", url: "https://www.supercollections.in/product-category/imported-shorts/" },
+    "6": { name: "Men", label: "men's collection", emoji: "🧥", url: "https://www.supercollections.in/product-category/men/" },
+    "7": { name: "New Arrivals", label: "new arrivals", emoji: "✨", url: "https://www.supercollections.in/product-category/new-arrivals/" }
+};
 const CUSTOMER_SUPPORT_MESSAGE = "Customer Support\n+91 8668066503\n+91 7418755096";
 const ORDER_GUIDANCE_VIDEO_FALLBACK = "Order Guidance Video\nhttps://drive.google.com/file/d/1wXwDqhYUpB_uv6v38kl9Gdh6mX2fTykG/view?usp=drivesdk";
 
@@ -2336,6 +2348,13 @@ function detectIntent(text, products = [], session = null) {
         session.awaitingOrderHelpChoice = false;
     }
 
+    // Main welcome-menu numeric selection: while awaiting a 1-9 reply to the redesigned main
+    // menu, intercept it before any other routing (category-name search, greetings, etc.) so a
+    // bare digit always resolves to the menu choice instead of being mistaken for something else.
+    if (session && session.state === "AWAITING_MAIN_MENU_SELECTION" && /^[1-9]$/.test(t)) {
+        return { type: 'MAIN_MENU_SELECT', choice: t };
+    }
+
     // Intro menu triggers (the two buttons shown on greeting)
     // Accept the typed phrase too (not just the button id) — referenced by the generic
     // fallback reply, so it needs to actually resolve to the order-help menu.
@@ -3354,62 +3373,28 @@ async function handleIntent(intentResult, session, products, from) {
             session.selectedSubCategory = null;
             session.isRecommendation = false;
 
-            console.log('[IntroMenu] Greeting detected â€” showing welcome menu for', from);
+            console.log('[IntroMenu] Greeting detected — showing main menu for', from);
+            session.state = "AWAITING_MAIN_MENU_SELECTION";
             return {
-                replyText: INTRO_WELCOME_TEXT,
-                sendButtonGroups: INTRO_BUTTON_GROUPS,
+                replyText: MAIN_MENU_TEXT,
                 sendImages: []
             };
-
-            let welcomeCardFailed = false;
-            let videoCardFailed = false;
-            let locationCardFailed = false;
-
-            try {
-                await sendCtaUrlWelcomeMessage(from);
-                console.log('[Welcome] ✅ cta_url welcome card sent to', from);
-            } catch (err) {
-                welcomeCardFailed = true;
-                console.error('[Welcome] ❌ cta_url welcome card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+        }
+        case 'MAIN_MENU_SELECT': {
+            const link = CATEGORY_LINKS[intentResult.choice];
+            if (link) {
+                return {
+                    replyText: `${link.emoji} *${link.name} Collection*\nCheck out all our ${link.label} here 👇\n${link.url}`,
+                    sendImages: []
+                };
             }
-
-            if (ORDER_GUIDANCE_VIDEO_ENABLED) {
-                try {
-                    await sendVideoGuideCard(from);
-                    console.log('[Welcome] ✅ video guide card sent to', from);
-                } catch (err) {
-                    videoCardFailed = true;
-                    console.error('[Welcome] ❌ video guide card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
-                }
+            if (intentResult.choice === '8') {
+                return await handleIntent({ type: 'ORDER_HELP' }, session, products, from);
             }
-
-            try {
-                await sendLocationCard(from);
-                console.log('[Welcome] ✅ location card sent to', from);
-            } catch (err) {
-                locationCardFailed = true;
-                console.error('[Welcome] ❌ location card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
+            if (intentResult.choice === '9') {
+                return await handleIntent({ type: 'CUSTOMER_SUPPORT' }, session, products, from);
             }
-
-            if (welcomeCardFailed || videoCardFailed || locationCardFailed) {
-                const welcomeMsg = await getWelcomeMessagePrefix();
-                if (welcomeMsg) {
-                    await sendText(from, welcomeMsg.trim());
-                    await logChatMessage(from, 'bot', welcomeMsg.trim());
-                }
-            }
-
-            console.log('[IntroMenu] Greeting detected — showing Shop Now / Order Help buttons for', from);
-            return {
-                sendButtons: {
-                    body: "😊 How can we help you today?",
-                    buttons: [
-                        { id: 'shop_now', title: '🛍️ Shop Now' },
-                        { id: 'order_help', title: '📦 Order Help' }
-                    ]
-                },
-                sendImages: []
-            };
+            return { replyText: MAIN_MENU_TEXT, sendImages: [] };
         }
         case 'CATEGORY': {
             const categoryCounts = getCategoryCounts(products);
@@ -4666,60 +4651,10 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         session.cartCrossSellShown = false;
         session.awaitingOrderHelpChoice = false;
 
-        console.log('[IntroMenu] Greeting detected â€” showing welcome menu for', from);
+        console.log('[IntroMenu] Greeting detected — showing main menu for', from);
+        session.state = "AWAITING_MAIN_MENU_SELECTION";
         return {
-            replyText: INTRO_WELCOME_TEXT,
-            sendButtonGroups: INTRO_BUTTON_GROUPS,
-            sendImages: []
-        };
-
-        let welcomeCardFailed = false;
-        let videoCardFailed = false;
-        let locationCardFailed = false;
-
-        try {
-            await sendCtaUrlWelcomeMessage(from);
-            console.log('[Welcome] ✅ cta_url welcome card sent to', from);
-        } catch (err) {
-            welcomeCardFailed = true;
-            console.error('[Welcome] ❌ cta_url welcome card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
-        }
-
-        if (ORDER_GUIDANCE_VIDEO_ENABLED) {
-            try {
-                await sendVideoGuideCard(from);
-                console.log('[Welcome] ✅ video guide card sent to', from);
-            } catch (err) {
-                videoCardFailed = true;
-                console.error('[Welcome] ❌ video guide card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
-            }
-        }
-
-        try {
-            await sendLocationCard(from);
-            console.log('[Welcome] ✅ location card sent to', from);
-        } catch (err) {
-            locationCardFailed = true;
-            console.error('[Welcome] ❌ location card failed:', JSON.stringify(err.response?.data || err.message, null, 2));
-        }
-
-        if (welcomeCardFailed || videoCardFailed || locationCardFailed) {
-            const welcomeMsg = await getWelcomeMessagePrefix();
-            if (welcomeMsg) {
-                await sendText(from, welcomeMsg.trim());
-                await logChatMessage(from, 'bot', welcomeMsg.trim());
-            }
-        }
-
-        console.log('[IntroMenu] Greeting detected — showing Shop Now / Order Help buttons for', from);
-        return {
-            sendButtons: {
-                body: "😊 How can we help you today?",
-                buttons: [
-                    { id: 'shop_now', title: '🛍️ Shop Now' },
-                    { id: 'order_help', title: '📦 Order Help' }
-                ]
-            },
+            replyText: MAIN_MENU_TEXT,
             sendImages: []
         };
     }
