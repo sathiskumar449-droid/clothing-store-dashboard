@@ -8,7 +8,9 @@
       "Bash(awk -F: '$1 > 4630 && $1 < 4660')",
       "Bash(node scratch/test_interleaved_flow.mjs)",
       "Bash(node scratch/test_pendingorder_fix.mjs)",
-      "Bash(node --check \"api/webhook.js\")"
+      "Bash(node --check \"api/webhook.js\")",
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(node fuzzy_test2.mjs)"
     ]
   }
 }
