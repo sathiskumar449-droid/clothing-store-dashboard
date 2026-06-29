@@ -1,7 +1,7 @@
 // api/woocommerce-order-webhook.js
 // Receives WooCommerce "Order updated" webhooks and sends an order confirmation
 // to the customer over WhatsApp once the order reaches processing/completed.
-import { sendText, sendOrderDeliveredWithFeedback, logChatMessage, deleteSession } from './webhook.js';
+import { sendText, logChatMessage, deleteSession } from './webhook.js';
 import { supabase } from '../lib/supabase.js';
 import { verifyWooWebhookSignature } from '../lib/wooWebhookAuth.js';
 
@@ -94,20 +94,6 @@ function buildOrderConfirmationMessage(order) {
     msg += `\n💰 *Total: ₹${order.total}*\n`;
     msg += `${divider}\n\n`;
     msg += `Thank you for shopping with Super Collections! 🙏`;
-    return msg;
-}
-
-// Sent when an already-notified order's status later moves to "completed" — a
-// distinct message from buildOrderConfirmationMessage() so the customer isn't sent
-// the same "Order Confirmed!" text twice for one order.
-function buildOrderDeliveredMessage(order) {
-    const orderNumber = order.number || order.id;
-    const divider = '──────────────────────';
-    let msg = `${divider}\n`;
-    msg += `✅ *Order Delivered!*\n`;
-    msg += `${divider}\n\n`;
-    msg += `📦 Order #${orderNumber} has been delivered.\n\n`;
-    msg += `Thank you for shopping with Super Collections! We'd love to see you again. 🙏`;
     return msg;
 }
 
@@ -212,16 +198,20 @@ export async function handleWooOrderWebhook(req, res) {
             return res.sendStatus(200);
         }
 
-        const isDelivered = notifyKind === 'status_changed' && row.status === 'delivered';
-        const message = isDelivered
-            ? buildOrderDeliveredMessage(order)
-            : buildOrderConfirmationMessage(order);
-
-        if (isDelivered) {
-            await sendOrderDeliveredWithFeedback(phone, message, row.id, order.number || order.id);
-        } else {
-            await sendText(phone, message);
+        // A status change to "delivered" (WooCommerce order marked "completed") no longer sends
+        // any WhatsApp notification — the dashboard status is still updated above by the time we
+        // get here, this just stops messaging the customer. Customers were disputing the old
+        // automatic "Order Delivered!" message ("Not Delivered") when it didn't match reality,
+        // creating review-flagged complaints that didn't need to exist. Only a brand-new order
+        // (notifyKind === 'new') still gets the order-confirmation message, even if it happens to
+        // arrive already "completed" on its first webhook — same as before this change.
+        if (notifyKind === 'status_changed' && row.status === 'delivered') {
+            console.log(`[Woo Order Webhook] Order #${order.id} marked delivered — status updated, no customer notification sent.`);
+            return res.sendStatus(200);
         }
+
+        const message = buildOrderConfirmationMessage(order);
+        await sendText(phone, message);
         await logChatMessage(phone, 'bot', message);
 
         // This order was just confirmed/delivered, so any WhatsApp bot conversation this

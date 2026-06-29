@@ -657,27 +657,6 @@ export async function sendText(to, text) {
     }
 }
 
-// Sent alongside buildOrderDeliveredMessage() — gives the customer a way to flag a
-// problem right from the delivery notification instead of needing to type something the
-// bot has to interpret. The button id carries the order's row id (for the Supabase flag)
-// and display number (for the reply text), e.g. "order_not_delivered_WOO-123|123" — see
-// the matching detectIntent() check and the ORDER_DELIVERY_COMPLAINT case in handleIntent().
-export async function sendOrderDeliveredWithFeedback(to, bodyText, orderRowId, orderDisplayNumber) {
-    return await sendRequest({
-        to,
-        type: 'interactive',
-        interactive: {
-            type: 'button',
-            body: { text: bodyText },
-            action: {
-                buttons: [
-                    { type: 'reply', reply: { id: `order_not_delivered_${orderRowId}|${orderDisplayNumber}`, title: '❌ Not Delivered' } }
-                ]
-            }
-        }
-    });
-}
-
 // Rich welcome card (logo + contact info + "Visit Website" CTA button) sent on greeting.
 // Throws on failure so the caller can fall back to the plain text welcome message.
 export async function sendCtaUrlWelcomeMessage(to) {
@@ -2508,19 +2487,12 @@ Illana *menu* type pannunga, categories paathu website la  paarunga 🛍️`;
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
 
-    // "Order not delivered" button from the delivery notification (see
-    // sendOrderDeliveredWithFeedback) — must resolve regardless of session state, since
-    // the WooCommerce webhook calls deleteSession() right after sending that message, so
-    // there's no session context left for this reply to be evaluated against. Without this
-    // check it used to fall through to free-text product search and return a confusing
-    // "out of stock" reply.
-    const notDeliveredMatch = t.match(/^order_not_delivered_(.+)\|([^|]+)$/);
-    if (notDeliveredMatch) {
-        return { type: 'ORDER_DELIVERY_COMPLAINT', orderRowId: notDeliveredMatch[1], orderDisplayNumber: notDeliveredMatch[2] };
-    }
-    // Bare-id/plain-text fallback — covers a button reply that doesn't carry our
-    // "<rowId>|<displayNumber>" suffix (e.g. an externally configured WhatsApp template
-    // button), so the complaint still gets acknowledged instead of falling through.
+    // Customer typing a delivery complaint unprompted (e.g. "not delivered", "order not
+    // delivered") — must resolve regardless of session state, since this can be the very
+    // first thing they type. Without this check it used to fall through to free-text product
+    // search and return a confusing "out of stock" reply. No order id is attached here (this
+    // is free text, not a structured button reply), so the ORDER_DELIVERY_COMPLAINT handler
+    // just acknowledges and flags the complaint without updating a specific order row.
     if (['order_not_delivered', 'not delivered', 'order not delivered', '❌ not delivered', '❌ order not delivered'].includes(t)) {
         return { type: 'ORDER_DELIVERY_COMPLAINT', orderRowId: null, orderDisplayNumber: null };
     }
@@ -3528,7 +3500,7 @@ async function handleIntent(intentResult, session, products, from) {
     switch (intentResult.type) {
         case 'ORDER_DELIVERY_COMPLAINT': {
             const { orderRowId, orderDisplayNumber } = intentResult;
-            console.log(`[OrderComplaint] ⚠️ ${from} reported order ${orderRowId || '(unknown — no order id on the button reply)'} as NOT delivered — flagging for review.`);
+            console.log(`[OrderComplaint] ⚠️ ${from} reported order ${orderRowId || '(unknown — free-text complaint, no order id attached)'} as NOT delivered — flagging for review.`);
             if (orderRowId) {
                 try {
                     const { error } = await supabase
