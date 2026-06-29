@@ -3855,6 +3855,20 @@ const MULTIPLE_NUMBERS_REPLY = `😊 Please reply with just ONE number at a time
 // friendlier, neutral nudge instead.
 const GENERIC_FALLBACK_REPLY = `Sorry, I didn't quite get that! 😊 Type *menu* to browse our shop, or *order help* if you have a question about your order.`;
 
+// Standalone color question with no product/category mentioned at all (e.g. "colours", "colors
+// available?", "enna colour irukku") — checked in the FAQ fallback chain below, well after
+// detectIntent's SEARCH-routing checks (parentCategories/searchKeywords/looksLikeProductQuery)
+// have already failed to find a category match, and before the final GENERIC_FALLBACK_REPLY.
+// Reaching that FAQ chain at all already implies no category/product keyword was recognized —
+// SEARCH always returns its own reply and never falls through here — so this only needs to check
+// for a color word, not separately re-verify the absence of a category word.
+const GENERIC_COLOR_INQUIRY_REPLY = `🎨 Yes! We have lots of colours available across all our collections 😊
+
+Check them out here 👇
+https://supercollections.in/shop/
+
+Illana product name sollunga (e.g. "plain shirt"), naan exact colours kaatturen!`;
+
 async function _handleSalesAssistantJS(from, userMessage, products, session) {
     const normalizedMessage = normalizeQuery(userMessage);
     const textLower = normalizedMessage.toLowerCase();
@@ -4901,6 +4915,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
     if (textLower.includes("vere color") || textLower.includes("vera colour") || textLower.includes("other color") || textLower.includes("different color") || textLower.includes("color available") || textLower.includes("colour iruka")) {
         return { replyText: "Please select a category, and we will share the list of available colors! 😊", sendImages: [] };
+    }
+    // GENERIC COLOR INQUIRY — broader catch-all for color questions the more specific phrasings
+    // above didn't already match (e.g. "colours", "colors available?"). Checked after those so
+    // existing FAQ wording keeps its current reply unchanged.
+    if (["colour", "colours", "color", "colors"].some(w => textLower.includes(w)) ||
+        COLOR_KEYWORDS.some(c => textLower.includes(c))) {
+        return { replyText: GENERIC_COLOR_INQUIRY_REPLY, sendImages: [] };
     }
     if (textLower.includes("quality") || textLower.includes("fabric") || textLower.includes("material") || textLower.includes("genuine") || textLower.includes("original")) {
         return { replyText: "💪 100% premium quality products. Super Collections guarantees premium quality! 😊", sendImages: [] };
