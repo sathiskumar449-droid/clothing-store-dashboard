@@ -2350,7 +2350,14 @@ const normalizeSearchSpelling = (s) => s
     // misspellings of "linen" itself need to collapse onto that same "lenin" token too, not
     // just the correctly-spelled word.
     .replace(/\b(?:linen|lelin)\b/g, 'lenin')
-    .replace(/\bt[\s-]?shirts?\b/g, 'tshirt')
+    // "t shirt"/"t-shirt"/"tshirts"/"t.shirt" AND typo'd variants missing the final "t" (e.g.
+    // "t.shirs", "tshirs", "T.shirs L size venum") all collapse to "tshirt" here, before the
+    // word ever becomes a standalone "shirt"/"shirts" term — otherwise a typo'd T-Shirt mention
+    // loses its leading "t" to punctuation-stripping, the remaining "shirs" gets fuzzy-corrected
+    // to the generic "shirt" (see findFuzzyCatalogMatch), and the T-Shirt signal is gone entirely,
+    // leaving a bare "shirt" that can match into the unrelated "Shirts" (formal shirts) group —
+    // e.g. "White Shirts" — instead of "T-Shirts".
+    .replace(/\bt[.\s-]?shirt?s?\b/g, 'tshirt')
     .replace(/\bphants?\b/g, 'pant')
     .replace(/\bpants?\b/g, 'pant')
     .replace(/\bfoot\s*bal+s?\b/g, 'football')
@@ -3415,6 +3422,37 @@ function buildCategoryAvailableReply(sampleProduct, productsPool) {
     };
 }
 
+// Sets up the session for the numbered flat-subcategory-list flow and builds that list for one
+// parent category — shared by the CATEGORY case below and by SEARCH's ambiguous-generic-term
+// fallback (see GENERIC_PRODUCT_WORDS in the SEARCH case), so both routes into this same flow use
+// one implementation instead of two drifting copies.
+function showSubcategoryListForParent(selectedParent, products, session) {
+    session.selectedParentCategory = selectedParent;
+    session.state = "AWAITING_SUBCATEGORY_SELECTION";
+    session.pendingProduct = null;
+    session.selectedSize = null;
+    session.searchProducts = [];
+    session.lastRecommendation = null;
+    session.isRecommendation = false;
+    session.fromCrossSell = false;
+    session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
+    session.cartCrossSellShown = false;
+
+    const subcategoryCounts = {};
+    products.forEach(p => {
+        if (Number(p.stock) > 0 && getParentCategory(p.category) === selectedParent) {
+            const sub = p.category || 'General';
+            subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
+        }
+    });
+
+    const subs = Object.keys(subcategoryCounts).filter(sub => subcategoryCounts[sub] > 0);
+    subs.sort((a, b) => a.localeCompare(b));
+    session.subCategories = subs;
+
+    return makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent);
+}
+
 async function handleIntent(intentResult, session, products, from) {
     switch (intentResult.type) {
         case 'ORDER_DELIVERY_COMPLAINT': {
@@ -3680,30 +3718,7 @@ async function handleIntent(intentResult, session, products, from) {
             const selectedParent = matchParentCategory(intentResult.category, parents);
 
             if (selectedParent) {
-                session.selectedParentCategory = selectedParent;
-                session.state = "AWAITING_SUBCATEGORY_SELECTION";
-                session.pendingProduct = null;
-                session.selectedSize = null;
-                session.searchProducts = [];
-                session.lastRecommendation = null;
-                session.isRecommendation = false;
-                session.fromCrossSell = false;
-                session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
-                session.cartCrossSellShown = false;
-
-                const subcategoryCounts = {};
-                products.forEach(p => {
-                    if (Number(p.stock) > 0 && getParentCategory(p.category) === selectedParent) {
-                        const sub = p.category || 'General';
-                        subcategoryCounts[sub] = (subcategoryCounts[sub] || 0) + 1;
-                    }
-                });
-
-                const subs = Object.keys(subcategoryCounts).filter(sub => subcategoryCounts[sub] > 0);
-                subs.sort((a, b) => a.localeCompare(b));
-                session.subCategories = subs;
-
-                return makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent);
+                return showSubcategoryListForParent(selectedParent, products, session);
             }
             // If match fails, fall through to SEARCH
         }
@@ -3788,6 +3803,22 @@ async function handleIntent(intentResult, session, products, from) {
             // to fall through to a loose "shirts" match and suggest White Shirts).
             if (hasUnmatchedTerm) {
                 return { replyText: OUT_OF_STOCK_REPLY, sendImages: [] };
+            }
+
+            // A query left with ONLY generic product-type word(s) (e.g. bare "shirt" or "tshirt",
+            // no color and no specific style/subcategory word) can't confidently resolve to ONE
+            // subcategory — "shirt" alone matches White Shirts, Plain Shirts, Lenin Plain, and
+            // every other real Shirts subcategory all at once; "tshirt" alone is just as
+            // ambiguous across T-Shirts, Football T Shirt, Round Neck T Shirt, etc. Picking
+            // matched[0] in that case is really just "whichever happens to be first in the
+            // products array" — that's the bug this fixes ("T.shirs L size venum" used to fall
+            // back to a bare "shirt" match and pick whatever shirt-category product was first,
+            // e.g. White Shirts). Show the existing numbered subcategory list for that parent
+            // group instead of silently guessing one. (`terms.every(generic)` already implies no
+            // color term is present, since no COLOR_KEYWORDS entry is in GENERIC_PRODUCT_WORDS.)
+            if (terms.length > 0 && terms.every(t => GENERIC_PRODUCT_WORDS.has(t)) && matched.length > 0) {
+                const ambiguousParent = getParentCategory(matched[0].category);
+                return showSubcategoryListForParent(ambiguousParent, products, session);
             }
 
             // Product Availability Check — a color/variant word among the search terms (see
