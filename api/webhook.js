@@ -3476,7 +3476,7 @@ function buildCategoryAvailableReply(sampleProduct, productsPool) {
         sendProductCards: [{
             imageUrl: getProductImageUri(sampleProduct, productsPool),
             body: `Yes, available ✅\n\n👔 *${capName}*`,
-            buttonText: 'See More 👀',
+            buttonText: 'See More Colours 👀',
             url: getCategoryUrl(categoryName)
         }]
     };
