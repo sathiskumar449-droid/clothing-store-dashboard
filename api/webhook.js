@@ -2497,6 +2497,22 @@ const SHORT_NOT_FOUND_REPLY = `😔 Couldn't find that exact item.\nType *menu* 
 // (e.g. "Korean lelin shirts" used to fall back to "White Shirts").
 const OUT_OF_STOCK_REPLY = `Sorry, this item is currently out of stock. 😔\nWe'll update you as soon as it's available!`;
 
+// Matches an Instagram/Facebook/YouTube link in an INCOMING customer message — e.g. a customer
+// pasting a Reel/post link and asking "is this available". Checked against the raw user message
+// (see the early-return in _handleSalesAssistantJS below), never against anything the bot itself
+// sends, so a website link we send back can't ever be mistaken for this case. We can't open or
+// parse these links to know which product they mean, so this short-circuits straight to
+// SOCIAL_MEDIA_LINK_REPLY instead of letting the URL fall into SEARCH as meaningless free text
+// (where it used to either misfire on the wrong category or trip the out-of-stock fallback).
+const SOCIAL_MEDIA_LINK_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|facebook\.com|fb\.watch|youtube\.com|youtu\.be)/i;
+
+// Exact Tanglish wording requested — do not translate or reword.
+const SOCIAL_MEDIA_LINK_REPLY = `😊 Sorry , Instagram/Facebook link direct ah open panna mudiyathu.
+
+Video la irukura product name type pannunga, naan check panni solleren 👕
+
+Illana *menu* type pannunga, categories paathu website la  paarunga 🛍️`;
+
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
 
@@ -3889,6 +3905,17 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
             replyText: "We couldn't find that order. Please double check the Order ID, or our team will verify and get back to you shortly.",
             sendImages: []
         };
+    }
+
+    // ─── Social media link guard (checked before SEARCH/intent detection, after structured
+    // button replies / order-tracking above so those keep first claim on the message) ─── A
+    // customer pasting an Instagram/Facebook/YouTube link — with or without extra text alongside
+    // it, e.g. "this one available? https://instagram.com/reel/..." — can't be resolved to a
+    // product; we never attempt to parse the surrounding text, since that used to land the raw
+    // URL in SEARCH as noise and either misfire on the wrong category or wrongly claim the item
+    // is out of stock.
+    if (SOCIAL_MEDIA_LINK_REGEX.test(userMessage)) {
+        return { replyText: SOCIAL_MEDIA_LINK_REPLY, sendImages: [] };
     }
 
     // ─── Intent Detection & Routing Layer ───
