@@ -3385,11 +3385,61 @@ const SIZE_KEYWORDS = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl', '2xl', 
     'size', 'sizes', 'saiz']);
 
 // Generic product-type words — describe WHAT KIND of garment, not which specific
-// category/pattern/color. See the Bug 1 fix in the SEARCH case below: AND-requiring one of these
-// on the same product as a specific style word (e.g. "stripe") let a coincidental match on an
-// unrelated category (e.g. "Brand T Shirt") win over the real intended match ("Stripes Shirts")
-// just because that unrelated product happened to literally contain "t shirt" too.
+// category/pattern/color. See the cross-group conflict check in the SEARCH case below:
+// AND-requiring one of these on the same product as a specific style word (e.g. "stripe") used to
+// either let a coincidental match on an unrelated category win (e.g. "Brand T Shirt"), or — after
+// an earlier fix — silently drop the generic word and show whichever OTHER top-level group the
+// pattern happens to exist in (e.g. "Stripes Shirts", under "Shirts" — a different group than the
+// "T-Shirts" the customer explicitly named). Neither is right: when the customer explicitly names
+// a group via one of these words, a pattern that doesn't exist in THAT group should never be
+// silently redirected into a different one.
 const GENERIC_PRODUCT_WORDS = new Set(['shirt', 'shirts', 'tshirt', 'pant', 'short', 'shorts', 'jeans', 'trouser']);
+
+// Maps a generic product-type term to the parent category group the customer explicitly named by
+// using it — e.g. "tshirt" unambiguously means the T-Shirts group specifically, not generic
+// "Shirts". Used only by the cross-group conflict check below.
+const GENERIC_TERM_TO_PARENT = {
+    shirt: 'Shirts', shirts: 'Shirts',
+    tshirt: 'T-Shirts',
+    pant: 'Pants', jeans: 'Pants', trouser: 'Pants',
+    short: 'Shorts', shorts: 'Shorts'
+};
+
+// Display emoji/name per parent group for the cross-group conflict reply. "Shirts" gets a
+// "(formal)" suffix specifically because that's the exact ambiguity this reply exists to resolve —
+// customers say "shirt" colloquially for either Shirts or T-Shirts.
+const PARENT_GROUP_DISPLAY = {
+    'Shirts': { emoji: '🎨', name: 'Shirts (formal)' },
+    'T-Shirts': { emoji: '👕', name: 'T-Shirts' },
+    'Pants': { emoji: '👖', name: 'Pants' },
+    'Shorts': { emoji: '🩳', name: 'Shorts' }
+};
+
+// A handful of style/pattern words need their adjective form spelled out for the reply text
+// ("stripe" -> "Striped"); everything else not listed here is already adjective-shaped (plain,
+// printed, cotton, polo, casual, checked, ...) and just needs capitalizing.
+const PATTERN_DISPLAY_NAME = { stripe: 'Striped', stripes: 'Striped' };
+
+// Built when a specific style/pattern term (e.g. "stripe") doesn't exist within the group the
+// customer explicitly named (e.g. "T-Shirts"), but DOES exist in a different group (e.g.
+// "Shirts") — see the SEARCH case's cross-group conflict check. Names both: where the pattern
+// actually exists, and the general group the customer originally asked about.
+function buildCrossGroupConflictReply(specificTerms, actualCategory, requestedParent) {
+    const patternDisplay = specificTerms
+        .map(t => PATTERN_DISPLAY_NAME[t] || (t.charAt(0).toUpperCase() + t.slice(1)))
+        .join(' ');
+    const actualParent = getParentCategory(actualCategory);
+    const actualLabel = actualParent === 'Shirts' ? `${actualCategory} (formal)` : actualCategory;
+    const requestedDisplay = PARENT_GROUP_DISPLAY[requestedParent] || { emoji: '🛍️', name: requestedParent };
+
+    const replyText = `😔 Sorry, we don't have ${patternDisplay} ${requestedDisplay.name.replace(' (formal)', '')} currently.\n\n` +
+        `But we do have:\n` +
+        `🎨 ${actualLabel} 👉 ${getCategoryUrl(actualCategory)}\n` +
+        `${requestedDisplay.emoji} ${requestedDisplay.name.replace(' (formal)', '')} collection 👉 ${getCategoryUrl(requestedParent)}\n\n` +
+        `Check these out, might find something you like! 😊`;
+
+    return { replyText, sendImages: [] };
+}
 
 // Product Availability Check, Scenario B (exact category + color match) — replies with that one
 // product's own image/price and a button straight to its own page. Returned as a declarative
@@ -3760,28 +3810,29 @@ async function handleIntent(intentResult, session, products, from) {
                 inStock.filter(p => termList.every(term => termMatches(p, term)))
             );
 
-            // Bug 1 fix — a generic product-type word (shirt/t-shirt/pant/...) AND-required on the
-            // same product as a specific style/pattern word (e.g. "stripe") used to let a product
-            // from a completely unrelated category win the match, just because it happened to
-            // literally contain that generic word too (e.g. "stripe t shirts" AND-matching a
-            // "Brand T Shirt" product over the real intended "Stripes Shirts"). Drop the generic
-            // word from the AND-match if including it would jump the result to a different parent
-            // category than the specific terms alone resolve to — the generic word is colloquial
-            // filler in that case, not a deliberate category pick.
-            let terms = searchTerms;
+            // Cross-group pattern conflict check — a specific style/pattern term (e.g. "stripe")
+            // combined with a generic product-type word that explicitly names a group (e.g.
+            // "tshirt" -> T-Shirts) must never be silently resolved by guessing. If no real
+            // product satisfies the full request (pattern + the explicitly-named group) but the
+            // pattern DOES exist in some other group, that's a genuine "we don't carry that
+            // combination" case, not noise to drop — ask for clarification instead of either
+            // matching the wrong unrelated product (the original bug) or silently substituting in
+            // a different top-level group (an earlier, still-wrong fix for that bug).
             const specificTerms = searchTerms.filter(t => !GENERIC_PRODUCT_WORDS.has(t));
-            if (specificTerms.length > 0 && specificTerms.length < searchTerms.length) {
+            const genericTermUsed = searchTerms.find(t => GENERIC_PRODUCT_WORDS.has(t));
+            let crossGroupConflictReply = null;
+            if (specificTerms.length > 0 && genericTermUsed) {
                 const specificOnlyMatched = matchAllTerms(specificTerms);
-                if (specificOnlyMatched.length > 0) {
-                    const fullMatched = matchAllTerms(searchTerms);
-                    const fullParent = fullMatched.length > 0 ? getParentCategory(fullMatched[0].category) : null;
-                    const specificParent = getParentCategory(specificOnlyMatched[0].category);
-                    if (fullParent !== specificParent) {
-                        terms = specificTerms;
+                if (specificOnlyMatched.length > 0 && matchAllTerms(searchTerms).length === 0) {
+                    const requestedParent = GENERIC_TERM_TO_PARENT[genericTermUsed];
+                    const actualParent = getParentCategory(specificOnlyMatched[0].category);
+                    if (requestedParent && requestedParent !== actualParent) {
+                        crossGroupConflictReply = buildCrossGroupConflictReply(specificTerms, specificOnlyMatched[0].category, requestedParent);
                     }
                 }
             }
 
+            const terms = searchTerms;
             let matched = [];
 
             if (terms.length > 0) {
@@ -3806,6 +3857,10 @@ async function handleIntent(intentResult, session, products, from) {
             session.fromCrossSell = false;
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
+
+            if (crossGroupConflictReply) {
+                return crossGroupConflictReply;
+            }
 
             // A genuine catalog-unmatched term (e.g. "Korean") means the customer asked for a
             // specific attribute/origin/brand we don't carry at all — refuse to fall back to ANY
