@@ -2561,6 +2561,66 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'HUMAN' };
     }
 
+    // 1.5 ORDER/SUPPORT QUESTIONS — chat logs showed these falling through to either the old
+    // generic "Super Collections, online orders only" STORE INFO reply or the catch-all "didn't
+    // quite get that" fallback, frustrating customers who just wanted a phone number or to know
+    // whether delivery/ordering works at all (one literally replied "You cheating me"). Checked
+    // here — after HUMAN, before CHECKOUT/FAQ/SEARCH — so a descriptive phrase always resolves to
+    // the right answer, but a bare digit (order-ID lookup, numbered-menu reply) is never affected
+    // since none of these keyword lists match a lone number. "how to place order" in particular
+    // must be checked before the CHECKOUT keyword match below, since it contains the substring
+    // "place order" and would otherwise be misrouted into starting checkout.
+    const customerCareKeywords = ['customer care number', 'customer care', 'shop number', 'customer number',
+        'contact number', 'phone number', 'team number', 'care number'];
+    if (customerCareKeywords.some(k => t.includes(k))) {
+        return {
+            type: 'FAQ',
+            reply: `📞 You can reach our team directly here:\n+91 8668066503\n+91 7418755096\nWe're happy to help! 😊`
+        };
+    }
+
+    // Distinct from the delivery-TIME FAQ below ("when will it arrive") — this customer wants
+    // the courier tracking ID/link for an order already placed, so the reply is explicit about
+    // needing the Order ID for tracking specifically instead of a generic "share your Order ID".
+    const trackingKeywords = ['tracking number', 'tracking details', 'courier tracking', 'track my order',
+        'track order', 'where is my order'];
+    if (trackingKeywords.some(k => t.includes(k))) {
+        return {
+            type: 'FAQ',
+            reply: `📦 To check your courier tracking, please share your Order ID (e.g. 4475) and our team will share the tracking details with you shortly.`
+        };
+    }
+
+    const deliveryAvailabilityKeywords = ['delivery available', 'do you deliver', 'delivery pannuvingala',
+        'shipping available', 'delivery aaguma', 'delivery panuvingala'];
+    if (deliveryAvailabilityKeywords.some(k => t.includes(k))) {
+        return {
+            type: 'FAQ',
+            reply: `🚚 Yes! We offer delivery across India with FREE Shipping on all orders. Just place your order on our website and we'll deliver to your doorstep! 😊`
+        };
+    }
+
+    const howToOrderKeywords = ['how to order', 'how to place order', 'how i place the order', 'how to ordee',
+        "i don't know how to order", 'i dont know how to order', 'ordering pannrathu epdi'];
+    if (howToOrderKeywords.some(k => t.includes(k))) {
+        return {
+            type: 'FAQ',
+            reply: `🛍️ Ordering is easy!\n1. Type *menu* to browse categories\n2. Tap any product link to open our website\n3. Add to cart & checkout — it takes 2 minutes!\nNeed help? Contact our team: +91 8668066503`
+        };
+    }
+
+    // The exact-match 'location'/'store location' triggers above (checked earlier, before HUMAN)
+    // already send a richer location card via sendLocationCard — this only catches the other
+    // phrasings that fall through to here instead, e.g. "where is your shop".
+    const shopLocationKeywords = ['where is your shop', 'shop located', 'shop address', 'store location',
+        'kadai enga', 'store address', 'shop enga', 'store enga', 'location'];
+    if (shopLocationKeywords.some(k => t.includes(k))) {
+        return {
+            type: 'FAQ',
+            reply: `📍 Super Collections, Udumalpet.\nFor exact directions or to visit, contact: +91 8668066503\nOr shop online anytime — type *menu*! 😊`
+        };
+    }
+
     // 2. CHECKOUT Intent
     const checkoutKeywords = ['checkout', 'place order', 'confirm order', 'buy now', 'buy', 'order confirm'];
     if (checkoutKeywords.some(k => t === k || (t.includes('checkout') && !t.includes('no_checkout') && !t.includes('no checkout') && !t.includes('no-checkout')) || t.includes('place order') || t.includes('confirm order') || t.includes('buy now'))) {
@@ -2651,13 +2711,6 @@ function detectIntent(text, products = [], session = null) {
     if (discountKeywords.some(k => t.includes(k))) {
         return { type: 'FAQ', reply: 'We offer fixed pricing as our products are already at the best possible price. Thank you for understanding! 😊🔥' };
     }
-
-    // ─── STORE INFO Match ───
-    const storeKeywords = ['shop address', 'store address', 'shop enga', 'store enga', 'location', 'phone number', 'contact number', 'kodu'];
-    if (storeKeywords.some(k => t.includes(k))) {
-        return { type: 'FAQ', reply: '🏪 Super Collections\n\nWe accept online orders only. Please place your order via WhatsApp! 😊' };
-    }
-
 
     // 4. GREETING Intent
     const greetKeywords = ['hi', 'hello', 'hey', 'vanakkam', 'hai', 'hii', 'yo', 'sup'];
