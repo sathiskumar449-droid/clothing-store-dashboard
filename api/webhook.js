@@ -2484,6 +2484,31 @@ Video la irukura product name type pannunga, naan check panni solleren 👕
 
 Illana *menu* type pannunga, categories paathu website la  paarunga 🛍️`;
 
+// True if `text` is ONLY digits plus light separators (commas, "&", "and", whitespace/newlines)
+// — e.g. "1,2 & 3", "1 2 3", "1\n2\n3" — as opposed to ordinary free text that merely contains a
+// digit somewhere (e.g. "I want 5 shirts" or an order ID like "4406"), which must never be
+// hijacked as a numbered-menu reply. A single bare number (e.g. "5") also passes this check —
+// callers combine it with extractMenuNumbers below to handle both the one-number and
+// multiple-numbers case with the same code path.
+function isNumbersOnlyText(text) {
+    const stripped = (text || '').replace(/\band\b/gi, ' ').replace(/[,&\s]+/g, ' ').trim();
+    return stripped.length > 0 && /^\d+(\s+\d+)*$/.test(stripped);
+}
+
+// Extracts every standalone integer token from free text (e.g. "1,2 & 3" -> [1,2,3]). \d+ matches
+// each contiguous digit run as ONE number, so a multi-digit value is never split into separate
+// digits — only meaningful once isNumbersOnlyText has already confirmed the message is a
+// numbers-only menu reply, not order-ID lookup text (handled separately, much earlier).
+function extractMenuNumbers(text) {
+    const matches = (text || '').match(/\d+/g);
+    return matches ? matches.map(m => parseInt(m, 10)) : [];
+}
+
+// Appended to a numbered-menu reply when the customer listed more than one number at once (e.g.
+// "1,2 & 3") — we act on the first one rather than either spamming every option back-to-back or
+// rejecting the whole message as unparseable (see MULTIPLE_CATEGORY_NOTE callers below).
+const MULTIPLE_CATEGORY_NOTE = "You mentioned multiple categories. Here's the first one. Reply with another number if you want to see another category.";
+
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
 
@@ -2517,8 +2542,15 @@ function detectIntent(text, products = [], session = null) {
     // Main welcome-menu numeric selection: while awaiting a 1-9 reply to the redesigned main
     // menu, intercept it before any other routing (category-name search, greetings, etc.) so a
     // bare digit always resolves to the menu choice instead of being mistaken for something else.
-    if (session && session.state === "AWAITING_MAIN_MENU_SELECTION" && /^[1-9]$/.test(t)) {
-        return { type: 'MAIN_MENU_SELECT', choice: t };
+    // A customer who lists several numbers at once (e.g. "1,2 & 3") almost certainly wants the
+    // FIRST one acted on, not a confusing "couldn't find that" search miss — isNumbersOnlyText
+    // requires the WHOLE message to be numbers+separators, so ordinary text that merely contains
+    // a digit (e.g. "I want 5 shirts") is never misread as a menu choice.
+    if (session && session.state === "AWAITING_MAIN_MENU_SELECTION" && isNumbersOnlyText(t)) {
+        const menuNumbers = extractMenuNumbers(t).filter(n => n >= 1 && n <= 9);
+        if (menuNumbers.length > 0) {
+            return { type: 'MAIN_MENU_SELECT', choice: String(menuNumbers[0]), multipleFound: menuNumbers.length > 1 };
+        }
     }
 
     // Intro menu triggers (the two buttons shown on greeting)
@@ -3787,22 +3819,30 @@ async function handleIntent(intentResult, session, products, from) {
             };
         }
         case 'MAIN_MENU_SELECT': {
+            // The customer listed more than one number at once (e.g. "1,2 & 3") — we've already
+            // acted on the first (intentResult.choice), so just append a note instead of either
+            // spamming every option back-to-back or rejecting the whole message as unparseable.
+            const note = intentResult.multipleFound ? `\n\n${MULTIPLE_CATEGORY_NOTE}` : '';
             const link = CATEGORY_LINKS[intentResult.choice];
             if (link) {
                 return {
-                    replyText: `${link.emoji} *${link.name} Collection*\nCheck out all our ${link.label} here 👇\n${link.url}`,
+                    replyText: `${link.emoji} *${link.name} Collection*\nCheck out all our ${link.label} here 👇\n${link.url}${note}`,
                     sendImages: []
                 };
             }
             if (intentResult.choice === '7') {
-                return await handleIntent({ type: 'ORDER_HELP' }, session, products, from);
+                const helpResponse = await handleIntent({ type: 'ORDER_HELP' }, session, products, from);
+                if (note && helpResponse?.replyText) helpResponse.replyText += note;
+                return helpResponse;
             }
             if (intentResult.choice === '8') {
-                return await handleIntent({ type: 'CUSTOMER_SUPPORT' }, session, products, from);
+                const supportResponse = await handleIntent({ type: 'CUSTOMER_SUPPORT' }, session, products, from);
+                if (note && supportResponse?.replyText) supportResponse.replyText += note;
+                return supportResponse;
             }
             if (intentResult.choice === '9') {
                 return {
-                    replyText: SIZE_GUIDE_TEXT,
+                    replyText: SIZE_GUIDE_TEXT + note,
                     sendImages: []
                 };
             }
@@ -4075,7 +4115,6 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
     // Backward compatibility variables for existing state handler below
     const intent = intentResult.type;
-    const isNumber = /^[1-9][0-9]?$/.test(textLower);
 
     let isValidSize = false;
     if (["AWAITING_SIZE_SELECTION", "AWAITING_CART_CONFIRM"].includes(session.state) && session.pendingProduct) {
@@ -4481,30 +4520,40 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // STATE: AWAITING_TOP_CATEGORY_SELECTION (expects 1-7 from the simplified top-category quick
     // menu — see TOP_CATEGORY_MENU_NAMES/goToTopCategoryMenu). Routes straight into the same
     // Scenario A "Yes, available" reply (buildCategoryAvailableReply) used for category-level
-    // search matches elsewhere, instead of a follow-up numbered subcategory list.
-    if (session.state === "AWAITING_TOP_CATEGORY_SELECTION" && isNumber) {
-        const idx = parseInt(textLower, 10) - 1;
-        const categoryName = TOP_CATEGORY_MENU_NAMES[idx];
-        if (!categoryName) {
+    // search matches elsewhere, instead of a follow-up numbered subcategory list. Accepts several
+    // numbers at once (e.g. "1,2 & 3") and acts on the first — isNumbersOnlyText requires the
+    // WHOLE message to be numbers+separators, so this never hijacks an order-ID lookup like "4406".
+    if (session.state === "AWAITING_TOP_CATEGORY_SELECTION" && isNumbersOnlyText(textLower)) {
+        const menuNumbers = extractMenuNumbers(textLower).filter(n => n >= 1 && n <= TOP_CATEGORY_MENU_NAMES.length);
+        if (menuNumbers.length === 0) {
             return {
                 replyText: `⚠️ Invalid selection. Please choose a category number from 1 to ${TOP_CATEGORY_MENU_NAMES.length}. 😊`,
                 sendImages: []
             };
         }
+        const categoryName = TOP_CATEGORY_MENU_NAMES[menuNumbers[0] - 1];
         const sampleProduct = findSampleProductForTopCategory(categoryName, products);
         if (!sampleProduct) {
             return { replyText: "We are sorry, but this category is currently out of stock. 😔", sendImages: [] };
         }
-        return buildCategoryAvailableReply(sampleProduct, products);
+        const reply = buildCategoryAvailableReply(sampleProduct, products);
+        if (menuNumbers.length > 1) {
+            reply.replyText = MULTIPLE_CATEGORY_NOTE;
+        }
+        return reply;
     }
 
     // STATE: AWAITING_SUBCATEGORY_SELECTION (expects a number)
     // Only treat this as a real menu reply when a subcategory list was actually shown — a freshly
     // reset/idle session (e.g. right after checkout) defaults to this state with no list behind it,
     // and a stray number there should fall through to the generic fallback, not a stale "1 to 1" error.
-    if (session.state === "AWAITING_SUBCATEGORY_SELECTION" && isNumber && Array.isArray(session.subCategories) && session.subCategories.length > 0) {
-        const idx = parseInt(textLower, 10) - 1;
-        if (idx >= 0 && idx < session.subCategories.length) {
+    // Accepts several numbers at once (e.g. "1,2 & 3") and acts on the first — isNumbersOnlyText
+    // requires the WHOLE message to be numbers+separators, so this never hijacks an order-ID
+    // lookup like "4406" (that's handled separately, much earlier, regardless of session.state).
+    if (session.state === "AWAITING_SUBCATEGORY_SELECTION" && isNumbersOnlyText(textLower) && Array.isArray(session.subCategories) && session.subCategories.length > 0) {
+        const menuNumbers = extractMenuNumbers(textLower).filter(n => n >= 1 && n <= session.subCategories.length);
+        if (menuNumbers.length > 0) {
+            const idx = menuNumbers[0] - 1;
             const selectedSub = session.subCategories[idx];
             const matched = products.filter(p => Number(p.stock) > 0 && productMatchesSubCategory(p, selectedSub));
 
@@ -4521,7 +4570,11 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 const emoji = getCategoryEmoji(session.selectedParentCategory || '');
                 const capSub = selectedSub.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 
-                return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`, { subCategoryDisplayName: capSub });
+                const response = await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`, { subCategoryDisplayName: capSub });
+                if (menuNumbers.length > 1) {
+                    response.replyText = MULTIPLE_CATEGORY_NOTE;
+                }
+                return response;
             } else {
                 return { replyText: "We are sorry, but this subcategory is currently out of stock. 😔", sendImages: [] };
             }
@@ -5263,8 +5316,10 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         };
     }
     if (session.state === "AWAITING_TOP_CATEGORY_SELECTION") {
-        // Reached only for non-numeric text — a numeric reply (1-7 or otherwise) is always
-        // returned earlier, by the AWAITING_TOP_CATEGORY_SELECTION handler above.
+        // Reached only when the message isn't purely numbers+separators — a numbers-only reply
+        // (single or multiple, e.g. "1,2 & 3") is always handled earlier, by the
+        // AWAITING_TOP_CATEGORY_SELECTION handler above. This covers mixed text that merely
+        // contains a digit (e.g. "category 5 please").
         if (!/\d/.test(textLower)) {
             return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
         }
