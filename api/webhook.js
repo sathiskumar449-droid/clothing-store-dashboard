@@ -2332,11 +2332,16 @@ const SEARCH_EN_STOP = new Set(['is', 'are', 'available', 'do', 'you', 'have', '
     'in', 'stock', 'please', 'send', 'show', 'get', 'got', 'what', 'which', 'want', 'need',
     'needed', 'wanted', 'wants', 'i', 'my', 'me', 'us', 'we', 'this', 'that', 'one', 'ones',
     'looking', 'for', 'tell', 'me', 'price', 'cost', 'how', 'much', 'under', 'below', 'less',
-    'than', 'find', 'display', 'search', 'some', 'can', 'give', 'look']);
+    'than', 'find', 'display', 'search', 'some', 'can', 'give', 'look',
+    // Quantity/order-question filler — a customer asking "how many can I order" or "single
+    // piece" about an already-identified product is asking about QUANTITY, not naming an extra
+    // product attribute, so these must never be able to veto an otherwise-good category match
+    // (see Bug: "Brand T Shirt 10 pieces how much bro" was wrongly going to OUT_OF_STOCK_REPLY).
+    'pieces', 'piece', 'pcs', 'pc', 'qty', 'quantity', 'single', 'minimum', 'min']);
 const SEARCH_TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku', 'iruke', 'pakanum',
     'vaikanum', 'panunga', 'sollu', 'kodu', 'kudu', 'da', 'bro', 'anna', 'sir', 'madam', 'la', 'ku',
     'ah', 'ha', 'na', 'tharinga', 'kudunga', 'thareengala', 'venum', 'vendum', 'venam', 'vena',
-    'enaku', 'eanku', 'yenaku', 'enakku', 'yenakku', 'naaku', 'kaatu', 'kaattunga',
+    'enaku', 'eanku', 'yenaku', 'enakku', 'yenakku', 'naaku', 'kaatu', 'kaattunga', 'hai',
     // Common misspellings of "colour"/"color" — meaningless for matching (the actual color comes
     // from a COLOR_KEYWORDS term like "cream"), so they're dropped rather than left to veto an
     // otherwise-good AND match (see makeSearchTerms' noise filtering below).
@@ -2446,7 +2451,12 @@ function findFuzzyCatalogMatch(term, vocabulary) {
 // fallback.
 function makeSearchTerms(rawText, inStockProducts) {
     const rawTerms = cleanSearchQuery(rawText).split(/\s+/)
-        .filter(w => w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w) && !SIZE_KEYWORDS.has(w));
+        // A bare number ("10 pieces", "32 size") is never itself a catalog match signal in this
+        // free-text term system — actual size selection happens through the separate size-button
+        // flow, not by a literal number appearing in a product's name/category. Dropping it here
+        // (alongside stopwords) stops a stray quantity/size number from ever being misread as an
+        // unmatched genuine constraint (see hasUnmatchedTerm below).
+        .filter(w => w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w) && !SIZE_KEYWORDS.has(w) && !/^\d+$/.test(w));
     if (rawTerms.length <= 1) return { terms: rawTerms, hasUnmatchedTerm: false };
 
     const inCatalog = (term) => COLOR_KEYWORDS.includes(term) || inStockProducts.some(p => searchTermMatches(p, term));
