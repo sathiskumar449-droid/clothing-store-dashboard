@@ -2439,7 +2439,7 @@ function findFuzzyCatalogMatch(term, vocabulary) {
 // fallback.
 function makeSearchTerms(rawText, inStockProducts) {
     const rawTerms = cleanSearchQuery(rawText).split(/\s+/)
-        .filter(w => w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w));
+        .filter(w => w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w) && !SIZE_KEYWORDS.has(w));
     if (rawTerms.length <= 1) return { terms: rawTerms, hasUnmatchedTerm: false };
 
     const inCatalog = (term) => COLOR_KEYWORDS.includes(term) || inStockProducts.some(p => searchTermMatches(p, term));
@@ -3343,6 +3343,21 @@ async function handleOrderHelpChoice(choice, customerPhone) {
 const COLOR_KEYWORDS = ['cream', 'white', 'black', 'blue', 'navy', 'grey', 'gray', 'maroon', 'green',
     'beige', 'pink', 'yellow', 'red', 'orange', 'brown', 'purple', 'mustard', 'khaki', 'wine', 'olive'];
 
+// Size/quantity words a customer tacks onto a search query (e.g. "stripe t shirts xl size") —
+// these never describe a category/pattern/color, so makeSearchTerms strips them out before the
+// "genuine unmatched term" check runs (see hasUnmatchedTerm below); without this, "xl"/"size"
+// don't match anything in the catalog and used to get flagged as a missing-product signal,
+// wrongly triggering the out-of-stock reply for an otherwise perfectly findable item.
+const SIZE_KEYWORDS = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl', '2xl', '3xl', '4xl',
+    'size', 'sizes', 'saiz']);
+
+// Generic product-type words — describe WHAT KIND of garment, not which specific
+// category/pattern/color. See the Bug 1 fix in the SEARCH case below: AND-requiring one of these
+// on the same product as a specific style word (e.g. "stripe") let a coincidental match on an
+// unrelated category (e.g. "Brand T Shirt") win over the real intended match ("Stripes Shirts")
+// just because that unrelated product happened to literally contain "t shirt" too.
+const GENERIC_PRODUCT_WORDS = new Set(['shirt', 'shirts', 'tshirt', 'pant', 'short', 'shorts', 'jeans', 'trouser']);
+
 // Product Availability Check, Scenario B (exact category + color match) — replies with that one
 // product's own image/price and a button straight to its own page. Returned as a declarative
 // reply object (sendProductCards) so the existing dispatcher sends it via sendProductCtaCard,
@@ -3697,12 +3712,34 @@ async function handleIntent(intentResult, session, products, from) {
             // Stop-word removal, spelling normalization, and term classification are shared with
             // detectIntent's looksLikeProductQuery (see makeSearchTerms above) so both use the
             // exact same rules instead of two drifting copies.
-            const { terms, hasUnmatchedTerm } = makeSearchTerms(query, inStock);
+            const { terms: searchTerms, hasUnmatchedTerm } = makeSearchTerms(query, inStock);
             const termMatches = searchTermMatches;
 
             const matchAllTerms = (termList) => applyPriceFilter(
                 inStock.filter(p => termList.every(term => termMatches(p, term)))
             );
+
+            // Bug 1 fix — a generic product-type word (shirt/t-shirt/pant/...) AND-required on the
+            // same product as a specific style/pattern word (e.g. "stripe") used to let a product
+            // from a completely unrelated category win the match, just because it happened to
+            // literally contain that generic word too (e.g. "stripe t shirts" AND-matching a
+            // "Brand T Shirt" product over the real intended "Stripes Shirts"). Drop the generic
+            // word from the AND-match if including it would jump the result to a different parent
+            // category than the specific terms alone resolve to — the generic word is colloquial
+            // filler in that case, not a deliberate category pick.
+            let terms = searchTerms;
+            const specificTerms = searchTerms.filter(t => !GENERIC_PRODUCT_WORDS.has(t));
+            if (specificTerms.length > 0 && specificTerms.length < searchTerms.length) {
+                const specificOnlyMatched = matchAllTerms(specificTerms);
+                if (specificOnlyMatched.length > 0) {
+                    const fullMatched = matchAllTerms(searchTerms);
+                    const fullParent = fullMatched.length > 0 ? getParentCategory(fullMatched[0].category) : null;
+                    const specificParent = getParentCategory(specificOnlyMatched[0].category);
+                    if (fullParent !== specificParent) {
+                        terms = specificTerms;
+                    }
+                }
+            }
 
             let matched = [];
 
