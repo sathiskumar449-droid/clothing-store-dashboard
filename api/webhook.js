@@ -5450,7 +5450,7 @@ async function handleMessage(msg) {
             const cmd = parts[1];
 
             if (cmd === 'ORDERS') {
-                const activeOrders = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').slice(-10);
+                const activeOrders = orders.filter(o => o.status !== 'cancelled').slice(-10);
                 if (activeOrders.length === 0) {
                     return await sendText(from, "No active orders found.");
                 }
@@ -5459,18 +5459,6 @@ async function handleMessage(msg) {
                     reply += `🆔 ${o.id || o.orderId}\n👤 ${o.customer || o.customerName || o.customerDetails}\n🛍️ ${o.items ? o.items.map(item => item.product).join(', ') : (o.product || o.shirtName)} (x${o.quantity || 1})\n📦 Status: ${o.status}\n\n`;
                 });
                 return await sendText(from, reply);
-            }
-
-            if (cmd === 'DELIVER' && parts[2]) {
-                const id = parts[2];
-                const order = orders.find(o => o.id === id || o.orderId === id);
-                if (order) {
-                    // Update status directly in Supabase
-                    const { error } = await supabase.from('orders').update({ status: 'delivered' }).eq('id', id);
-                    if (error) console.error('❌ Error updating order status:', error.message);
-                    return await sendText(from, `✅ Order ${id} marked as delivered!`);
-                }
-                return await sendText(from, `❌ Order ${id} not found.`);
             }
 
             if (cmd === 'CANCEL' && parts[2]) {

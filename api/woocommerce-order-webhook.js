@@ -40,13 +40,6 @@ function extractMetaValue(metaData, keyPattern) {
     return entry ? String(entry.value) : null;
 }
 
-// This handler only ever reaches here for "processing"/"completed" orders (see the status
-// check above), so map onto the dashboard's two "order is real" statuses — matching the
-// STATUS_OPTIONS dashboard-web/src/pages/OrdersPage.jsx already knows how to render/filter.
-function mapWooStatusToDashboardStatus(wooStatus) {
-    return wooStatus === 'completed' ? 'delivered' : 'confirmed';
-}
-
 // Shapes a WooCommerce order into the exact same row shape the WhatsApp-bot checkout flow
 // writes (see the `newOrder` object in api/webhook.js) so the dashboard renders it identically.
 function buildOrderRow(order, phone) {
@@ -68,7 +61,9 @@ function buildOrderRow(order, phone) {
             qty: item.quantity || 1
         })),
         total_price: Number(order.total) || 0,
-        status: mapWooStatusToDashboardStatus(order.status),
+        // There's no "delivered" status in the dashboard anymore — a paid order is "confirmed"
+        // and stays that way regardless of whether WooCommerce later marks it "completed".
+        status: 'confirmed',
         date: order.date_created || new Date().toISOString(),
         source: 'website'
     };
@@ -198,26 +193,14 @@ export async function handleWooOrderWebhook(req, res) {
             return res.sendStatus(200);
         }
 
-        // A status change to "delivered" (WooCommerce order marked "completed") no longer sends
-        // any WhatsApp notification — the dashboard status is still updated above by the time we
-        // get here, this just stops messaging the customer. Customers were disputing the old
-        // automatic "Order Delivered!" message ("Not Delivered") when it didn't match reality,
-        // creating review-flagged complaints that didn't need to exist. Only a brand-new order
-        // (notifyKind === 'new') still gets the order-confirmation message, even if it happens to
-        // arrive already "completed" on its first webhook — same as before this change.
-        if (notifyKind === 'status_changed' && row.status === 'delivered') {
-            console.log(`[Woo Order Webhook] Order #${order.id} marked delivered — status updated, no customer notification sent.`);
-            return res.sendStatus(200);
-        }
-
         const message = buildOrderConfirmationMessage(order);
         await sendText(phone, message);
         await logChatMessage(phone, 'bot', message);
 
-        // This order was just confirmed/delivered, so any WhatsApp bot conversation this
-        // customer had going (e.g. mid numeric subcategory/menu selection from an earlier,
-        // abandoned chat) is now stale context. Clear it so their next WhatsApp message starts
-        // fresh instead of being validated against a leftover menu that no longer applies.
+        // This order was just confirmed, so any WhatsApp bot conversation this customer had going
+        // (e.g. mid numeric subcategory/menu selection from an earlier, abandoned chat) is now
+        // stale context. Clear it so their next WhatsApp message starts fresh instead of being
+        // validated against a leftover menu that no longer applies.
         await deleteSession(phone);
 
         console.log(`[Woo Order Webhook] ✅ Sent ${notifyKind === 'status_changed' ? 'status update' : 'order confirmation'} for #${order.number || order.id} to ${phone}`);

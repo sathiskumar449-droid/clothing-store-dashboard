@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ShoppingBag, MessageSquare, IndianRupee, Clock, CheckCircle, Users, TrendingUp
+  ShoppingBag, MessageSquare, IndianRupee, Clock, Users, TrendingUp
 } from 'lucide-react';
 import { getOrders } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
@@ -31,7 +31,6 @@ export default function DashboardPage() {
       const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
       const pending = orders.filter(o => o.status === 'pending').length;
       const confirmed = orders.filter(o => o.status === 'confirmed').length;
-      const delivered = orders.filter(o => o.status === 'delivered').length;
       const uniqueCustomers = new Set(
         orders.map(o => o.customerPhone || o.customer)
       ).size;
@@ -43,7 +42,6 @@ export default function DashboardPage() {
         totalRevenue,
         pending,
         confirmed,
-        delivered,
         uniqueCustomers,
         activeChats,
         botPausedChats,
@@ -68,7 +66,6 @@ export default function DashboardPage() {
   const statusColor = {
     pending: 'bg-amber-100 text-amber-700',
     confirmed: 'bg-blue-100 text-blue-700',
-    delivered: 'bg-emerald-100 text-emerald-700',
     cancelled: 'bg-rose-100 text-rose-700',
   };
 
@@ -117,7 +114,7 @@ export default function DashboardPage() {
 
       {/* Secondary stats */}
       {stats && (
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 gap-4 mb-8">
           <div
             onClick={() => navigate('/orders?tab=pending')}
             className="bg-white rounded-xl p-4 border border-amber-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
@@ -137,16 +134,6 @@ export default function DashboardPage() {
               <TrendingUp size={14} className="text-blue-500" />
             </div>
             <p className="text-2xl font-bold text-blue-600 mt-1">{stats.confirmed}</p>
-          </div>
-          <div
-            onClick={() => navigate('/orders?tab=delivered')}
-            className="bg-white rounded-xl p-4 border border-emerald-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-gray-500">Delivered</p>
-              <CheckCircle size={14} className="text-emerald-500" />
-            </div>
-            <p className="text-2xl font-bold text-emerald-600 mt-1">{stats.delivered}</p>
           </div>
         </div>
       )}
