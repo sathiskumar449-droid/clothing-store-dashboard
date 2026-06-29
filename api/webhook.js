@@ -44,8 +44,8 @@ export async function getWelcomeMessagePrefix() {
 
 const ORDER_GUIDANCE_VIDEO_ENABLED = false;
 
-// Top-level welcome menu shown on every greeting — 7 product categories + 2 utility options.
-// Numbers 1-7 map 1:1 with CATEGORY_LINKS below; 8/9 route to the existing ORDER_HELP /
+// Top-level welcome menu shown on every greeting — 6 product categories + 3 utility options.
+// Numbers 1-6 map 1:1 with CATEGORY_LINKS below; 7/8 route to the existing ORDER_HELP /
 // CUSTOMER_SUPPORT intents (see handleIntent's MAIN_MENU_SELECT case) instead of new logic.
 const MAIN_MENU_TEXT = `👋 Welcome to Super Collection!
 We offer premium shirts, t-shirts, pants & more with FREE Shipping 🚚
@@ -57,14 +57,13 @@ Please reply with a number:
 3️⃣ Pants
 4️⃣ Track Pants
 5️⃣ Imported Shorts
-6️⃣ Men
-7️⃣ New Arrivals
+6️⃣ New Arrivals
 
-8️⃣ Order Status
-9️⃣ Talk to Support
-🔟 Size Guide`;
+7️⃣ Order Status
+8️⃣ Talk to Support
+9️⃣ Size Guide`;
 
-// Sent when the customer replies "10" (🔟 Size Guide) to the main menu.
+// Sent when the customer replies "9" (9️⃣ Size Guide) to the main menu.
 const SIZE_GUIDE_TEXT = `📏 Size Guide (in inches)
 
 \`\`\`
@@ -88,8 +87,7 @@ const CATEGORY_LINKS = {
     "3": { name: "Pants", label: "pants", emoji: "👖", url: "https://www.supercollections.in/product-category/pants/" },
     "4": { name: "Track Pants", label: "track pants", emoji: "🏃", url: "https://www.supercollections.in/product-category/track-pants/" },
     "5": { name: "Imported Shorts", label: "imported shorts", emoji: "🩳", url: "https://www.supercollections.in/product-category/imported-shorts/" },
-    "6": { name: "Men", label: "men's collection", emoji: "🧥", url: "https://www.supercollections.in/product-category/men/" },
-    "7": { name: "New Arrivals", label: "new arrivals", emoji: "✨", url: "https://www.supercollections.in/product-category/new-arrivals/" }
+    "6": { name: "New Arrivals", label: "new arrivals", emoji: "✨", url: "https://www.supercollections.in/product-category/new-arrivals/" }
 };
 const CUSTOMER_SUPPORT_MESSAGE = "Customer Support\n+91 8668066503\n+91 7418755096";
 const ORDER_GUIDANCE_VIDEO_FALLBACK = "Order Guidance Video\nhttps://drive.google.com/file/d/1wXwDqhYUpB_uv6v38kl9Gdh6mX2fTykG/view?usp=drivesdk";
@@ -2536,10 +2534,10 @@ function detectIntent(text, products = [], session = null) {
         session.awaitingOrderHelpChoice = false;
     }
 
-    // Main welcome-menu numeric selection: while awaiting a 1-10 reply to the redesigned main
+    // Main welcome-menu numeric selection: while awaiting a 1-9 reply to the redesigned main
     // menu, intercept it before any other routing (category-name search, greetings, etc.) so a
     // bare digit always resolves to the menu choice instead of being mistaken for something else.
-    if (session && session.state === "AWAITING_MAIN_MENU_SELECTION" && /^(?:[1-9]|10)$/.test(t)) {
+    if (session && session.state === "AWAITING_MAIN_MENU_SELECTION" && /^[1-9]$/.test(t)) {
         return { type: 'MAIN_MENU_SELECT', choice: t };
     }
 
@@ -3631,13 +3629,13 @@ async function handleIntent(intentResult, session, products, from) {
                     sendImages: []
                 };
             }
-            if (intentResult.choice === '8') {
+            if (intentResult.choice === '7') {
                 return await handleIntent({ type: 'ORDER_HELP' }, session, products, from);
             }
-            if (intentResult.choice === '9') {
+            if (intentResult.choice === '8') {
                 return await handleIntent({ type: 'CUSTOMER_SUPPORT' }, session, products, from);
             }
-            if (intentResult.choice === '10') {
+            if (intentResult.choice === '9') {
                 return {
                     replyText: SIZE_GUIDE_TEXT,
                     sendImages: []
