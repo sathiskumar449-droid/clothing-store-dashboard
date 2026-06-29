@@ -2348,7 +2348,10 @@ const SEARCH_TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku'
 // Normalizes common spelling variants — applied to both the customer's query and product fields
 // so e.g. "t-shirt"/"tshirts"/"T-Shirts" all collapse to the same comparable token.
 const normalizeSearchSpelling = (s) => s
-    .replace(/\blinen\b/g, 'lenin')
+    // "Lenin Plain" is the catalog's real (typo'd) category name for linen shirts — common
+    // misspellings of "linen" itself need to collapse onto that same "lenin" token too, not
+    // just the correctly-spelled word.
+    .replace(/\b(?:linen|lelin)\b/g, 'lenin')
     .replace(/\bt[\s-]?shirts?\b/g, 'tshirt')
     .replace(/\bphants?\b/g, 'pant')
     .replace(/\bpants?\b/g, 'pant')
@@ -2369,18 +2372,98 @@ function cleanSearchQuery(rawText) {
     );
 }
 
-// Stop-word-filtered terms from free text, with one extra pass for multi-term queries: any term
-// that doesn't appear anywhere in the catalog at all gets dropped as noise (a typo or filler word
-// like "colur") so it can't silently veto an otherwise-good AND match — see Bug 1 in the commit
-// that added this. Single-term queries skip this pass since the SEARCH case already has its own
-// looser single-term fallback.
+// Plain Levenshtein edit distance — used by findFuzzyCatalogMatch below to tell a typo of a real
+// catalog word (e.g. "lelin" vs "lenin") apart from a word for something genuinely not in the
+// catalog (e.g. "korean"), which used to be conflated as the same kind of "noise" (see Bug 1 in
+// the commit that first added makeSearchTerms's catalog-drop pass).
+function levenshteinDistance(a, b) {
+    const m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            dp[i][j] = a[i - 1] === b[j - 1]
+                ? dp[i - 1][j - 1]
+                : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
+    }
+    return dp[m][n];
+}
+
+// Real words present in the live catalog (category/name/color/pattern), normalized the same way
+// searchTermMatches compares against them. Built lazily (only when a term doesn't already match
+// literally) since it's an O(products) scan.
+function buildCatalogVocabulary(inStockProducts) {
+    const words = new Set(COLOR_KEYWORDS);
+    inStockProducts.forEach(p => {
+        const cats = Array.isArray(p.categories) && p.categories.length > 0 ? p.categories : [p.category];
+        [p.name, ...cats, p.color, p.pattern].forEach(field => {
+            normalizeSearchSpelling((field || '').toLowerCase())
+                .split(/\s+/)
+                .filter(w => w.length > 2)
+                .forEach(w => words.add(w));
+        });
+    });
+    return words;
+}
+
+// True if `term` isn't a literal catalog match but is a plausible typo of one — e.g. "lelin" is
+// distance 1 from "lenin". The distance cap scales with word length so short words need a near-
+// exact match (avoiding accidental matches like "wite"->"wine") while longer words tolerate one
+// extra typo; either way it stays far short of unrelated real words like "korean" (distance >= 3
+// from every catalog word), so those are never mistaken for a misspelling of something we carry.
+function findFuzzyCatalogMatch(term, vocabulary) {
+    if (term.length < 4) return null;
+    const maxDistance = term.length <= 5 ? 1 : 2;
+    for (const word of vocabulary) {
+        if (Math.abs(word.length - term.length) > maxDistance) continue;
+        if (levenshteinDistance(term, word) <= maxDistance) return word;
+    }
+    return null;
+}
+
+// Stop-word-filtered terms from free text, with one extra pass for multi-term queries that
+// classifies each remaining term instead of blanket-dropping anything not in the catalog (see
+// Bug 1 in the commit that first added this pass, and the false-positive it caused: "Korean lelin
+// shirts" dropped BOTH "Korean" and "lelin" as equally harmless noise, leaving only the generic
+// "shirts" to loosely match an unrelated category like White Shirts). Now:
+//   - a term that matches the catalog literally is kept as-is;
+//   - a term that's a typo of a real catalog word (fuzzy match) is normalized to that word, so a
+//     misspelling like "lelin" still participates in the AND match as "lenin";
+//   - a term that matches nothing at all, even with typo tolerance, is a genuine attribute/origin/
+//     brand the customer asked for that we don't carry (e.g. "korean") — flagged via
+//     hasUnmatchedTerm so the caller can refuse to fall back to ANY category/product instead of
+//     silently dropping it.
+// Single-term queries skip this pass since the SEARCH case already has its own looser single-term
+// fallback.
 function makeSearchTerms(rawText, inStockProducts) {
     const rawTerms = cleanSearchQuery(rawText).split(/\s+/)
         .filter(w => w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w));
-    if (rawTerms.length <= 1) return rawTerms;
+    if (rawTerms.length <= 1) return { terms: rawTerms, hasUnmatchedTerm: false };
+
     const inCatalog = (term) => COLOR_KEYWORDS.includes(term) || inStockProducts.some(p => searchTermMatches(p, term));
-    const cleanedTerms = rawTerms.filter(inCatalog);
-    return cleanedTerms.length > 0 ? cleanedTerms : rawTerms;
+    let vocabulary = null;
+    let hasUnmatchedTerm = false;
+    const terms = [];
+
+    for (const term of rawTerms) {
+        if (inCatalog(term)) {
+            terms.push(term);
+            continue;
+        }
+        if (!vocabulary) vocabulary = buildCatalogVocabulary(inStockProducts);
+        const fuzzyMatch = findFuzzyCatalogMatch(term, vocabulary);
+        if (fuzzyMatch) {
+            terms.push(fuzzyMatch);
+        } else {
+            hasUnmatchedTerm = true;
+        }
+    }
+
+    return { terms, hasUnmatchedTerm };
 }
 
 function searchTermMatches(p, term) {
@@ -2408,6 +2491,13 @@ function looksLikeProductQuery(rawText, products) {
 // dumping the entire numbered category+subcategory list in chat (see Bug 3 in the commit that
 // added this); the customer is pointed at the website instead of an in-chat list.
 const SHORT_NOT_FOUND_REPLY = `😔 Couldn't find that exact item.\nType *menu* to see our full collection, or visit our website:\nhttps://supercollections.in/shop/`;
+
+// Used specifically when makeSearchTerms flags a genuine catalog-unmatched term (a real
+// attribute/origin/brand the customer named that we don't carry at all, e.g. "Korean") — distinct
+// from SHORT_NOT_FOUND_REPLY, which is for queries that don't recognizably mention anything. This
+// one must NOT fall through to a category/product suggestion, since that's the exact bug it fixes
+// (e.g. "Korean lelin shirts" used to fall back to "White Shirts").
+const OUT_OF_STOCK_REPLY = `Sorry, this item is currently out of stock. 😔\nWe'll update you as soon as it's available!`;
 
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
@@ -3606,10 +3696,10 @@ async function handleIntent(intentResult, session, products, from) {
 
             const inStock = products.filter(p => Number(p.stock) > 0);
 
-            // Stop-word removal, spelling normalization, and noise-term dropping are shared with
+            // Stop-word removal, spelling normalization, and term classification are shared with
             // detectIntent's looksLikeProductQuery (see makeSearchTerms above) so both use the
             // exact same rules instead of two drifting copies.
-            const terms = makeSearchTerms(query, inStock);
+            const { terms, hasUnmatchedTerm } = makeSearchTerms(query, inStock);
             const termMatches = searchTermMatches;
 
             const matchAllTerms = (termList) => applyPriceFilter(
@@ -3640,6 +3730,14 @@ async function handleIntent(intentResult, session, products, from) {
             session.fromCrossSell = false;
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
+
+            // A genuine catalog-unmatched term (e.g. "Korean") means the customer asked for a
+            // specific attribute/origin/brand we don't carry at all — refuse to fall back to ANY
+            // category/product suggestion (that's the bug this fixes: "Korean lelin shirts" used
+            // to fall through to a loose "shirts" match and suggest White Shirts).
+            if (hasUnmatchedTerm) {
+                return { replyText: OUT_OF_STOCK_REPLY, sendImages: [] };
+            }
 
             // Product Availability Check — a color/variant word among the search terms (see
             // COLOR_KEYWORDS) decides Scenario B (specific product page) vs. Scenario A (generic
