@@ -1,21 +1,13 @@
 // api/woocommerce-order-webhook.js
 // Receives WooCommerce "Order updated" webhooks and sends an order confirmation
 // to the customer over WhatsApp once the order reaches processing/completed.
-import crypto from 'crypto';
 import { sendText, sendOrderDeliveredWithFeedback, logChatMessage, deleteSession } from './webhook.js';
 import { supabase } from '../lib/supabase.js';
+import { verifyWooWebhookSignature } from '../lib/wooWebhookAuth.js';
 
 const WOOCOMMERCE_WEBHOOK_SECRET = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
 
 console.log('[Woo Order Webhook] WOOCOMMERCE_WEBHOOK_SECRET configured:', !!WOOCOMMERCE_WEBHOOK_SECRET);
-
-function verifySignature(rawBody, signatureHeader, secret) {
-    const expected = crypto.createHmac('sha256', secret).update(rawBody || '').digest('base64');
-    const expectedBuf = Buffer.from(expected);
-    const givenBuf = Buffer.from(signatureHeader || '');
-    if (expectedBuf.length !== givenBuf.length) return false;
-    return crypto.timingSafeEqual(expectedBuf, givenBuf);
-}
 
 // WooCommerce billing.phone is whatever the customer typed (spaces, dashes, leading 0,
 // sometimes already with a country code) — normalize to the bare international format
@@ -132,7 +124,7 @@ export async function handleWooOrderWebhook(req, res) {
         }
 
         const rawBody = req.rawBody || '';
-        if (!verifySignature(rawBody, signature, WOOCOMMERCE_WEBHOOK_SECRET)) {
+        if (!verifyWooWebhookSignature(rawBody, signature, WOOCOMMERCE_WEBHOOK_SECRET)) {
             console.error('[Woo Order Webhook] ❌ Signature mismatch — rejecting (possible spoofed request)');
             return res.status(400).send('Invalid signature');
         }

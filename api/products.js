@@ -1,5 +1,10 @@
 // api/products.js  — Supabase version (replaces fs-based implementation)
 import { supabase } from '../lib/supabase.js';
+import { verifyWooWebhookSignature } from '../lib/wooWebhookAuth.js';
+
+const WOOCOMMERCE_WEBHOOK_SECRET = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
+
+console.log('[WooCommerce Product Webhook] WOOCOMMERCE_WEBHOOK_SECRET configured:', !!WOOCOMMERCE_WEBHOOK_SECRET);
 
 // ✅ Get all products
 export const getProducts = async (req, res) => {
@@ -279,11 +284,33 @@ const mapWooProductToDb = (p) => {
 
 // ✅ WooCommerce Webhook Handler (Automatic Live Sync)
 export const handleWooWebhook = async (req, res) => {
-    try {
-        const topic = req.headers['x-wc-webhook-topic'] || '';
-        const payload = req.body;
+    const topic = req.headers['x-wc-webhook-topic'] || '';
+    console.log(`🔌 [WooCommerce Webhook] Topic: "${topic}"`);
 
-        console.log(`🔌 [WooCommerce Webhook] Topic: "${topic}"`);
+    // Signature verification — same HMAC-SHA256 check as api/woocommerce-order-webhook.js,
+    // against the WooCommerce-configured secret for THIS webhook (Settings > Advanced >
+    // Webhooks > the product.* webhook's own Secret field). If that secret doesn't match
+    // WOOCOMMERCE_WEBHOOK_SECRET, every real WooCommerce call will start failing this check —
+    // update the webhook's Secret in WooCommerce admin to match before relying on this.
+    if (WOOCOMMERCE_WEBHOOK_SECRET) {
+        const signature = req.headers['x-wc-webhook-signature'];
+        if (!signature) {
+            console.error('[WooCommerce Webhook] ❌ Missing x-wc-webhook-signature header — rejecting');
+            return res.status(400).send('Missing signature');
+        }
+
+        const rawBody = req.rawBody || '';
+        if (!verifyWooWebhookSignature(rawBody, signature, WOOCOMMERCE_WEBHOOK_SECRET)) {
+            console.error('[WooCommerce Webhook] ❌ Signature mismatch — rejecting (possible spoofed request)');
+            return res.status(400).send('Invalid signature');
+        }
+        console.log('[WooCommerce Webhook] ✅ Signature verified');
+    } else {
+        console.warn('[WooCommerce Webhook] ⚠️ WOOCOMMERCE_WEBHOOK_SECRET not configured — signature verification bypassed');
+    }
+
+    try {
+        const payload = req.body;
 
         // WooCommerce verification test
         if (topic.includes('webhook.test') || topic.includes('should_deliver')) {
