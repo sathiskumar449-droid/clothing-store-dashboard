@@ -137,6 +137,46 @@ function isDeliveryChargeComplaint(text = '') {
         complaintSignals.some(signal => normalized.includes(signal));
 }
 
+// ─── New intent reply constants (see detectIntent: Intent 1 = size/qty availability,
+// Intent 2 = COD/payment method, Intent 3 = general collection request) ───
+const SIZE_QTY_AVAILABLE_REPLY = `✅ Yes, available!\n\nPlease check our website for all sizes, colours & to place your order 👇\nhttps://supercollections.in/shop/`;
+const COD_NOT_AVAILABLE_REPLY = `😊 Sorry, Cash on Delivery is not available currently.\n\nWe accept secure online payments only. Just place your order on our website & pay easily 👇\nhttps://supercollections.in/shop/`;
+const ONLINE_PAYMENT_INFO_REPLY = `💳 We accept secure online payments!\n\nJust place your order on our website and pay easily via UPI/cards 👇\nhttps://supercollections.in/shop/`;
+const GENERAL_COLLECTION_REPLY = `🛍️ Yes, we have lots of collections!\n\nPlease visit our website to explore everything 👇\nhttps://supercollections.in/shop/`;
+
+// Distinctive multi-letter size tokens (XL, XXL, 2XL, 3XL, XS) are safe to match anywhere in the
+// message. Single-letter S/M/L are only counted when paired with the word "size" (either order)
+// or when they're the entire message on their own, since a stray "s"/"m"/"l" inside an ordinary
+// sentence is too easy to misread as a size. Quantity phrasing ("4 pieces", "2 tshirts", "I want
+// 4 pieces") and waist/length measurement phrasing ("38 lenth 46") round out the rest of the "do
+// you have this size/qty" pattern. Callers must only use this once a parent-category word has
+// already been ruled out, so a real product query like "plain shirt cream" never reaches it.
+const SIZE_NUMERIC_PATTERN = /\bsize\s*[:\-]?\s*(\d{2,3})\b|\b(\d{2,3})\s*size\b/i;
+const SIZE_LETTER_TOKEN_PATTERN = /\b(xxxl|xxl|3xl|2xl|xl|xs)\b/i;
+const SIZE_SML_WITH_WORD_PATTERN = /\bsize\s*[:\-]?\s*(s|m|l)\b|\b(s|m|l)\s*size\b/i;
+const MEASUREMENT_PATTERN = /\b(lenth|length|waist|chest)\b/i;
+const QTY_UNIT_PATTERN = /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(pieces?|pcs?|nos?|qty|quantity|t-?shirts?|tshirts?|shirts?|pants?)\b/i;
+const QTY_WANT_PATTERN = /\b(i\s*want|need|require)\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i;
+
+function isSizeQtyAvailabilityQuery(t) {
+    const trimmed = (t || '').trim();
+    if (!trimmed) return false;
+    if (/^(xs|s|m|l|xl|xxl|2xl|xxxl|3xl)$/i.test(trimmed)) return true;
+    if (SIZE_NUMERIC_PATTERN.test(trimmed)) return true;
+    if (SIZE_LETTER_TOKEN_PATTERN.test(trimmed)) return true;
+    if (SIZE_SML_WITH_WORD_PATTERN.test(trimmed)) return true;
+    if (MEASUREMENT_PATTERN.test(trimmed) && /\d/.test(trimmed)) return true;
+    if (QTY_UNIT_PATTERN.test(trimmed)) return true;
+    if (QTY_WANT_PATTERN.test(trimmed)) return true;
+    // Bare clothing-size number as the entire message, e.g. "38", "40" — restricted to a
+    // plausible chest/waist size range so it can't swallow unrelated bare numbers.
+    if (/^\d{2}$/.test(trimmed)) {
+        const n = parseInt(trimmed, 10);
+        if (n >= 28 && n <= 50) return true;
+    }
+    return false;
+}
+
 export async function getProducts() {
     try {
         // 'id' is a tiebreaker: rows sharing the same created_at (common with bulk imports)
@@ -2804,6 +2844,59 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: '🚚 Delivery usually takes 7 working days across India with FREE Shipping! 😊\n\nFor your specific order status, please share your Order ID.' };
     }
 
+    // ─── PAYMENT FAILURE / TRANSACTION COMPLAINT → support handoff ───
+    // Checked before COD/online-payment-info below so a genuine failure complaint never gets
+    // misread as either of those questions, and before the older generic paymentKeywords FAQ
+    // further down (which would otherwise answer a failed-payment complaint with "Payment
+    // Details: GPay/UPI..." — unhelpful when the customer is reporting money already gone).
+    const paymentFailurePhrases = [
+        'payment failed', 'payment fail', 'payment not successful', 'payment unsuccessful',
+        'transaction failed', 'money deducted', 'amount deducted', 'payment issue',
+        'payment problem', 'payment error', 'paid but', 'paid amount not'
+    ];
+    if (paymentFailurePhrases.some(p => t.includes(p))) {
+        return { type: 'FAQ', reply: CUSTOMER_SUPPORT_MESSAGE };
+    }
+
+    // ─── INTENT 2: COD Match ───
+    // Checked BEFORE "SHIPPING CHARGES" below — that combination match treats any message
+    // containing both a "cash"-ish word and a "delivery"-ish word as a delivery-FEE question
+    // (shipChargeGroupA includes 'cash', e.g. for "cash evlo" = "how much in cash"), which would
+    // otherwise swallow a plain "cash on delivery" COD question first. COD intent is the more
+    // common reading of "cash" + "delivery" together (including "cash on delivery or gpay" — the
+    // customer is asking whether cash is an option, gpay being the alternative they're aware of),
+    // so it must win that overlap. Multi-word/concatenated phrases (e.g. "delivery cash",
+    // "cashondelivery") must be checked against the full text, not via matchesGroup's per-word
+    // fuzzy containment — otherwise a single word like "delivery" gets treated as a match just
+    // because it's a substring of a longer group entry (e.g. "cashondelivery".includes
+    // ("delivery")), wrongly flagging plain delivery-related messages as COD requests. Scoped to
+    // cash-specific phrasing only — bare "gpay"/"google pay"/"online payment"/"payment method"
+    // questions are a different intent (see ONLINE_PAYMENT_INFO right below): those customers are
+    // ready to pay online, which we DO support, so they must never get the "not available" reply.
+    const codGroupA = ['cod', 'cash', 'pod'];
+    const codPhraseGroupA = [
+        'pay on delivery', 'payment on delivery', 'delivery cash', 'cashondelivery',
+        'cash payment', 'cash la pay'
+    ];
+    const codGroupB = ['available', 'iruka', 'irukka', 'delivery', 'deliv', 'delei', 'delci'];
+    const isCOD = words.includes('cod') ||
+        codPhraseGroupA.some(p => t.includes(p)) ||
+        (matchesGroup(words, codGroupA) && matchesGroup(words, codGroupB));
+
+    if (isCOD) {
+        return { type: 'FAQ', reply: COD_NOT_AVAILABLE_REPLY };
+    }
+
+    // ─── ONLINE_PAYMENT_INFO: pure online-payment-method question (no "cash"/COD context) ───
+    // The customer is asking how to pay online / mentioning a payment method we DO accept — give
+    // them the website link instead of the COD "not available" reply. Never matches a bare
+    // "payment" or "pay" on its own, so a "payment failed" complaint (handled above) or unrelated
+    // "pay panna"/checkout chatter isn't misread as this.
+    const onlinePaymentInfoPhrases = ['gpay', 'google pay', 'online payment', 'how to pay', 'payment method', 'upi'];
+    if (onlinePaymentInfoPhrases.some(p => t.includes(p))) {
+        return { type: 'FAQ', reply: ONLINE_PAYMENT_INFO_REPLY };
+    }
+
     // ─── SHIPPING CHARGES Combination Match ───
     const shipChargeGroupA = ['charge', 'charges', 'rate', 'fee', 'fees', 'amount', 'cost', 'price', 'evlo', 'evvalavu', 'how much', 'cash', 'kasu', 'kaasu', 'rupees', 'rs'];
     const shipChargeGroupB = ['ship', 'delivery', 'delei', 'delci', 'delve', 'delvi', 'dlvr', 'courier', 'post', 'parcel'];
@@ -2812,23 +2905,6 @@ function detectIntent(text, products = [], session = null) {
 
     if (isShippingCharge) {
         return { type: 'FAQ', reply: DELIVERY_CHARGE_SUPPORT_REPLY };
-    }
-
-    // ─── COD Combination Match ───
-    // Multi-word/concatenated phrases (e.g. "delivery cash", "cashondelivery") must be checked
-    // against the full text, not via matchesGroup's per-word fuzzy containment — otherwise a
-    // single word like "delivery" gets treated as a match just because it's a substring of a
-    // longer group entry (e.g. "cashondelivery".includes("delivery")), wrongly flagging plain
-    // delivery-related messages as COD requests.
-    const codGroupA = ['cod', 'cash', 'pod'];
-    const codPhraseGroupA = ['pay on delivery', 'payment on delivery', 'delivery cash', 'cashondelivery'];
-    const codGroupB = ['available', 'iruka', 'irukka', 'delivery', 'deliv', 'delei', 'delci'];
-    const isCOD = words.includes('cod') ||
-        codPhraseGroupA.some(p => t.includes(p)) ||
-        (matchesGroup(words, codGroupA) && matchesGroup(words, codGroupB));
-
-    if (isCOD) {
-        return { type: 'FAQ', reply: 'We apologize, but Cash on Delivery (COD) is not available. We accept GPay / UPI payments only. 😊' };
     }
 
     // ─── RETURN / EXCHANGE / REFUND Match ───
@@ -2891,6 +2967,37 @@ function detectIntent(text, products = [], session = null) {
 
     if (foundCategory) {
         return { type: 'SEARCH', query: t };
+    }
+
+    // ─── INTENT 3: General Collection Request ───
+    // Checked AFTER the parent-category check above (so "shirts collection" already returned
+    // SEARCH for the Shirts category and never reaches here) but BEFORE the generic search
+    // keywords/catalog fallback below, so a categoryless "send me collections" / "collections"
+    // gets the generic "we have lots of collections" reply instead of an empty/low-confidence
+    // search attempt.
+    const collectionRequestPhrases = [
+        'send me collections', 'collections', 'show collections', 'show me your products',
+        'send products', 'what do you have', 'full collection', 'your collection',
+        'products kaattunga', 'collection anuppunga', 'send me your catalog'
+    ];
+    if (collectionRequestPhrases.some(p => t.includes(p))) {
+        return { type: 'FAQ', reply: GENERAL_COLLECTION_REPLY };
+    }
+
+    // ─── INTENT 1: Size / Quantity Availability ───
+    // Also checked only once no parent-category word matched above, so a real product query
+    // like "plain shirt cream" or "XL plain shirt" is untouched and still resolves to SEARCH.
+    // Placed BEFORE the generic search keywords below ('blue', 'black', etc. are color words in
+    // that list) because a message like "XL Two tshirts blue and black" is a size/qty/color
+    // availability check with no specific product named, not a color-based product search.
+    // Skipped while the session is mid-flow actually collecting a size/qty for a specific pending
+    // product (e.g. the customer typed "XL" or "40" as their real answer to "what size?") — that
+    // free-text reply must reach the existing AWAITING_SIZE_SELECTION/AWAITING_PRODUCT_SIZE/
+    // AWAITING_PRODUCT_QTY/AWAITING_CART_CONFIRM handling further down, not this generic FAQ.
+    const SIZE_QTY_STRUCTURED_STATES = ['AWAITING_SIZE_SELECTION', 'AWAITING_PRODUCT_SIZE', 'AWAITING_PRODUCT_QTY', 'AWAITING_CART_CONFIRM'];
+    const inStructuredSizeQtyFlow = session && SIZE_QTY_STRUCTURED_STATES.includes(session.state);
+    if (!inStructuredSizeQtyFlow && isSizeQtyAvailabilityQuery(t)) {
+        return { type: 'FAQ', reply: SIZE_QTY_AVAILABLE_REPLY };
     }
 
     const searchKeywords = ['printed', 'linen', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
@@ -5590,10 +5697,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (textLower.includes("damage") || textLower.includes("torn") || textLower.includes("wrong colour") || textLower.includes("vera colour") || textLower.includes("wrong color") || textLower.includes("wrong product") || textLower.includes("defect")) {
         return { replyText: "📸 Please send your Order ID and a photo of the product. We will verify and arrange an exchange for you. 😊", sendImages: [] };
     }
-    if (textLower.includes("cod iruka") || textLower.includes("cash on delivery") || textLower.includes("cod available") || textLower === "cod") {
-        return { replyText: "We apologize, but Cash on Delivery (COD) is not available. We accept GPay / UPI payments only. 😊", sendImages: [] };
+    if (textLower.includes("payment failed") || textLower.includes("payment fail") || textLower.includes("transaction failed") || textLower.includes("money deducted") || textLower.includes("amount deducted") || textLower.includes("payment issue") || textLower.includes("payment problem") || textLower.includes("payment error")) {
+        return { replyText: CUSTOMER_SUPPORT_MESSAGE, sendImages: [] };
     }
-    if (textLower === "gpay" || textLower.includes("gpay pannalama") || textLower.includes("upi address") || textLower.includes("google pay") || textLower.includes("payment details") || textLower.includes("pay panna") || textLower.includes("payment eppo") || textLower.includes("upi id") || textLower.includes("gpay number")) {
+    if (textLower.includes("cod iruka") || textLower.includes("cash on delivery") || textLower.includes("cod available") || textLower.includes("cod facility") || textLower.includes("cash payment") || textLower.includes("cash la pay") || textLower === "cod") {
+        return { replyText: COD_NOT_AVAILABLE_REPLY, sendImages: [] };
+    }
+    if (textLower === "gpay" || textLower.includes("google pay") || textLower.includes("online payment") || textLower.includes("how to pay") || textLower.includes("payment method") || textLower.includes("upi")) {
+        return { replyText: ONLINE_PAYMENT_INFO_REPLY, sendImages: [] };
+    }
+    if (textLower.includes("gpay pannalama") || textLower.includes("upi address") || textLower.includes("payment details") || textLower.includes("pay panna") || textLower.includes("payment eppo") || textLower.includes("gpay number")) {
         return {
             replyText: "💳 Payment Details:\n\nGPay / UPI: yourupi@okaxis\n\nPlease share a screenshot once the payment is completed. 😊",
             sendImages: []
