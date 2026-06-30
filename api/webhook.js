@@ -3827,6 +3827,30 @@ const GENERIC_TERM_TO_PARENT = {
     short: 'Shorts', shorts: 'Shorts'
 };
 
+// Brand/category-modifier phrases that must take priority over generic product-type words
+// ("shirt", "polo") in the SEARCH case. Entries are already spelling-normalized (same rules as
+// normalizeSearchSpelling) so "branded t shirt" → "branded tshirt" in the source query is matched
+// correctly. Checked against cleanSearchQuery(query) as a substring so multi-word phrases like
+// "us polo" survive even though "us" is dropped by makeSearchTerms's SEARCH_EN_STOP list.
+const BRAND_KEYWORDS = [
+    'branded', 'us polo', 'adidas', 'puma', 'nike',
+    'brand tshirt', 'brand shirt', 'branded tshirt'
+];
+
+// Like searchTermMatches but also checks p.category (the single-string field) directly — needed
+// for brand keywords because p.categories (the array) may only hold the parent category (e.g.
+// ["Shirts"]) and not the specific subcategory name (e.g. "Branded Shirts"), which would cause
+// a plain searchTermMatches("branded") to miss those products entirely.
+function brandProductMatches(p, brandKw) {
+    const catArray = Array.isArray(p.categories) && p.categories.length > 0
+        ? p.categories : [p.category];
+    return normalizeSearchSpelling((p.name || '').toLowerCase()).includes(brandKw) ||
+        normalizeSearchSpelling((p.category || '').toLowerCase()).includes(brandKw) ||
+        catArray.some(c => normalizeSearchSpelling((c || '').toLowerCase()).includes(brandKw)) ||
+        (p.color || '').toLowerCase().includes(brandKw) ||
+        (p.pattern || '').toLowerCase().includes(brandKw);
+}
+
 // Display emoji/name per parent group for the cross-group conflict reply. "Shirts" gets a
 // "(formal)" suffix specifically because that's the exact ambiguity this reply exists to resolve —
 // customers say "shirt" colloquially for either Shirts or T-Shirts.
@@ -4207,6 +4231,38 @@ async function handleIntent(intentResult, session, products, from) {
             };
 
             const inStock = products.filter(p => Number(p.stock) > 0);
+
+            // ─── Brand keyword priority check ───
+            // When the customer's message contains a specific brand or category-modifier (e.g.
+            // "branded", "us polo"), match it directly against p.category/p.name before the
+            // generic term-matching flow runs. This prevents two failure modes:
+            //   1. "us polo" → "us" is in SEARCH_EN_STOP so makeSearchTerms drops it, leaving
+            //      only ["polo", "shirt"] — which ambiguously matches BOTH "Polo T-shirts pocket"
+            //      AND "Branded Shirts"; checking "us polo" as a phrase avoids that ambiguity.
+            //   2. "branded" → p.categories array may only hold the parent ("Shirts"), not the
+            //      subcategory ("Branded Shirts"); brandProductMatches() also checks p.category
+            //      directly so those products are always found.
+            // Works on the cleanSearchQuery output (normalizeSearchSpelling applied) so
+            // "branded t shirt" → "branded tshirt" still matches the "branded tshirt" entry.
+            const cleanedQueryForBrand = cleanSearchQuery(query);
+            const matchedBrandKw = BRAND_KEYWORDS.find(bk => cleanedQueryForBrand.includes(bk));
+            if (matchedBrandKw) {
+                const brandMatched = applyPriceFilter(
+                    inStock.filter(p => brandProductMatches(p, matchedBrandKw))
+                );
+                if (brandMatched.length > 0) {
+                    const colorTerm = cleanedQueryForBrand.split(/\s+/).find(w => COLOR_KEYWORDS.includes(w));
+                    if (colorTerm) {
+                        const colorBrandMatched = brandMatched.filter(p => searchTermMatches(p, colorTerm));
+                        if (colorBrandMatched.length > 0) {
+                            return buildSpecificProductReply(colorBrandMatched[0], products);
+                        }
+                    }
+                    return buildCategoryAvailableReply(brandMatched[0], products);
+                }
+                // Brand keyword present but no in-stock match — fall through to normal matching
+                // (will likely reach HELPFUL_MENU_CONTACT_REPLY via hasUnmatchedTerm).
+            }
 
             // Stop-word removal, spelling normalization, and term classification are shared with
             // detectIntent's looksLikeProductQuery (see makeSearchTerms above) so both use the
