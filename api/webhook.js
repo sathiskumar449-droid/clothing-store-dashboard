@@ -338,12 +338,20 @@ async function getOrderById(orderId) {
 // never actually messaged the bot. Uses a jsonb containment filter (`messages @> [{sender:
 // "customer"}]`) so the (potentially large) messages blob still doesn't need to be selected
 // or scanned in JS just to decide membership.
+// IMPORTANT: PostgREST silently caps any unordered query at its project-level max-rows limit
+// (1000 here) — with no .order() that cap was applied in whatever arbitrary order Postgres
+// happened to scan rows in, NOT by recency, so a chat active minutes ago could be excluded
+// from the result set while older ones made the cut (see the dashboard bug this fixed: a
+// same-day active chat was missing from the inbox even though the data itself was fine).
+// Ordering by last_updated DESC first means that if the cap still trims the result (the chats
+// table can exceed 1000 real rows), it always trims the STALEST chats, never a live one.
 export async function getChats(startDate, endDate, requireInboundMessage = false) {
     try {
         let query = supabase
             .from('chats')
             .select('customer_phone, customer_name, last_message, last_updated, bot_paused')
-            .not('customer_phone', 'like', 'session_%');
+            .not('customer_phone', 'like', 'session_%')
+            .order('last_updated', { ascending: false });
 
         if (startDate) query = query.gte('last_updated', startDate);
         if (endDate) query = query.lte('last_updated', endDate);
@@ -3996,59 +4004,10 @@ async function handleIntent(intentResult, session, products, from) {
             };
         }
         case 'CANCEL_SHOPPING': {
-            if (session.cart && session.cart.length > 0) {
-                // Change 2: You have items pending in your cart
-                session.state = "AWAITING_CANCEL_PENDING_DECISION";
-                let cartSummary = `🛒 *Pending Items in Cart:*\n\n`;
-                session.cart.forEach((item, i) => {
-                    cartSummary += `${i + 1}. ${item.color ? item.color + ' ' : ''}${item.product || item.name} (${item.size}) - Qty: ${item.qty || 1} - ₹${Number(item.price) * (item.qty || 1)}\n`;
-                });
-                const cartTotal = session.cart.reduce((sum, item) => sum + Number(item.price) * (item.qty || 1), 0);
-                cartSummary += `\n💰 Total: ₹${cartTotal}\n\n`;
-
-                return {
-                    sendButtons: {
-                        body: `⚠️ *You have items pending in your cart.*\n\n${cartSummary}Would you like to checkout, continue shopping, or clear the cart and exit?`,
-                        buttons: [
-                            { id: 'cancel_continue_shopping', title: '🛍️ Continue Shopping' },
-                            { id: 'cancel_checkout', title: '🛒 Checkout' },
-                            { id: 'cancel_clear_exit', title: '❌ Clear Cart & Exit' }
-                        ]
-                    },
-                    sendImages: []
-                };
-            } else {
-                // Change 1: Shopping cancelled.
-                session.state = "AWAITING_CANCEL_NO_CART_DECISION";
-                session.pendingProduct = null;
-                session.selectedSize = null;
-                session.selectedColor = null;
-                session.searchProducts = [];
-                session.isRecommendation = false;
-                session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
-                session.cartCrossSellShown = false;
-                session.fromCrossSell = false;
-                session.orderingQueue = [];
-                session.pendingSelections = {};
-                session.pendingOrder = [];
-                session.subCategories = null;
-                session.selectedParentCategory = null;
-                session.selectedSubCategory = null;
-                session.lastRecommendation = null;
-                session.awaitingRecommendationResponse = false;
-                session.awaitingCartAdditionConfirmation = false;
-
-                return {
-                    sendButtons: {
-                        body: `Shopping cancelled.`,
-                        buttons: [
-                            { id: 'cancel_continue_shopping', title: '🛍️ Continue Shopping' },
-                            { id: 'cancel_exit_shopping', title: '❌ Exit' }
-                        ]
-                    },
-                    sendImages: []
-                };
-            }
+            return {
+                replyText: `👍 Sari! Edhuvum venuma?\n\n*menu* type panni browse pannunga, illa enna venum nu sollunga! 😊`,
+                sendImages: []
+            };
         }
         case 'SHOP_MORE': {
             session.pendingProduct = null;
@@ -4116,16 +4075,10 @@ async function handleIntent(intentResult, session, products, from) {
             return await handleOrderHelpChoice(intentResult.choice, from);
         }
         case 'CLEAR_CART': {
-            session.cart = [];
-            session.pendingProduct = null;
-            session.selectedSize = null;
-            session.searchProducts = [];
-            session.isRecommendation = false;
-            session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
-            session.cartCrossSellShown = false;
-            session.fromCrossSell = false;
-
-            return goToTopCategoryMenu(session, products, "Your cart has been cleared. 😊");
+            return {
+                replyText: `👍 Sari! Edhuvum venuma?\n\n*menu* type panni browse pannunga, illa enna venum nu sollunga! 😊`,
+                sendImages: []
+            };
         }
         case 'HUMAN': {
             return {
@@ -4147,27 +4100,10 @@ async function handleIntent(intentResult, session, products, from) {
             };
         }
         case 'CHECKOUT': {
-            if (!session.cart || session.cart.length === 0) {
-                let replyText = "Your cart is empty. 😊 Please add products to your cart first.";
-                if (!isAtTopLevelMenu(session)) {
-                    const statePrompt = await getStatePrompt(session, products);
-                    if (statePrompt.replyText) {
-                        replyText += `\n\nFeel free to continue shopping: 😊\n\n${statePrompt.replyText}`;
-                    } else {
-                        replyText += `\n\nFeel free to continue shopping: 😊`;
-                    }
-                    return {
-                        replyText,
-                        sendImages: statePrompt.sendImages || [],
-                        sendButtons: statePrompt.sendButtons || null,
-                        sendList: statePrompt.sendList || null,
-                        listContext: statePrompt.listContext || null
-                    };
-                }
-                return { replyText, sendImages: [] };
-            }
-            session.fromCrossSell = false;
-            return await startCheckout(session, from, products);
+            return {
+                replyText: `🛒 Order panna website ku ponga - size & colour select panni, easy ah checkout pannalam! 👇\nhttps://supercollections.in/shop/\n\n*menu* type panni products paarunga! 😊`,
+                sendImages: []
+            };
         }
         case 'FAQ': {
             let replyText = intentResult.reply;
