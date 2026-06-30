@@ -1549,9 +1549,12 @@ export const getParentCategory = (categoryName) => {
     const catLower = categoryName.toLowerCase().trim();
 
     // T-Shirts checked before Shirts to avoid 't-shirt'/'t shirt' matching the generic 'shirt' keyword.
-    // 't shirt' (with a space) is included because real categories like "Five Sleeve T Shirt" and
-    // "Football T Shirt" use a space, not a hyphen — without it they fell through to the Shirts list below.
-    if (['t-shirt', 'tshirt', 't shirt', 'round neck', 'polo t'].some(kw => catLower.includes(kw))) {
+    // ' t shirt' (with a LEADING space) is used instead of bare 't shirt' so the 't' must be a
+    // standalone word — "chava print shirts" was wrongly matching because "print shirts" contains
+    // the substring "t shirt" (the trailing 't' of 'print' + space + 'shirts'). The leading space
+    // prevents that false match while still correctly catching "Five Sleeve T Shirt",
+    // "Football T Shirt", and "Stripe T Shirts" where the 'T' is always preceded by a space.
+    if (['t-shirt', 'tshirt', ' t shirt', 'round neck', 'polo t'].some(kw => catLower.includes(kw))) {
         return 'T-Shirts';
     }
     // 'casual' and 'plain' were removed: both are generic adjectives, not shirt-specific, and were
