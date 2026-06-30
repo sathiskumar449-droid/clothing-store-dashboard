@@ -2512,13 +2512,25 @@ const MULTIPLE_CATEGORY_NOTE = "You mentioned multiple categories. Here's the fi
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
 
-    // Customer typing a delivery complaint unprompted (e.g. "not delivered", "order not
-    // delivered") — must resolve regardless of session state, since this can be the very
-    // first thing they type. Without this check it used to fall through to free-text product
-    // search and return a confusing "out of stock" reply. No order id is attached here (this
-    // is free text, not a structured button reply), so the ORDER_DELIVERY_COMPLAINT handler
-    // just acknowledges and flags the complaint without updating a specific order row.
-    if (['order_not_delivered', 'not delivered', 'order not delivered', '❌ not delivered', '❌ order not delivered'].includes(t)) {
+    // Customer typing a delivery complaint unprompted (e.g. "not delivered", "already
+    // ordered but not deliver") — must resolve regardless of session state, since this can
+    // be the very first thing they type. Without this check it used to fall through to
+    // free-text product search and return a confusing "out of stock" reply. No order id is
+    // attached here (this is free text, not a structured button reply), so the
+    // ORDER_DELIVERY_COMPLAINT handler just acknowledges and provides contact numbers.
+    // Matched as SUBSTRINGS so multi-word messages like "Already I am ordered but not
+    // deliver" are caught even when surrounded by other words.
+    const deliveryComplaintPhrases = [
+        'not deliver', 'not received', 'not yet deliver',
+        'order not deliver', 'already ordered', 'where is my order',
+        'order not come', 'parcel not come', 'item not received',
+        'product not received', 'when will deliver', 'delivery not done',
+        'not got', 'not yet received', 'deliver aagala', 'deliver pannala',
+        'parcel vanthu', 'vanthucha',
+        // Legacy exact-match phrase ids from button replies
+        'order_not_delivered', '❌ not delivered', '❌ order not delivered'
+    ];
+    if (deliveryComplaintPhrases.some(phrase => t.includes(phrase))) {
         return { type: 'ORDER_DELIVERY_COMPLAINT', orderRowId: null, orderDisplayNumber: null };
     }
 
@@ -3600,6 +3612,14 @@ async function handleIntent(intentResult, session, products, from) {
                 }
             }
             const orderRef = orderDisplayNumber ? ` (#${orderDisplayNumber})` : '';
+            // Free-text complaint (no order id attached): give direct contact numbers.
+            // Button-reply complaint (specific order id): flag the row and give the old reply.
+            if (!orderRowId) {
+                return {
+                    replyText: `😔 Sorry to hear that!\nPlease contact our team directly:\n📞 +91 8668066503\n📞 +91 7418755096`,
+                    sendImages: []
+                };
+            }
             return {
                 replyText: `😔 Sorry to hear that! We've flagged your order${orderRef} for review. Our team will contact you shortly to resolve this. 🙏`,
                 sendImages: []
@@ -3942,7 +3962,12 @@ async function handleIntent(intentResult, session, products, from) {
             // specific attribute/origin/brand we don't carry at all — refuse to fall back to ANY
             // category/product suggestion (that's the bug this fixes: "Korean lelin shirts" used
             // to fall through to a loose "shirts" match and suggest White Shirts).
-            if (hasUnmatchedTerm) {
+            // Guard: require at least one term DID match the catalog (terms.length > 0). If
+            // every term failed to match (terms is empty), the message was never about a real
+            // product at all — delivery complaints, random text, etc. that somehow slipped
+            // through to SEARCH. In that case fall through to SHORT_NOT_FOUND_REPLY instead
+            // of falsely claiming the item is "out of stock".
+            if (hasUnmatchedTerm && terms.length > 0) {
                 return { replyText: OUT_OF_STOCK_REPLY, sendImages: [] };
             }
 
@@ -4089,6 +4114,19 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         }
         return {
             replyText: "We couldn't find that order. Please double check the Order ID, or our team will verify and get back to you shortly.",
+            sendImages: []
+        };
+    }
+
+    // ─── Meaningless/random input guard ───
+    // Fires before intent detection so "...", emoji-only messages, and pure-symbol strings
+    // never reach looksLikeProductQuery or the SEARCH pipeline (which used to return
+    // "couldn't find" for these). Matches any message with no letters, digits, or Tamil
+    // characters — catches dots, ellipsis, standalone emoji, and lone punctuation.
+    const _strippedForMeaningless = userMessage.trim();
+    if (_strippedForMeaningless.length > 0 && !/[a-zA-Z0-9஀-௿]/.test(_strippedForMeaningless)) {
+        return {
+            replyText: `👋 Hi! How can I help you?\nType *menu* to browse our collection, or tell me what you're looking for! 😊`,
             sendImages: []
         };
     }
