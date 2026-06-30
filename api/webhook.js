@@ -2695,11 +2695,57 @@ function detectIntent(text, products = [], session = null) {
 
     // 4. FAQ Intent
 
-    // ─── DELIVERY TIME Combination Match ───
-    const delivTimeGroupA = ['when', 'time', 'day', 'days', 'date', 'eppo', 'epo', 'naal', 'naalu', 'agum', 'varum', 'received', 'receive', 'get', 'arrive', 'reach', 'varala', 'varuga'];
-    const delivTimeGroupB = ['deliv', 'delei', 'delci', 'delve', 'delvi', 'dlvr', 'order', 'parcel', 'package', 'dress', 'shirt', 'pant', 'item', 'product'];
-    const isDeliveryTime = (matchesGroup(words, delivTimeGroupA) && matchesGroup(words, delivTimeGroupB)) ||
-        t.includes('delivery duration') || t.includes('how long') || t.includes('how many days');
+    // ─── COMPLAINT / PRICING PROBLEM Handler ───
+    // Checked BEFORE all FAQ auto-replies. If the customer is reporting a fee bug,
+    // checkout problem, or expressing "not fair" about charges, no automated FAQ
+    // answer is appropriate — hand off to the human team instead.
+    //
+    // Two routes into this handler:
+    //   A) Message contains a specific complaint phrase on its own ("not fair",
+    //      "fee added", "per item", "per selection", etc.)
+    //   B) Message mentions a delivery/shipping fee term AND a complaint signal
+    //      word ("problem", "wrong", "issue", etc.) together.
+    const _feeProblemPhrases = [
+        'not fair', 'getting added', 'fee added', 'fee is added', 'per item',
+        'per product', 'per selection', 'each selection', 'extra charge', 'extra fee',
+        'double charge', 'charging extra', 'charge extra', 'unfair', 'wrong fee',
+        'wrong charge', 'charge problem', 'fee problem', 'billing problem',
+        'overcharged', 'over charged'
+    ];
+    const _checkoutComplaintSignals = [
+        'problem', 'issue', 'error', 'bug', 'wrong', 'incorrect',
+        'not right', 'cheating', 'not working', 'broken', 'glitch'
+    ];
+    const _deliveryFeeTerms = [
+        'delivery fee', 'delivery charge', 'shipping fee',
+        'shipping cost', 'shipping charge', 'courier fee', 'courier charge'
+    ];
+    const _hasFeeProblemPhrase = _feeProblemPhrases.some(k => t.includes(k));
+    const _hasDeliveryFeeComplaint = _deliveryFeeTerms.some(k => t.includes(k)) &&
+        _checkoutComplaintSignals.some(s => t.includes(s));
+
+    if (_hasFeeProblemPhrase || _hasDeliveryFeeComplaint) {
+        return {
+            type: 'FAQ',
+            reply: `🙏 Sorry for the trouble! This needs our team's attention.\n\nPlease contact us directly and we'll sort it out right away:\n📞 +91 8668066503\n📞 +91 7418755096`
+        };
+    }
+
+    // ─── DELIVERY TIME Check (tightened) ───
+    // Old approach: loose groupA+groupB combination — "each" matched "reach" and
+    // "products" matched "product", so any message mentioning products falsely
+    // triggered "7 working days" (e.g. a fee-per-item complaint). Replaced with
+    // explicit phrase matching so only genuine delivery-time questions match.
+    const isDeliveryTime =
+        t.includes('delivery time') || t.includes('delivery days') ||
+        t.includes('delivery duration') || t.includes('delivery takes') ||
+        t.includes('delivery eppo') || t.includes('delivery naal') ||
+        t.includes('how many days') || t.includes('how long delivery') ||
+        t.includes('days to deliver') || t.includes('when will deliver') ||
+        t.includes('when deliver') || t.includes('shipping time') ||
+        t.includes('deliver agum') || t.includes('deliver varum') ||
+        t.includes('evlo naal') || t.includes('evvalavu naal') ||
+        t.includes('parcel eppo') || t.includes('order eppo');
 
     if (isDeliveryTime) {
         return { type: 'FAQ', reply: '🚚 Delivery usually takes 7 working days.' };
@@ -5123,8 +5169,18 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (textLower.includes("delivery eppo") || textLower.includes("delivery time") || textLower.includes("evlo naal") || textLower.includes("evvalavu naal") || textLower.includes("kku evlo naal") || textLower.includes("vanthudum")) {
         return { replyText: "🚚 Delivery usually takes 7 working days.", sendImages: [] };
     }
-    if (textLower.includes("delivery charge") || textLower.includes("delivery rate") || textLower.includes("delivery fee") || textLower.includes("shipping charge") || textLower.includes("courier charge")) {
-        return { replyText: "🚚 Delivery charge is ₹80.", sendImages: [] };
+    // Guard: don't reply "Delivery charge is ₹80" when the customer is complaining
+    // about a fee issue — hand off to the team instead.
+    {
+        const _stmFeeComplaintSignals = ['problem', 'issue', 'not fair', 'unfair', 'wrong',
+            'added', 'getting added', 'per item', 'per product', 'per selection', 'error', 'bug'];
+        const _stmHasFeeComplaint = _stmFeeComplaintSignals.some(s => textLower.includes(s));
+        if (!_stmHasFeeComplaint && (textLower.includes("delivery charge") || textLower.includes("delivery rate") || textLower.includes("delivery fee") || textLower.includes("shipping charge") || textLower.includes("courier charge"))) {
+            return { replyText: "🚚 Delivery charge is ₹80.", sendImages: [] };
+        }
+        if (_stmHasFeeComplaint && (textLower.includes("delivery fee") || textLower.includes("shipping fee") || textLower.includes("delivery charge") || textLower.includes("shipping charge"))) {
+            return { replyText: `🙏 Sorry for the trouble! This needs our team's attention.\n\nPlease contact us directly and we'll sort it out right away:\n📞 +91 8668066503\n📞 +91 7418755096`, sendImages: [] };
+        }
     }
     if (textLower.includes("delivery area") || textLower.includes("deliver panringa") || textLower.includes("tamilnadu") || textLower.includes("india delivery") || textLower.includes("all india")) {
         return { replyText: "✅ We deliver all across India! 🚚", sendImages: [] };
