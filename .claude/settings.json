@@ -10,7 +10,9 @@
       "Bash(node scratch/test_pendingorder_fix.mjs)",
       "Bash(node --check \"api/webhook.js\")",
       "Bash(node --input-type=module -e ' *)",
-      "Bash(node fuzzy_test2.mjs)"
+      "Bash(node fuzzy_test2.mjs)",
+      "Bash(node --check api/woocommerce-order-webhook.js)",
+      "Bash(npx --no-install eslint src/pages/OrdersPage.jsx src/pages/DashboardPage.jsx src/components/ui/Badge.jsx)"
     ]
   }
 }
