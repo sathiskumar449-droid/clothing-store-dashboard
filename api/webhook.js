@@ -4148,16 +4148,41 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const AI_CLASSIFIER_MODEL = 'claude-haiku-4-5';
 const AI_CLASSIFIER_TIMEOUT_MS = 8000;
 
-// Only these states represent open-ended "customer is browsing/asking something" turns — every
-// other state (checkout data-entry fields, yes/no decision prompts, size/qty/model selection)
-// expects a specific structured reply and must keep going through the existing state-machine
-// handlers untouched, never through the AI. This is what keeps "free-text handling" scoped
-// correctly: the AI never sees a checkout name/phone/pincode/address or a button-id payload.
-const AI_CLASSIFIER_ELIGIBLE_STATES = new Set([
-    'AWAITING_MAIN_MENU_SELECTION',
-    'AWAITING_TOP_CATEGORY_SELECTION',
-    'AWAITING_SUBCATEGORY_SELECTION'
+// The AI classifier is now the DEFAULT handler for free text in EVERY session state — real
+// customers ask product/order/support questions directly, without ever browsing the numbered
+// menu first, so restricting the AI to only the 3 "browsing" states (the original design) left
+// most real conversations on the old keyword path. Instead we BLOCK the AI only where a reply is
+// genuinely structured DATA/DECISION the flow is waiting for, never a new free-text question:
+//   - NUMERIC_INPUT_STATES (phone/pincode digits)
+//   - checkout name/address/saved-address entry — free text, but literal data capture, not intent
+//   - product size / model-number selection
+//   - cart/order/cancel decision points — a typed "yes"/"no"/"ok" here must progress that specific
+//     decision (e.g. confirm the order, add more items, clear the cart). The AI has no dedicated
+//     route for a bare confirmation (closest fit is "acknowledgment"), so letting it intercept
+//     these would derail revenue-critical order completion instead of progressing the decision.
+const AI_CLASSIFIER_BLOCKED_STATES = new Set([
+    ...NUMERIC_INPUT_STATES,
+    'AWAITING_CHECKOUT_NAME',
+    'AWAITING_CHECKOUT_ADDRESS',
+    'AWAITING_CHECKOUT_USE_SAVED_ADDRESS',
+    'AWAITING_PRODUCT_SIZE',
+    'AWAITING_MODEL_SELECTION',
+    'AWAITING_CART_CONFIRM',
+    'AWAITING_MORE_ITEMS',
+    'AWAITING_HELP_CONFIRM',
+    'AWAITING_ORDER_CONFIRMATION',
+    'AWAITING_PENDING_CART_DECISION',
+    'AWAITING_POST_ADD_TO_CART_DECISION',
+    'AWAITING_RECOMMENDATION_CHOICE',
+    'AWAITING_CANCEL_NO_CART_DECISION',
+    'AWAITING_CANCEL_PENDING_DECISION',
+    'AWAITING_CART_SUMMARY_DECISION'
 ]);
+
+// WhatsApp interactive-button taps are delivered as the button's own id string (e.g.
+// "cancel_continue_shopping", "help_yes", "no_checkout") — never natural language — so they must
+// never reach the AI even in a state that's otherwise open to free text.
+const BUTTON_PAYLOAD_PATTERN = /^[a-z0-9]+(?:_[a-z0-9]+)+$/;
 
 // Builds a compact, live (not hardcoded) summary of in-stock categories/subcategories from the
 // products array already fetched for this request (itself sourced straight from Supabase via
@@ -4494,18 +4519,22 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         return { replyText: SOCIAL_MEDIA_LINK_REPLY, sendImages: [] };
     }
 
-    // ─── AI Classifier (Claude Haiku) — replaces the keyword detectIntent/handleIntent path
-    // below for free-text browsing turns only, when USE_AI_CLASSIFIER is on. Restricted to
-    // AI_CLASSIFIER_ELIGIBLE_STATES and skipped for numbers-only text (numbered-menu replies like
-    // "3" or "1,2 & 3") so menu number selection, checkout data-entry fields, and button-id
-    // payloads all keep going through the existing state-machine handlers untouched — only an
-    // actual open-ended sentence in a browsing state reaches the AI. On any classifier failure
-    // this returns the existing generic fallback reply rather than throwing, so flipping
+    // ─── AI Classifier (Claude Haiku) — the DEFAULT handler for free text in every state when
+    // USE_AI_CLASSIFIER is on, except the structured-data-entry states / button payloads / bare
+    // numbers blocked below (see AI_CLASSIFIER_BLOCKED_STATES). On any classifier failure this
+    // returns the existing generic fallback reply rather than throwing, so flipping
     // USE_AI_CLASSIFIER off always instantly restores the exact behavior below with zero risk.
-    if (USE_AI_CLASSIFIER && ANTHROPIC_API_KEY &&
-        AI_CLASSIFIER_ELIGIBLE_STATES.has(session.state) &&
-        !isNumbersOnlyText(userMessage)) {
-        return await runAIClassifierRoute(userMessage, products, session);
+    if (USE_AI_CLASSIFIER && ANTHROPIC_API_KEY) {
+        if (isNumbersOnlyText(userMessage)) {
+            console.log(`[AIClassifier] skipped: numbers-only message=${JSON.stringify(userMessage)}`);
+        } else if (AI_CLASSIFIER_BLOCKED_STATES.has(session.state)) {
+            console.log(`[AIClassifier] skipped: state=${session.state} (structured data-entry) message=${JSON.stringify(userMessage)}`);
+        } else if (BUTTON_PAYLOAD_PATTERN.test(textLower.trim())) {
+            console.log(`[AIClassifier] skipped: button-payload message=${JSON.stringify(userMessage)}`);
+        } else {
+            console.log(`[AIClassifier] running: state=${session.state} message=${JSON.stringify(userMessage)}`);
+            return await runAIClassifierRoute(userMessage, products, session);
+        }
     }
 
     // ─── Intent Detection & Routing Layer ───
