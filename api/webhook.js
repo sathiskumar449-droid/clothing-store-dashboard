@@ -2389,9 +2389,12 @@ const SEARCH_TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku'
     'vaikanum', 'panunga', 'sollu', 'kodu', 'kudu', 'da', 'bro', 'anna', 'sir', 'madam', 'la', 'ku',
     'ah', 'ha', 'na', 'tharinga', 'kudunga', 'thareengala', 'venum', 'vendum', 'venam', 'vena',
     'enaku', 'eanku', 'yenaku', 'enakku', 'yenakku', 'naaku', 'kaatu', 'kaattunga', 'hai',
+    // Additional intent-filler verbs ("send it", "needed") that aren't covered above — stripped
+    // the same way as the rest of this set so they never participate in catalog scoring.
+    'anuppu', 'anuppunga', 'vendiyathu', 'vendiathu',
     // Common misspellings of "colour"/"color" — meaningless for matching (the actual color comes
-    // from a COLOR_KEYWORDS term like "cream"), so they're dropped rather than left to veto an
-    // otherwise-good AND match (see makeSearchTerms' noise filtering below).
+    // from a COLOR_KEYWORDS term like "cream"), so they're dropped here rather than left to drag
+    // down scoreCategoryMatches's catalog-overlap score with noise.
     'colur', 'colour', 'color', 'culer', 'colr',
     'வேணும்', 'இருக்கா', 'பாருங்க', 'எனக்கு']);
 
@@ -2450,23 +2453,6 @@ function levenshteinDistance(a, b) {
     return dp[m][n];
 }
 
-// Real words present in the live catalog (category/name/color/pattern), normalized the same way
-// searchTermMatches compares against them. Built lazily (only when a term doesn't already match
-// literally) since it's an O(products) scan.
-function buildCatalogVocabulary(inStockProducts) {
-    const words = new Set(COLOR_KEYWORDS);
-    inStockProducts.forEach(p => {
-        const cats = Array.isArray(p.categories) && p.categories.length > 0 ? p.categories : [p.category];
-        [p.name, ...cats, p.color, p.pattern].forEach(field => {
-            normalizeSearchSpelling((field || '').toLowerCase())
-                .split(/\s+/)
-                .filter(w => w.length > 2)
-                .forEach(w => words.add(w));
-        });
-    });
-    return words;
-}
-
 // True if `term` isn't a literal catalog match but is a plausible typo of one — e.g. "lelin" is
 // distance 1 from "lenin". The distance cap scales with word length so short words need a near-
 // exact match (avoiding accidental matches like "wite"->"wine") while longer words tolerate one
@@ -2482,52 +2468,6 @@ function findFuzzyCatalogMatch(term, vocabulary) {
     return null;
 }
 
-// Stop-word-filtered terms from free text, with one extra pass for multi-term queries that
-// classifies each remaining term instead of blanket-dropping anything not in the catalog (see
-// Bug 1 in the commit that first added this pass, and the false-positive it caused: "Korean lelin
-// shirts" dropped BOTH "Korean" and "lelin" as equally harmless noise, leaving only the generic
-// "shirts" to loosely match an unrelated category like White Shirts). Now:
-//   - a term that matches the catalog literally is kept as-is;
-//   - a term that's a typo of a real catalog word (fuzzy match) is normalized to that word, so a
-//     misspelling like "lelin" still participates in the AND match as "lenin";
-//   - a term that matches nothing at all, even with typo tolerance, is a genuine attribute/origin/
-//     brand the customer asked for that we don't carry (e.g. "korean") — flagged via
-//     hasUnmatchedTerm so the caller can refuse to fall back to ANY category/product instead of
-//     silently dropping it.
-// Single-term queries skip this pass since the SEARCH case already has its own looser single-term
-// fallback.
-function makeSearchTerms(rawText, inStockProducts) {
-    const rawTerms = cleanSearchQuery(rawText).split(/\s+/)
-        // A bare number ("10 pieces", "32 size") is never itself a catalog match signal in this
-        // free-text term system — actual size selection happens through the separate size-button
-        // flow, not by a literal number appearing in a product's name/category. Dropping it here
-        // (alongside stopwords) stops a stray quantity/size number from ever being misread as an
-        // unmatched genuine constraint (see hasUnmatchedTerm below).
-        .filter(w => w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w) && !SIZE_KEYWORDS.has(w) && !/^\d+$/.test(w));
-    if (rawTerms.length <= 1) return { terms: rawTerms, hasUnmatchedTerm: false };
-
-    const inCatalog = (term) => COLOR_KEYWORDS.includes(term) || inStockProducts.some(p => searchTermMatches(p, term));
-    let vocabulary = null;
-    let hasUnmatchedTerm = false;
-    const terms = [];
-
-    for (const term of rawTerms) {
-        if (inCatalog(term)) {
-            terms.push(term);
-            continue;
-        }
-        if (!vocabulary) vocabulary = buildCatalogVocabulary(inStockProducts);
-        const fuzzyMatch = findFuzzyCatalogMatch(term, vocabulary);
-        if (fuzzyMatch) {
-            terms.push(fuzzyMatch);
-        } else {
-            hasUnmatchedTerm = true;
-        }
-    }
-
-    return { terms, hasUnmatchedTerm };
-}
-
 function searchTermMatches(p, term) {
     const cats = Array.isArray(p.categories) && p.categories.length > 0
         ? p.categories : [p.category];
@@ -2535,6 +2475,109 @@ function searchTermMatches(p, term) {
         cats.some(c => normalizeSearchSpelling((c || '').toLowerCase()).includes(term)) ||
         (p.color || '').toLowerCase().includes(term) ||
         (p.pattern || '').toLowerCase().includes(term);
+}
+
+// Lightweight suffix stripper so query words like "checked"/"checks" or "stripes" line up with
+// catalog words like "check"/"stripe" without needing a hardcoded synonym table.
+function simpleStem(word) {
+    if (!word || word.length <= 3) return word;
+    if (word.endsWith('ies') && word.length > 4) return word.slice(0, -3) + 'y';
+    if (word.endsWith('ed') && word.length > 4) return word.slice(0, -2);
+    if (word.endsWith('ing') && word.length > 5) return word.slice(0, -3);
+    if (word.endsWith('es') && word.length > 4) return word.slice(0, -2);
+    if (word.endsWith('s') && !word.endsWith('ss') && word.length > 3) return word.slice(0, -1);
+    return word;
+}
+
+// Builds a catalog-driven index from the live in-stock product list: for every word that
+// appears in a product's category/name, record which categories it points to and whether the
+// hit was a category-name word (stronger signal, weight 2) or only a product-name word (weight
+// 1). This replaces hardcoded brand/keyword lists — any catalog word (e.g. "polo", "branded",
+// "stripe") becomes searchable automatically because it is read straight from Supabase data.
+function buildCatalogIndex(inStockProducts) {
+    const index = new Map(); // word -> Map(category -> weight)
+    const vocab = new Set();
+
+    const addWord = (word, category, weight) => {
+        if (!word || word.length < 2) return;
+        vocab.add(word);
+        if (!index.has(word)) index.set(word, new Map());
+        const catMap = index.get(word);
+        catMap.set(category, Math.max(catMap.get(category) || 0, weight));
+    };
+
+    for (const p of inStockProducts) {
+        // Union (not either/or) of p.category and p.categories[]: for some products the specific
+        // subcategory name (e.g. "Branded Shirts") only lives in the singular p.category field
+        // while p.categories[] holds just the generic parent tag (e.g. ["Shirts"]) — using only
+        // one source would silently drop the other's words from the index.
+        const catSet = new Set();
+        if (Array.isArray(p.categories)) p.categories.forEach(c => c && catSet.add(c));
+        if (p.category) catSet.add(p.category);
+        const cats = Array.from(catSet);
+        for (const cat of cats) {
+            if (!cat) continue;
+            const catWords = normalizeSearchSpelling(cat.toLowerCase()).split(/\s+/);
+            for (const w of catWords) {
+                addWord(w, cat, 2);
+                addWord(simpleStem(w), cat, 2);
+            }
+            const nameWords = normalizeSearchSpelling((p.name || '').toLowerCase()).split(/\s+/);
+            for (const w of nameWords) {
+                addWord(w, cat, 1);
+                addWord(simpleStem(w), cat, 1);
+            }
+            // p.color/p.pattern are product-attribute fields that don't always also appear as a
+            // literal word in the category or product name (e.g. a "wine" colored item whose
+            // name never says "wine") — index them too so a pure color/pattern word still scores
+            // and never falsely trips hasUnmatchedTerm in scoreCategoryMatches below.
+            if (p.color) addWord(p.color.toLowerCase().trim(), cat, 1);
+            if (p.pattern) {
+                normalizeSearchSpelling(p.pattern.toLowerCase()).split(/\s+/).forEach(w => addWord(w, cat, 1));
+            }
+        }
+    }
+    return { index, vocab };
+}
+
+// Scores every category the queryWords could refer to by summing per-word weights from the
+// catalog index (built fresh per request in buildCatalogIndex). hasUnmatchedTerm is true when a
+// meaningful word matches nothing at all in the catalog, signalling we should fall back to the
+// generic "couldn't find that" reply rather than guessing.
+function scoreCategoryMatches(queryWords, catalogIndex, catalogVocab) {
+    const scores = new Map(); // category -> score
+    let hasUnmatchedTerm = false;
+
+    for (const word of queryWords) {
+        // word and simpleStem(word) are often identical (e.g. "shirt") — dedupe candidates and
+        // take the max weight per category across them, so a single query word never gets summed
+        // into the same category's score twice.
+        const candidates = new Set([word, simpleStem(word)]);
+        const wordCatWeights = new Map(); // category -> best weight for THIS query word only
+        for (const cand of candidates) {
+            if (catalogIndex.has(cand)) {
+                for (const [cat, weight] of catalogIndex.get(cand)) {
+                    wordCatWeights.set(cat, Math.max(wordCatWeights.get(cat) || 0, weight));
+                }
+            }
+        }
+        let matched = wordCatWeights.size > 0;
+        if (!matched) {
+            const fuzzy = findFuzzyCatalogMatch(word, catalogVocab);
+            if (fuzzy && catalogIndex.has(fuzzy)) {
+                matched = true;
+                for (const [cat, weight] of catalogIndex.get(fuzzy)) {
+                    wordCatWeights.set(cat, Math.max(wordCatWeights.get(cat) || 0, weight));
+                }
+            }
+        }
+        for (const [cat, weight] of wordCatWeights) {
+            scores.set(cat, (scores.get(cat) || 0) + weight);
+        }
+        if (!matched) hasUnmatchedTerm = true;
+    }
+
+    return { scores, hasUnmatchedTerm };
 }
 
 // Routing-only check (used by detectIntent below): true if the message contains a real catalog
@@ -3799,10 +3842,10 @@ const COLOR_KEYWORDS = ['cream', 'white', 'black', 'blue', 'navy', 'grey', 'gray
     'beige', 'pink', 'yellow', 'red', 'orange', 'brown', 'purple', 'mustard', 'khaki', 'wine', 'olive'];
 
 // Size/quantity words a customer tacks onto a search query (e.g. "stripe t shirts xl size") —
-// these never describe a category/pattern/color, so makeSearchTerms strips them out before the
-// "genuine unmatched term" check runs (see hasUnmatchedTerm below); without this, "xl"/"size"
-// don't match anything in the catalog and used to get flagged as a missing-product signal,
-// wrongly triggering the out-of-stock reply for an otherwise perfectly findable item.
+// these never describe a category/pattern/color, so the SEARCH case strips them out of
+// queryWords before scoreCategoryMatches runs; without this, "xl"/"size" don't match anything in
+// the catalog and would get flagged as a missing-product signal via hasUnmatchedTerm, wrongly
+// triggering the out-of-stock reply for an otherwise perfectly findable item.
 const SIZE_KEYWORDS = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl', '2xl', '3xl', '4xl',
     'size', 'sizes', 'saiz']);
 
@@ -3826,30 +3869,6 @@ const GENERIC_TERM_TO_PARENT = {
     pant: 'Pants', jeans: 'Pants', trouser: 'Pants',
     short: 'Shorts', shorts: 'Shorts'
 };
-
-// Brand/category-modifier phrases that must take priority over generic product-type words
-// ("shirt", "polo") in the SEARCH case. Entries are already spelling-normalized (same rules as
-// normalizeSearchSpelling) so "branded t shirt" → "branded tshirt" in the source query is matched
-// correctly. Checked against cleanSearchQuery(query) as a substring so multi-word phrases like
-// "us polo" survive even though "us" is dropped by makeSearchTerms's SEARCH_EN_STOP list.
-const BRAND_KEYWORDS = [
-    'branded', 'us polo', 'adidas', 'puma', 'nike',
-    'brand tshirt', 'brand shirt', 'branded tshirt'
-];
-
-// Like searchTermMatches but also checks p.category (the single-string field) directly — needed
-// for brand keywords because p.categories (the array) may only hold the parent category (e.g.
-// ["Shirts"]) and not the specific subcategory name (e.g. "Branded Shirts"), which would cause
-// a plain searchTermMatches("branded") to miss those products entirely.
-function brandProductMatches(p, brandKw) {
-    const catArray = Array.isArray(p.categories) && p.categories.length > 0
-        ? p.categories : [p.category];
-    return normalizeSearchSpelling((p.name || '').toLowerCase()).includes(brandKw) ||
-        normalizeSearchSpelling((p.category || '').toLowerCase()).includes(brandKw) ||
-        catArray.some(c => normalizeSearchSpelling((c || '').toLowerCase()).includes(brandKw)) ||
-        (p.color || '').toLowerCase().includes(brandKw) ||
-        (p.pattern || '').toLowerCase().includes(brandKw);
-}
 
 // Display emoji/name per parent group for the cross-group conflict reply. "Shirts" gets a
 // "(formal)" suffix specifically because that's the exact ambiguity this reply exists to resolve —
@@ -4232,84 +4251,21 @@ async function handleIntent(intentResult, session, products, from) {
 
             const inStock = products.filter(p => Number(p.stock) > 0);
 
-            // ─── Brand keyword priority check ───
-            // When the customer's message contains a specific brand or category-modifier (e.g.
-            // "branded", "us polo"), match it directly against p.category/p.name before the
-            // generic term-matching flow runs. This prevents two failure modes:
-            //   1. "us polo" → "us" is in SEARCH_EN_STOP so makeSearchTerms drops it, leaving
-            //      only ["polo", "shirt"] — which ambiguously matches BOTH "Polo T-shirts pocket"
-            //      AND "Branded Shirts"; checking "us polo" as a phrase avoids that ambiguity.
-            //   2. "branded" → p.categories array may only hold the parent ("Shirts"), not the
-            //      subcategory ("Branded Shirts"); brandProductMatches() also checks p.category
-            //      directly so those products are always found.
-            // Works on the cleanSearchQuery output (normalizeSearchSpelling applied) so
-            // "branded t shirt" → "branded tshirt" still matches the "branded tshirt" entry.
-            const cleanedQueryForBrand = cleanSearchQuery(query);
-            const matchedBrandKw = BRAND_KEYWORDS.find(bk => cleanedQueryForBrand.includes(bk));
-            if (matchedBrandKw) {
-                const brandMatched = applyPriceFilter(
-                    inStock.filter(p => brandProductMatches(p, matchedBrandKw))
-                );
-                if (brandMatched.length > 0) {
-                    const colorTerm = cleanedQueryForBrand.split(/\s+/).find(w => COLOR_KEYWORDS.includes(w));
-                    if (colorTerm) {
-                        const colorBrandMatched = brandMatched.filter(p => searchTermMatches(p, colorTerm));
-                        if (colorBrandMatched.length > 0) {
-                            return buildSpecificProductReply(colorBrandMatched[0], products);
-                        }
-                    }
-                    return buildCategoryAvailableReply(brandMatched[0], products);
-                }
-                // Brand keyword present but no in-stock match — fall through to normal matching
-                // (will likely reach HELPFUL_MENU_CONTACT_REPLY via hasUnmatchedTerm).
-            }
-
-            // Stop-word removal, spelling normalization, and term classification are shared with
-            // detectIntent's looksLikeProductQuery (see makeSearchTerms above) so both use the
-            // exact same rules instead of two drifting copies.
-            const { terms: searchTerms, hasUnmatchedTerm } = makeSearchTerms(query, inStock);
-            const termMatches = searchTermMatches;
-
-            const matchAllTerms = (termList) => applyPriceFilter(
-                inStock.filter(p => termList.every(term => termMatches(p, term)))
+            // ─── Catalog-driven scoring search (replaces hardcoded BRAND_KEYWORDS) ───
+            // STEP A — strip filler/stop/size words, leaving meaningful query words; split those
+            // into colors (filter only, never decide the category) vs. generic product-type words
+            // ("shirt", "tshirt") vs. everything else ("specific" words — brand/style/pattern,
+            // e.g. "branded", "polo", "stripe" — read straight from catalog data, not a fixed list).
+            const cleanedQ = cleanSearchQuery(query);
+            const queryWords = cleanedQ.split(/\s+/).filter(w =>
+                w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w) &&
+                !SIZE_KEYWORDS.has(w) && !/^\d+$/.test(w)
             );
-
-            // Cross-group pattern conflict check — a specific style/pattern term (e.g. "stripe")
-            // combined with a generic product-type word that explicitly names a group (e.g.
-            // "tshirt" -> T-Shirts) must never be silently resolved by guessing. If no real
-            // product satisfies the full request (pattern + the explicitly-named group) but the
-            // pattern DOES exist in some other group, that's a genuine "we don't carry that
-            // combination" case, not noise to drop — ask for clarification instead of either
-            // matching the wrong unrelated product (the original bug) or silently substituting in
-            // a different top-level group (an earlier, still-wrong fix for that bug).
-            const specificTerms = searchTerms.filter(t => !GENERIC_PRODUCT_WORDS.has(t));
-            const genericTermUsed = searchTerms.find(t => GENERIC_PRODUCT_WORDS.has(t));
-            let crossGroupConflictReply = null;
-            if (specificTerms.length > 0 && genericTermUsed) {
-                const specificOnlyMatched = matchAllTerms(specificTerms);
-                if (specificOnlyMatched.length > 0 && matchAllTerms(searchTerms).length === 0) {
-                    const requestedParent = GENERIC_TERM_TO_PARENT[genericTermUsed];
-                    const actualParent = getParentCategory(specificOnlyMatched[0].category);
-                    if (requestedParent && requestedParent !== actualParent) {
-                        crossGroupConflictReply = buildCrossGroupConflictReply(specificTerms, specificOnlyMatched[0].category, requestedParent);
-                    }
-                }
-            }
-
-            const terms = searchTerms;
-            let matched = [];
-
-            if (terms.length > 0) {
-                // AND logic: every term must match
-                matched = matchAllTerms(terms);
-
-                // Step 4 — Fallback: only if single term search
-                if (matched.length === 0 && terms.length === 1) {
-                    matched = applyPriceFilter(
-                        inStock.filter(p => termMatches(p, terms[0]))
-                    );
-                }
-            }
+            const colorTerms = queryWords.filter(w => COLOR_KEYWORDS.includes(w));
+            const genericWords = queryWords.filter(w =>
+                GENERIC_PRODUCT_WORDS.has(w) || GENERIC_PRODUCT_WORDS.has(simpleStem(w)));
+            const specificWords = queryWords.filter(w =>
+                !COLOR_KEYWORDS.includes(w) && !GENERIC_PRODUCT_WORDS.has(w) && !GENERIC_PRODUCT_WORDS.has(simpleStem(w)));
 
             // Reset per-flow state regardless of which branch below fires — mirrors the
             // housekeeping the old single-card path always did, minus AWAITING_MODEL_SELECTION/
@@ -4322,61 +4278,101 @@ async function handleIntent(intentResult, session, products, from) {
             session.crossSellShown = (!session.cart || session.cart.length === 0) ? false : session.crossSellShown;
             session.cartCrossSellShown = false;
 
-            if (crossGroupConflictReply) {
-                return crossGroupConflictReply;
+            // A query left with ONLY generic product-type word(s) (e.g. bare "shirt" or "tshirt",
+            // no color and no specific brand/style word) can't confidently resolve to ONE
+            // subcategory — "shirt" alone matches White Shirts, Plain Shirts, Branded Shirts, and
+            // every other real Shirts subcategory all at once. Show the existing numbered
+            // subcategory list for that parent group instead of silently guessing one.
+            if (genericWords.length > 0 && specificWords.length === 0 && colorTerms.length === 0) {
+                const parentName = GENERIC_TERM_TO_PARENT[genericWords[0]] || GENERIC_TERM_TO_PARENT[simpleStem(genericWords[0])];
+                if (parentName) return showSubcategoryListForParent(parentName, products, session);
             }
 
-            // A genuine catalog-unmatched term (e.g. "Korean") means the customer asked for a
-            // specific attribute/origin/brand we don't carry at all — refuse to fall back to ANY
-            // category/product suggestion (that's the bug this fixes: "Korean lelin shirts" used
-            // to fall through to a loose "shirts" match and suggest White Shirts).
-            // Guard: require at least one term DID match the catalog (terms.length > 0). If
-            // every term failed to match (terms is empty), the message was never about a real
-            // product at all — delivery complaints, random text, etc. that somehow slipped
-            // through to SEARCH. In that case fall through to the helpful menu/contact reply
-            // instead of falsely claiming the item is "out of stock".
-            if (hasUnmatchedTerm && terms.length > 0) {
+            if (queryWords.length === 0) {
                 return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
             }
 
-            // A query left with ONLY generic product-type word(s) (e.g. bare "shirt" or "tshirt",
-            // no color and no specific style/subcategory word) can't confidently resolve to ONE
-            // subcategory — "shirt" alone matches White Shirts, Plain Shirts, Lenin Plain, and
-            // every other real Shirts subcategory all at once; "tshirt" alone is just as
-            // ambiguous across T-Shirts, Football T Shirt, Round Neck T Shirt, etc. Picking
-            // matched[0] in that case is really just "whichever happens to be first in the
-            // products array" — that's the bug this fixes ("T.shirs L size venum" used to fall
-            // back to a bare "shirt" match and pick whatever shirt-category product was first,
-            // e.g. White Shirts). Show the existing numbered subcategory list for that parent
-            // group instead of silently guessing one. (`terms.every(generic)` already implies no
-            // color term is present, since no COLOR_KEYWORDS entry is in GENERIC_PRODUCT_WORDS.)
-            if (terms.length > 0 && terms.every(t => GENERIC_PRODUCT_WORDS.has(t)) && matched.length > 0) {
-                const ambiguousParent = getParentCategory(matched[0].category);
-                return showSubcategoryListForParent(ambiguousParent, products, session);
+            // STEP B — build a fresh category-keyword index from the live in-stock catalog (no
+            // hardcoded brand/category list) and score every category by keyword overlap: a word
+            // matching a category NAME counts double a word that only matches inside a product
+            // NAME, so a specific subcategory ("Branded Shirts") naturally outscores an unrelated
+            // category that merely shares a generic word ("shirt").
+            const { index: catalogIndex, vocab: catalogVocab } = buildCatalogIndex(inStock);
+            const { scores: allScores, hasUnmatchedTerm } = scoreCategoryMatches(queryWords, catalogIndex, catalogVocab);
+
+            // A genuine catalog-unmatched word (e.g. "Korean") means the customer asked for a
+            // specific attribute/origin/brand we don't carry at all — refuse to fall back to ANY
+            // category/product suggestion instead of guessing from the remaining words.
+            if (hasUnmatchedTerm) {
+                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
             }
 
-            // Product Availability Check — a color/variant word among the search terms (see
-            // COLOR_KEYWORDS) decides Scenario B (specific product page) vs. Scenario A (generic
-            // "yes, available" + category page). Neither scenario lists products in chat text.
-            const colorTerm = terms.find(t => COLOR_KEYWORDS.includes(t));
-
-            if (colorTerm && matched.length > 0) {
-                return buildSpecificProductReply(matched[0], products);
+            // Cross-group conflict check — a specific brand/style/pattern word (e.g. "stripe")
+            // combined with a generic product-type word that explicitly names a different group
+            // (e.g. "tshirt" -> T-Shirts) must never be silently resolved by guessing. Only flag a
+            // conflict when the implied group's best score doesn't even beat the specific words'
+            // own best category — i.e. the specific words genuinely point elsewhere and the
+            // implied group can't out-compete that on the catalog data itself.
+            if (specificWords.length > 0 && genericWords.length > 0) {
+                const genericTermInQuery = genericWords[0];
+                const impliedParent = GENERIC_TERM_TO_PARENT[genericTermInQuery] || GENERIC_TERM_TO_PARENT[simpleStem(genericTermInQuery)];
+                if (impliedParent) {
+                    const { scores: specificScores } = scoreCategoryMatches(specificWords, catalogIndex, catalogVocab);
+                    let specificBestCat = null, specificBestScore = 0;
+                    for (const [cat, score] of specificScores) {
+                        if (score > specificBestScore) { specificBestScore = score; specificBestCat = cat; }
+                    }
+                    if (specificBestCat && getParentCategory(specificBestCat) !== impliedParent) {
+                        let bestInImpliedParent = null, bestImpliedScore = 0;
+                        for (const [cat, score] of allScores) {
+                            if (getParentCategory(cat) === impliedParent && score > bestImpliedScore) {
+                                bestImpliedScore = score; bestInImpliedParent = cat;
+                            }
+                        }
+                        if (!bestInImpliedParent || bestImpliedScore <= specificBestScore) {
+                            return buildCrossGroupConflictReply(specificWords, specificBestCat, impliedParent);
+                        }
+                    }
+                }
             }
 
-            // Category-only match — re-run without the color term so a mentioned-but-out-of-stock
-            // color (e.g. "stripes shirt blue" with no blue in stock) still resolves to the
-            // category instead of a dead-end "not found".
-            const categoryTerms = colorTerm ? terms.filter(t => t !== colorTerm) : terms;
-            const categoryMatched = colorTerm ? matchAllTerms(categoryTerms) : matched;
-
-            if (categoryMatched.length > 0) {
-                return buildCategoryAvailableReply(categoryMatched[0], products);
+            if (allScores.size === 0) {
+                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
             }
 
-            // Nothing recognizable at all — short pointer to the menu/website instead of dumping
-            // the entire numbered category+subcategory list in chat (see Bug 3).
-            return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+            // Highest score wins; ties broken toward the longer/more specific category name (e.g.
+            // "Branded Shirts" over plain "Shirts") since a longer name carrying the same score
+            // packed more distinct matching words into a more specific label.
+            let bestCategory = null, bestScore = 0;
+            for (const [cat, score] of allScores) {
+                if (score > bestScore || (score === bestScore && cat.length > (bestCategory || '').length)) {
+                    bestScore = score; bestCategory = cat;
+                }
+            }
+
+            const categoryProducts = applyPriceFilter(
+                inStock.filter(p =>
+                    p.category === bestCategory ||
+                    (Array.isArray(p.categories) && p.categories.includes(bestCategory))
+                )
+            );
+            if (categoryProducts.length === 0) {
+                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+            }
+
+            // STEP C — a color/variant word among the search terms decides Scenario B (specific
+            // product page) vs. Scenario A (generic "yes, available" + category page). A
+            // mentioned-but-out-of-stock color (e.g. "stripes shirt blue" with no blue in stock)
+            // still falls through to the category page instead of a dead-end "not found".
+            const colorTerm = colorTerms[0] || null;
+            if (colorTerm) {
+                const colorFiltered = categoryProducts.filter(p => searchTermMatches(p, colorTerm));
+                if (colorFiltered.length > 0) {
+                    return buildSpecificProductReply(colorFiltered[0], products);
+                }
+            }
+
+            return buildCategoryAvailableReply(categoryProducts[0], products);
         }
         default:
             return null;
