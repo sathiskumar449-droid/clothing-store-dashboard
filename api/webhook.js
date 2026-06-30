@@ -209,6 +209,13 @@ export async function saveOrders(orders) {
     }
 }
 
+// Strips the internal "WOO-" storage prefix so the order number shown back to the customer
+// matches exactly what they saw in their original order confirmation and typed back (e.g.
+// "WOO-4949" -> "4949") — see getOrderById above for why that prefix exists at all.
+function displayOrderId(id) {
+    return String(id || '').replace(/^WOO-/, '');
+}
+
 // ── helper for getOrders ──────────────────────────────────────
 function dbRowToOrder(row) {
     const base = {
@@ -229,13 +236,25 @@ function dbRowToOrder(row) {
     return base;
 }
 
-// Look up a single order by its id (or legacy order_id column) for WhatsApp order tracking replies
+// Look up a single order by its id (or legacy order_id column) for WhatsApp order tracking replies.
+// WooCommerce-sourced orders are stored with id = "WOO-<wooOrderId>" (see buildOrderRow in
+// woocommerce-order-webhook.js), but the order confirmation message shown to the customer displays
+// the bare WooCommerce number ("Order #4949") — that's the only value the customer ever sees or
+// types back. A bare numeric orderId is therefore also tried against "WOO-<orderId>" so those
+// (the vast majority of real orders) resolve; ORD-<timestamp> ids from the WhatsApp-native
+// checkout flow are already typed/extracted in full and match the plain id.eq. branch as before.
 async function getOrderById(orderId) {
     try {
+        const idStr = String(orderId);
+        const filters = [`id.eq.${idStr}`, `order_id.eq.${idStr}`];
+        if (/^\d+$/.test(idStr)) {
+            filters.push(`id.eq.WOO-${idStr}`);
+        }
+
         const { data, error } = await supabase
             .from('orders')
             .select('*')
-            .or(`id.eq.${orderId},order_id.eq.${orderId}`)
+            .or(filters.join(','))
             .limit(1);
 
         if (error) throw error;
@@ -2750,10 +2769,13 @@ function detectIntent(text, products = [], session = null) {
         t.includes('when deliver') || t.includes('shipping time') ||
         t.includes('deliver agum') || t.includes('deliver varum') ||
         t.includes('evlo naal') || t.includes('evvalavu naal') ||
-        t.includes('parcel eppo') || t.includes('order eppo');
+        t.includes('parcel eppo') || t.includes('order eppo') ||
+        t.includes('delivery date') || t.includes('delivery when') ||
+        t.includes('when will i get') || t.includes('edhana naal') ||
+        t.includes('7 working days');
 
     if (isDeliveryTime) {
-        return { type: 'FAQ', reply: '🚚 Delivery usually takes 7 working days.' };
+        return { type: 'FAQ', reply: '🚚 Delivery usually takes 7 working days across India with FREE Shipping! 😊\n\nFor your specific order status, please share your Order ID.' };
     }
 
     // ─── SHIPPING CHARGES Combination Match ───
@@ -4129,7 +4151,7 @@ Illana product name sollunga (e.g. "plain shirt"), naan exact colours kaatturen!
 // (the keyword logic has them as inline string literals inside FAQ/global-handler branches —
 // duplicated here verbatim rather than extracted, so neither path can drift from the other
 // silently if one is edited later).
-const AI_DELIVERY_TIME_REPLY = "🚚 Delivery usually takes 7 working days.";
+const AI_DELIVERY_TIME_REPLY = "🚚 Delivery usually takes 7 working days across India with FREE Shipping! 😊\n\nFor your specific order status, please share your Order ID.";
 const AI_WHOLESALE_REPLY = "For bulk orders, please contact us directly. Our team will get in touch with you. 📞";
 const AI_FIT_QUESTION_REPLY = `📏 Size Guide:\n\nS - 38" chest\nM - 40" chest\nL - 42" chest\nXL - 44" chest\n\nIf you share your usual size, naan confirm panni solren correct fit varuma! 😊`;
 const AI_ACK_BUTTONS = {
@@ -4362,7 +4384,7 @@ async function routeClassifiedIntent(c, userMessage, products, session) {
                 const order = await getOrderById(c.order_id);
                 if (order) {
                     return {
-                        replyText: `📦 Thank you! We found your order (#${order.id}).\n\nOur team will dispatch it shortly and share the tracking ID with you here on WhatsApp once it's shipped. 🙏\n\nNeed anything else? Reply 'menu' to continue shopping.`,
+                        replyText: `📦 Thank you! We found your order (#${displayOrderId(order.id)}).\n\nOur team will dispatch it shortly and share the tracking ID with you here on WhatsApp once it's shipped. 🙏\n\nNeed anything else? Reply 'menu' to continue shopping.`,
                         sendImages: [],
                         _aiRoute: 'order_found'
                     };
@@ -4481,7 +4503,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const order = await getOrderById(trackedOrderId);
         if (order) {
             return {
-                replyText: `📦 Thank you! We found your order (#${order.id}).\n\nOur team will dispatch it shortly and share the tracking ID with you here on WhatsApp once it's shipped. 🙏\n\nNeed anything else? Reply 'menu' to continue shopping.`,
+                replyText: `📦 Thank you! We found your order (#${displayOrderId(order.id)}).\n\nOur team will dispatch it shortly and share the tracking ID with you here on WhatsApp once it's shipped. 🙏\n\nNeed anything else? Reply 'menu' to continue shopping.`,
                 sendImages: []
             };
         }
@@ -5508,8 +5530,9 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
 
     // FAQ MATCHES
-    if (textLower.includes("delivery eppo") || textLower.includes("delivery time") || textLower.includes("evlo naal") || textLower.includes("evvalavu naal") || textLower.includes("kku evlo naal") || textLower.includes("vanthudum")) {
-        return { replyText: "🚚 Delivery usually takes 7 working days.", sendImages: [] };
+    if (textLower.includes("delivery eppo") || textLower.includes("delivery time") || textLower.includes("evlo naal") || textLower.includes("evvalavu naal") || textLower.includes("kku evlo naal") || textLower.includes("vanthudum") ||
+        textLower.includes("delivery date") || textLower.includes("delivery when") || textLower.includes("when will i get") || textLower.includes("edhana naal") || textLower.includes("7 working days")) {
+        return { replyText: "🚚 Delivery usually takes 7 working days across India with FREE Shipping! 😊\n\nFor your specific order status, please share your Order ID.", sendImages: [] };
     }
     // Guard: don't reply "Delivery charge is ₹80" when the customer is complaining
     // about a fee issue — hand off to the team instead.
