@@ -142,6 +142,7 @@ function isDeliveryChargeComplaint(text = '') {
 const SIZE_QTY_AVAILABLE_REPLY = `✅ Yes, available!\n\nPlease check our website for all sizes, colours & to place your order 👇\nhttps://supercollections.in/shop/`;
 const COD_NOT_AVAILABLE_REPLY = `😊 Sorry, Cash on Delivery is not available currently.\n\nWe accept secure online payments only. Just place your order on our website & pay easily 👇\nhttps://supercollections.in/shop/`;
 const ONLINE_PAYMENT_INFO_REPLY = `💳 We accept secure online payments!\n\nJust place your order on our website and pay easily via UPI/cards 👇\nhttps://supercollections.in/shop/`;
+const HOW_TO_ORDER_REPLY = `🛍️ Ordering is super easy!\n\n1️⃣ Type *menu* to browse, or tell me what you want (e.g. "plain shirt")\n2️⃣ Tap the website link we send you\n3️⃣ On the website: choose size & colour, add to cart\n4️⃣ Checkout & pay securely online ✅\n\nIt takes just 2 minutes! 😊\n\nNeed help? Contact our team:\n📞 +91 8668066503`;
 const GENERAL_COLLECTION_REPLY = `🛍️ Yes, we have lots of collections!\n\nPlease visit our website to explore everything 👇\nhttps://supercollections.in/shop/`;
 
 // Distinctive multi-letter size tokens (XL, XXL, 2XL, 3XL, XS) are safe to match anywhere in the
@@ -2731,13 +2732,25 @@ function detectIntent(text, products = [], session = null) {
         };
     }
 
-    const howToOrderKeywords = ['how to order', 'how to place order', 'how i place the order', 'how to ordee',
-        "i don't know how to order", 'i dont know how to order', 'ordering pannrathu epdi'];
+    // ─── HOW_TO_ORDER: customer asking about the ordering PROCESS, not ready to order yet ───
+    // Scoped to explicit "how (do/to) I order/buy/purchase" phrasing only — it must never catch
+    // "I want to order [product]" (that's a ready-to-buy product query, handled later by the
+    // category/search section) or anything about an existing order (status/tracking/complaint),
+    // which are all matched above this block (deliveryComplaintPhrases at the very top of this
+    // function, trackingKeywords just above) or — for "order status" specifically — by the
+    // fallback FAQ chain further down in _handleSalesAssistantJS, since no keyword here contains
+    // "status". Checked before CHECKOUT below since "how to place order"/"how to buy" would
+    // otherwise be misread as a checkout trigger.
+    const howToOrderKeywords = [
+        'how to order', 'how to place order', 'how i place the order', 'how to ordee',
+        'how do i order', 'ordering pannrathu epdi', 'order epdi pannarathu',
+        'order epdi pannrathu', 'epdi order pannrathu', 'order panrathu epdi',
+        'how to buy', 'how to purchase', "i don't know how to order", 'i dont know how to order',
+        'order how', 'ordering how', 'how to order in website', 'website la epdi order pannrathu',
+        'order eppadi', 'vangarathu epdi'
+    ];
     if (howToOrderKeywords.some(k => t.includes(k))) {
-        return {
-            type: 'FAQ',
-            reply: `🛍️ Ordering is easy!\n1. Type *menu* to browse categories\n2. Tap any product link to open our website\n3. Add to cart & checkout — it takes 2 minutes!\nNeed help? Contact our team: +91 8668066503`
-        };
+        return { type: 'FAQ', reply: HOW_TO_ORDER_REPLY };
     }
 
     // The exact-match 'location'/'store location' triggers above (checked earlier, before HUMAN)
