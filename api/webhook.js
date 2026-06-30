@@ -2627,6 +2627,36 @@ const GREETING_REGEX = new RegExp(
     'iu'
 );
 
+// ─── ACKNOWLEDGMENT matching (used by detectIntent's ACKNOWLEDGMENT check below) ───
+// Same shape as GREETING_REGEX: base words match on their own, phrases are multi-word
+// acknowledgments matched whole, both optionally followed by an address suffix and/or emoji.
+// "thanks"/"thank you"/"tq"/"ty"/"நன்றி" are included for completeness but in practice the
+// existing THANKS check (below, in detectIntent) already catches those first and gives a more
+// specific "You're welcome!" reply — this regex only ends up handling them if THANKS doesn't.
+const ACK_BASE_WORDS = [
+    'ok', 'okay', 'okk', 'okey', 'k', 'kk', 'sure', 'alright', 'alrite', 'fine', 'good', 'great',
+    'nice', 'done', 'yes', 'ya', 'yeah', 'yep', 'yup', 'aye', 'roger', 'super',
+    'thanks', 'tq', 'ty', 'sari', 'seri', 'aama', 'aamaa', 'aam',
+    'hmm', 'hm', 'mmm', 'mm', 'varen',
+    '\u{1F44D}', '\u{1F64F}', // 👍 🙏
+    'சரி', 'ஆமா', 'ஆம்', 'ஓகே', 'நன்றி', 'தேங்க்ஸ்'
+];
+const ACK_PHRASES = [
+    'thank you', 'ok da', 'சரி சார்',
+    'visit directly', 'i will visit', 'ok i will come', 'naan varen'
+];
+// Casual Tanglish address/filler suffixes an acknowledgment is commonly said with — "da"/"na"/"pa"
+// here are distinct from GREETING_SUFFIXES (sir/bro/anna/madam/boss/sami also apply to ack).
+const ACK_SUFFIXES = ['sir', 'bro', 'anna', 'madam', 'boss', 'sami', 'da', 'na', 'pa'];
+const ACK_EMOJI = '[\u{1F44D}\u{1F64F}\u{1F60A}\u{2705}]'; // 👍 🙏 😊 ✅
+const ACK_REGEX = new RegExp(
+    '^(?:' + [...ACK_PHRASES, ...ACK_BASE_WORDS].sort((a, b) => b.length - a.length).join('|') + ')' +
+    '(?:\\s*,?\\s*(?:' + ACK_SUFFIXES.join('|') + '))*' +
+    '(?:\\s*' + ACK_EMOJI + ')*' +
+    '\\s*[!.,]*\\s*$',
+    'iu'
+);
+
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
 
@@ -3090,6 +3120,23 @@ function detectIntent(text, products = [], session = null) {
     const thankYouKeywords = ['tq', 'thank', 'thanks', 'thanku', 'thankyou', 'thnku', 'thnx', 'thx', 'tnx', 'nandri', 'nanri', 'நன்றி'];
     if (words.some(w => thankYouKeywords.includes(w))) {
         return { type: 'THANKS' };
+    }
+
+    // ─── ACKNOWLEDGMENT Intent ───
+    // Checked last, right before the UNKNOWN fallback, so a pure "Ok sir"/"Sure"/"Visit directly"
+    // gets a short acknowledgment instead of the generic "Sorry, I didn't quite get that!".
+    // ACK_REGEX is anchored ^...$ (same approach as GREETING_REGEX above) so it only fires when
+    // the ENTIRE message is the acknowledgment — "Ok I want plain shirt" still falls through to
+    // SEARCH since "i want plain shirt" isn't a recognized suffix/emoji.
+    // Skipped while the session is mid-flow at an active decision point (cart/order confirm,
+    // more-items, etc.) where the SAME words ("ok"/"yes") must progress that specific decision —
+    // those are handled by the state-specific handlers further down in handleSalesAssistantJS,
+    // never here. Reuses AI_CLASSIFIER_BLOCKED_STATES since it already enumerates exactly those
+    // decision states (declared later in this file but already initialized by the time any
+    // request calls detectIntent, since module-level consts run once at load).
+    const inActiveDecisionState = session && AI_CLASSIFIER_BLOCKED_STATES.has(session.state);
+    if (!inActiveDecisionState && ACK_REGEX.test(t)) {
+        return { type: 'ACKNOWLEDGMENT' };
     }
 
     return { type: 'UNKNOWN' };
@@ -4049,6 +4096,12 @@ async function handleIntent(intentResult, session, products, from) {
                 sendImages: []
             };
         }
+        case 'ACKNOWLEDGMENT': {
+            return {
+                replyText: ACKNOWLEDGMENT_REPLY,
+                sendImages: []
+            };
+        }
         case 'CHECKOUT': {
             if (!session.cart || session.cart.length === 0) {
                 let replyText = "Your cart is empty. 😊 Please add products to your cart first.";
@@ -4330,6 +4383,10 @@ const MULTIPLE_NUMBERS_REPLY = `😊 Please reply with just ONE number at a time
 // Showing "reply with a number from the list" when no list was ever shown is confusing, so we use this
 // friendlier, neutral nudge instead.
 const GENERIC_FALLBACK_REPLY = `Sorry, I didn't quite get that! 😊 Type *menu* to browse our shop, or *order help* if you have a question about your order.`;
+
+// Reply for the ACKNOWLEDGMENT intent (see ACK_REGEX in detectIntent) — a pure "Ok sir"/"Sure"/
+// "Visit directly" with no real request attached.
+const ACKNOWLEDGMENT_REPLY = `👍 Got it! Anything else?\n\nType *menu* to browse, or just tell me what you need! 😊`;
 
 // Standalone color question with no product/category mentioned at all (e.g. "colours", "colors
 // available?", "enna colour irukku") — checked in the FAQ fallback chain below, well after
@@ -4720,9 +4777,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     // Fires before intent detection so "...", emoji-only messages, and pure-symbol strings
     // never reach looksLikeProductQuery or the SEARCH pipeline (which used to return
     // "couldn't find" for these). Matches any message with no letters, digits, or Tamil
-    // characters — catches dots, ellipsis, standalone emoji, and lone punctuation.
+    // characters — catches dots, ellipsis, standalone emoji, and lone punctuation. A lone
+    // greeting/acknowledgment emoji (e.g. "👍", "🙏") is excluded from this guard so it reaches
+    // detectIntent below and gets the proper GREETING/ACKNOWLEDGMENT reply instead of this
+    // generic one.
     const _strippedForMeaningless = userMessage.trim();
-    if (_strippedForMeaningless.length > 0 && !/[a-zA-Z0-9஀-௿]/.test(_strippedForMeaningless)) {
+    if (_strippedForMeaningless.length > 0 && !/[a-zA-Z0-9஀-௿]/.test(_strippedForMeaningless)
+        && !GREETING_REGEX.test(textLower) && !ACK_REGEX.test(textLower)) {
         return {
             replyText: `👋 Hi! How can I help you?\nType *menu* to browse our collection, or tell me what you're looking for! 😊`,
             sendImages: []
