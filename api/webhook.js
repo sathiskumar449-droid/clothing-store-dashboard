@@ -2574,6 +2574,60 @@ Video la irukura product name type pannunga, naan check panni solleren 👕
 
 Illana *menu* type pannunga, categories paathu website la  paarunga 🛍️`;
 
+// ─── Shared FAQ-path constants (also referenced by the AI classifier, when enabled) ───
+// Kept together here, away from the AI-classifier-only section further down, so removing/
+// disabling that section can never take these out from under the keyword path.
+
+// States where the bot is actively waiting for a specific raw number (phone/pincode),
+// so a bare numeric message must NOT be hijacked as an order-id lookup.
+const NUMERIC_INPUT_STATES = ['AWAITING_CHECKOUT_PHONE', 'AWAITING_CHECKOUT_PINCODE'];
+
+// Used when session.state nominally expects a numbered-list reply (e.g. AWAITING_SUBCATEGORY_SELECTION,
+// AWAITING_MODEL_SELECTION) but there's no actual list backing it (session.subCategories /
+// session.searchProducts is empty) — typically a freshly reset/idle session left over after checkout.
+// Showing "reply with a number from the list" when no list was ever shown is confusing, so we use this
+// friendlier, neutral nudge instead.
+const GENERIC_FALLBACK_REPLY = `Sorry, I didn't quite get that! 😊 Type *menu* to browse our shop, or *order help* if you have a question about your order.`;
+
+// Standalone color question with no product/category mentioned at all (e.g. "colours", "colors
+// available?", "enna colour irukku") — checked in the FAQ fallback chain below, well after
+// detectIntent's SEARCH-routing checks (parentCategories/searchKeywords/looksLikeProductQuery)
+// have already failed to find a category match, and before the final GENERIC_FALLBACK_REPLY.
+// Reaching that FAQ chain at all already implies no category/product keyword was recognized —
+// SEARCH always returns its own reply and never falls through here — so this only needs to check
+// for a color word, not separately re-verify the absence of a category word.
+const GENERIC_COLOR_INQUIRY_REPLY = `🎨 Yes! We have lots of colours available across all our collections 😊
+
+Check them out here 👇
+https://supercollections.in/shop/
+
+Illana product name sollunga (e.g. "plain shirt"), naan exact colours kaatturen!`;
+
+// Session states where a typed "yes"/"no"/"ok" (or other short reply) must progress a specific
+// pending decision (cart/order/cancel confirmation, structured data entry like checkout
+// name/address, size/model-number selection) rather than be reinterpreted as a new free-text
+// request. Used both to gate the ACKNOWLEDGMENT intent below (a bare "ok sir" mid-decision must
+// resolve that decision, not get the generic "Got it!" reply) and, when the AI classifier is
+// enabled, to keep the AI from intercepting these same structured states.
+const ACTIVE_DECISION_STATES = new Set([
+    ...NUMERIC_INPUT_STATES,
+    'AWAITING_CHECKOUT_NAME',
+    'AWAITING_CHECKOUT_ADDRESS',
+    'AWAITING_CHECKOUT_USE_SAVED_ADDRESS',
+    'AWAITING_PRODUCT_SIZE',
+    'AWAITING_MODEL_SELECTION',
+    'AWAITING_CART_CONFIRM',
+    'AWAITING_MORE_ITEMS',
+    'AWAITING_HELP_CONFIRM',
+    'AWAITING_ORDER_CONFIRMATION',
+    'AWAITING_PENDING_CART_DECISION',
+    'AWAITING_POST_ADD_TO_CART_DECISION',
+    'AWAITING_RECOMMENDATION_CHOICE',
+    'AWAITING_CANCEL_NO_CART_DECISION',
+    'AWAITING_CANCEL_PENDING_DECISION',
+    'AWAITING_CART_SUMMARY_DECISION'
+]);
+
 // True if `text` is ONLY digits plus light separators (commas, "&", "and", whitespace/newlines)
 // — e.g. "1,2 & 3", "1 2 3", "1\n2\n3" — as opposed to ordinary free text that merely contains a
 // digit somewhere (e.g. "I want 5 shirts" or an order ID like "4406"), which must never be
@@ -3131,10 +3185,9 @@ function detectIntent(text, products = [], session = null) {
     // Skipped while the session is mid-flow at an active decision point (cart/order confirm,
     // more-items, etc.) where the SAME words ("ok"/"yes") must progress that specific decision —
     // those are handled by the state-specific handlers further down in handleSalesAssistantJS,
-    // never here. Reuses AI_CLASSIFIER_BLOCKED_STATES since it already enumerates exactly those
-    // decision states (declared later in this file but already initialized by the time any
-    // request calls detectIntent, since module-level consts run once at load).
-    const inActiveDecisionState = session && AI_CLASSIFIER_BLOCKED_STATES.has(session.state);
+    // never here. Reuses ACTIVE_DECISION_STATES since it already enumerates exactly those
+    // decision states (declared earlier in this file).
+    const inActiveDecisionState = session && ACTIVE_DECISION_STATES.has(session.state);
     if (!inActiveDecisionState && ACK_REGEX.test(t)) {
         return { type: 'ACKNOWLEDGMENT' };
     }
@@ -4347,10 +4400,6 @@ async function handleIntent(intentResult, session, products, from) {
     }
 }
 
-// States where the bot is actively waiting for a specific raw number (phone/pincode),
-// so a bare numeric message must NOT be hijacked as an order-id lookup.
-const NUMERIC_INPUT_STATES = ['AWAITING_CHECKOUT_PHONE', 'AWAITING_CHECKOUT_PINCODE'];
-
 // Extract an Order ID from free-form customer text. Supports "ORD-<digits>",
 // "order #1234" / "order 1234", and a bare number (3+ digits) on its own.
 function extractOrderId(rawText, skipBareNumber = false) {
@@ -4377,30 +4426,9 @@ const hasMultipleNumbers = (text) => {
 
 const MULTIPLE_NUMBERS_REPLY = `😊 Please reply with just ONE number at a time.\n\nFor example, type *2* to see that category first. Once you're done, you can type another number like *7* to browse that category too!`;
 
-// Used when session.state nominally expects a numbered-list reply (e.g. AWAITING_SUBCATEGORY_SELECTION,
-// AWAITING_MODEL_SELECTION) but there's no actual list backing it (session.subCategories /
-// session.searchProducts is empty) — typically a freshly reset/idle session left over after checkout.
-// Showing "reply with a number from the list" when no list was ever shown is confusing, so we use this
-// friendlier, neutral nudge instead.
-const GENERIC_FALLBACK_REPLY = `Sorry, I didn't quite get that! 😊 Type *menu* to browse our shop, or *order help* if you have a question about your order.`;
-
 // Reply for the ACKNOWLEDGMENT intent (see ACK_REGEX in detectIntent) — a pure "Ok sir"/"Sure"/
 // "Visit directly" with no real request attached.
 const ACKNOWLEDGMENT_REPLY = `👍 Got it! Anything else?\n\nType *menu* to browse, or just tell me what you need! 😊`;
-
-// Standalone color question with no product/category mentioned at all (e.g. "colours", "colors
-// available?", "enna colour irukku") — checked in the FAQ fallback chain below, well after
-// detectIntent's SEARCH-routing checks (parentCategories/searchKeywords/looksLikeProductQuery)
-// have already failed to find a category match, and before the final GENERIC_FALLBACK_REPLY.
-// Reaching that FAQ chain at all already implies no category/product keyword was recognized —
-// SEARCH always returns its own reply and never falls through here — so this only needs to check
-// for a color word, not separately re-verify the absence of a category word.
-const GENERIC_COLOR_INQUIRY_REPLY = `🎨 Yes! We have lots of colours available across all our collections 😊
-
-Check them out here 👇
-https://supercollections.in/shop/
-
-Illana product name sollunga (e.g. "plain shirt"), naan exact colours kaatturen!`;
 
 // =====================================================================================
 // AI MESSAGE CLASSIFIER (Claude Haiku) — replaces the keyword/substring intent matching
@@ -4430,32 +4458,8 @@ const AI_CLASSIFIER_TIMEOUT_MS = 8000;
 // customers ask product/order/support questions directly, without ever browsing the numbered
 // menu first, so restricting the AI to only the 3 "browsing" states (the original design) left
 // most real conversations on the old keyword path. Instead we BLOCK the AI only where a reply is
-// genuinely structured DATA/DECISION the flow is waiting for, never a new free-text question:
-//   - NUMERIC_INPUT_STATES (phone/pincode digits)
-//   - checkout name/address/saved-address entry — free text, but literal data capture, not intent
-//   - product size / model-number selection
-//   - cart/order/cancel decision points — a typed "yes"/"no"/"ok" here must progress that specific
-//     decision (e.g. confirm the order, add more items, clear the cart). The AI has no dedicated
-//     route for a bare confirmation (closest fit is "acknowledgment"), so letting it intercept
-//     these would derail revenue-critical order completion instead of progressing the decision.
-const AI_CLASSIFIER_BLOCKED_STATES = new Set([
-    ...NUMERIC_INPUT_STATES,
-    'AWAITING_CHECKOUT_NAME',
-    'AWAITING_CHECKOUT_ADDRESS',
-    'AWAITING_CHECKOUT_USE_SAVED_ADDRESS',
-    'AWAITING_PRODUCT_SIZE',
-    'AWAITING_MODEL_SELECTION',
-    'AWAITING_CART_CONFIRM',
-    'AWAITING_MORE_ITEMS',
-    'AWAITING_HELP_CONFIRM',
-    'AWAITING_ORDER_CONFIRMATION',
-    'AWAITING_PENDING_CART_DECISION',
-    'AWAITING_POST_ADD_TO_CART_DECISION',
-    'AWAITING_RECOMMENDATION_CHOICE',
-    'AWAITING_CANCEL_NO_CART_DECISION',
-    'AWAITING_CANCEL_PENDING_DECISION',
-    'AWAITING_CART_SUMMARY_DECISION'
-]);
+// genuinely structured DATA/DECISION the flow is waiting for, never a new free-text question —
+// see ACTIVE_DECISION_STATES (declared earlier in this file) for the full list.
 
 // WhatsApp interactive-button taps are delivered as the button's own id string (e.g.
 // "cancel_continue_shopping", "help_yes", "no_checkout") — never natural language — so they must
@@ -4803,13 +4807,13 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
     // ─── AI Classifier (Claude Haiku) — the DEFAULT handler for free text in every state when
     // USE_AI_CLASSIFIER is on, except the structured-data-entry states / button payloads / bare
-    // numbers blocked below (see AI_CLASSIFIER_BLOCKED_STATES). On any classifier failure this
+    // numbers blocked below (see ACTIVE_DECISION_STATES). On any classifier failure this
     // returns the existing generic fallback reply rather than throwing, so flipping
     // USE_AI_CLASSIFIER off always instantly restores the exact behavior below with zero risk.
     if (USE_AI_CLASSIFIER && ANTHROPIC_API_KEY) {
         if (isNumbersOnlyText(userMessage)) {
             console.log(`[AIClassifier] skipped: numbers-only message=${JSON.stringify(userMessage)}`);
-        } else if (AI_CLASSIFIER_BLOCKED_STATES.has(session.state)) {
+        } else if (ACTIVE_DECISION_STATES.has(session.state)) {
             console.log(`[AIClassifier] skipped: state=${session.state} (structured data-entry) message=${JSON.stringify(userMessage)}`);
         } else if (BUTTON_PAYLOAD_PATTERN.test(textLower.trim())) {
             console.log(`[AIClassifier] skipped: button-payload message=${JSON.stringify(userMessage)}`);
