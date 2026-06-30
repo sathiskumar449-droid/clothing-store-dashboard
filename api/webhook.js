@@ -143,6 +143,8 @@ const SIZE_QTY_AVAILABLE_REPLY = `✅ Yes, available!\n\nPlease check our websit
 const COD_NOT_AVAILABLE_REPLY = `😊 Sorry, Cash on Delivery is not available currently.\n\nWe accept secure online payments only. Just place your order on our website & pay easily 👇\nhttps://supercollections.in/shop/`;
 const ONLINE_PAYMENT_INFO_REPLY = `💳 We accept secure online payments!\n\nJust place your order on our website and pay easily via UPI/cards 👇\nhttps://supercollections.in/shop/`;
 const HOW_TO_ORDER_REPLY = `🛍️ Ordering is super easy!\n\n1️⃣ Type *menu* to browse, or tell me what you want (e.g. "plain shirt")\n2️⃣ Tap the website link we send you\n3️⃣ On the website: choose size & colour, add to cart\n4️⃣ Checkout & pay securely online ✅\n\nIt takes just 2 minutes! 😊\n\nNeed help? Contact our team:\n📞 +91 8668066503`;
+const SHOP_ADDRESS_REPLY = `📍 Super Collections\nUdumalpet, Tamil Nadu\n\nVisit pannanuma illa direction venuma? Engateam ah contact pannunga:\n📞 +91 8668066503\n\nOnline la order panna *menu* type pannunga! 😊`;
+const STOCK_OUT_COMPLAINT_REPLY = `😔 Sorry for the trouble! Stock vanthathum udane update panrom. 🙏\n\nPlease konja naal kazhichu check pannunga, illa engateam ah contact pannunga:\n📞 +91 8668066503`;
 const GENERAL_COLLECTION_REPLY = `🛍️ Yes, we have lots of collections!\n\nPlease visit our website to explore everything 👇\nhttps://supercollections.in/shop/`;
 
 // Distinctive multi-letter size tokens (XL, XXL, 2XL, 3XL, XS) are safe to match anywhere in the
@@ -2753,16 +2755,24 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: HOW_TO_ORDER_REPLY };
     }
 
+    // ─── INTENT 1: Shop Address / Location Request ───
     // The exact-match 'location'/'store location' triggers above (checked earlier, before HUMAN)
     // already send a richer location card via sendLocationCard — this only catches the other
-    // phrasings that fall through to here instead, e.g. "where is your shop".
-    const shopLocationKeywords = ['where is your shop', 'shop located', 'shop address', 'store location',
-        'kadai enga', 'store address', 'shop enga', 'store enga', 'location'];
-    if (shopLocationKeywords.some(k => t.includes(k))) {
-        return {
-            type: 'FAQ',
-            reply: `📍 Super Collections, Udumalpet.\nFor exact directions or to visit, contact: +91 8668066503\nOr shop online anytime — type *menu*! 😊`
-        };
+    // phrasings that fall through to here instead, e.g. "where is your shop". Skipped entirely
+    // while the bot is mid-checkout collecting the CUSTOMER's own delivery address
+    // (AWAITING_CHECKOUT_ADDRESS) — a reply like "Address: 12 Main Street..." there is normal
+    // data entry, not a request for the shop's address, and must reach the existing checkout
+    // address-capture handling further down instead of being hijacked by the bare "address"
+    // trigger below.
+    const isCollectingCheckoutAddress = session && session.state === 'AWAITING_CHECKOUT_ADDRESS';
+    const shopLocationKeywords = [
+        'address', 'address send me', 'send address', 'shop address', 'store address',
+        'shop location', 'store location', 'where is your shop', 'shop enga', 'store enga',
+        'kadai enga', 'location', 'shop located', 'address kudunga', 'where are you located',
+        'shop where'
+    ];
+    if (!isCollectingCheckoutAddress && shopLocationKeywords.some(k => t.includes(k))) {
+        return { type: 'FAQ', reply: SHOP_ADDRESS_REPLY };
     }
 
     // 2. CHECKOUT Intent
@@ -3011,6 +3021,22 @@ function detectIntent(text, products = [], session = null) {
     const inStructuredSizeQtyFlow = session && SIZE_QTY_STRUCTURED_STATES.includes(session.state);
     if (!inStructuredSizeQtyFlow && isSizeQtyAvailabilityQuery(t)) {
         return { type: 'FAQ', reply: SIZE_QTY_AVAILABLE_REPLY };
+    }
+
+    // ─── INTENT 2: Stock-out / Website Complaint ───
+    // A complaint that EVERYTHING on the site looks unavailable, not a question about one
+    // product's stock — checked only once no parent-category word matched above, so a real
+    // product query that genuinely has no stock (e.g. "Korean shirt iruka") still falls through
+    // to the normal SEARCH/not-found handling instead of being treated as a site-wide complaint.
+    // This is a complaint we can't auto-resolve, so it routes straight to the human team.
+    const stockOutComplaintPhrases = [
+        'all stockout', 'all stock out', 'everything out of stock', 'all out of stock',
+        'ellam stock out', 'ellame stock out', 'stock out aaguthu', 'website la stock illa',
+        'everything showing out of stock', 'no stock', 'all sold out', 'stock illa',
+        'out of stock kaattuthu'
+    ];
+    if (stockOutComplaintPhrases.some(p => t.includes(p))) {
+        return { type: 'FAQ', reply: STOCK_OUT_COMPLAINT_REPLY };
     }
 
     const searchKeywords = ['printed', 'linen', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
