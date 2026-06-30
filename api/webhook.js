@@ -2599,6 +2599,34 @@ function extractMenuNumbers(text) {
 // rejecting the whole message as unparseable (see MULTIPLE_CATEGORY_NOTE callers below).
 const MULTIPLE_CATEGORY_NOTE = "You mentioned multiple categories. Here's the first one. Reply with another number if you want to see another category.";
 
+// ─── GREETING matching (used by detectIntent's GREETING check below) ───
+// Base words match on their own; phrases are multi-word greetings matched whole. Tamil entries
+// are listed verbatim (toLowerCase()/trim() in detectIntent don't affect Tamil script, only the
+// Latin-script ones), including "vணக்கம்" — a common mixed-script mistype of "வணக்கம்" left in
+// deliberately so it still matches.
+const GREETING_BASE_WORDS = [
+    'hi', 'hii', 'hai', 'haii', 'hay', 'hey', 'hello', 'helo', 'yo', 'sup',
+    'gm', 'ge', 'namaste', 'namaskaram',
+    'vanakkam', 'vanakam', 'vணக்கம்',
+    'வணக்கம்', 'ஹாய்', 'ஹலோ'
+];
+const GREETING_PHRASES = [
+    'good morning', 'good evening', 'good afternoon',
+    'வணக்கம் சார்', 'வணக்கம் அண்ணா', 'காலை வணக்கம்', 'மாலை வணக்கம்',
+    'kaalai vanakkam', 'maalai vanakkam'
+];
+// Address terms a greeting is commonly suffixed with — kept separate from GREETING_PHRASES so
+// e.g. "hai sir"/"hello boss"/"good morning sir" all match without enumerating every combination.
+const GREETING_SUFFIXES = ['sir', 'bro', 'anna', 'madam', 'boss', 'sami'];
+const GREETING_EMOJI = '[\u{1F64F}\u{1F44B}]'; // 🙏 (folded hands), 👋 (waving hand)
+const GREETING_REGEX = new RegExp(
+    '^(?:' + [...GREETING_PHRASES, ...GREETING_BASE_WORDS].sort((a, b) => b.length - a.length).join('|') + ')' +
+    '(?:\\s*,?\\s*(?:' + GREETING_SUFFIXES.join('|') + '))*' +
+    '(?:\\s*' + GREETING_EMOJI + ')*' +
+    '\\s*[!.,]*\\s*$',
+    'iu'
+);
+
 function detectIntent(text, products = [], session = null) {
     const t = text.toLowerCase().trim();
 
@@ -2957,9 +2985,12 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: 'We offer fixed pricing as our products are already at the best possible price. Thank you for understanding! 😊🔥' };
     }
 
-    // 4. GREETING Intent
-    const greetKeywords = ['hi', 'hello', 'hey', 'vanakkam', 'hai', 'hii', 'yo', 'sup'];
-    if (greetKeywords.some(k => t === k || t === k + ' bro' || t === k + ' anna')) {
+    // 4. GREETING Intent — pure/standalone greetings only (English, Tanglish, Tamil), optionally
+    // followed by an address term (sir/bro/anna/madam/boss/sami) and/or a 🙏/👋 emoji. Matched
+    // against the WHOLE message (^...$), so a greeting attached to a real request — e.g. "Hi, do
+    // you have plain shirts?" — never matches here and instead falls through to the SEARCH/FAQ
+    // checks below, which take priority.
+    if (GREETING_REGEX.test(t)) {
         return { type: 'GREETING' };
     }
 
