@@ -115,7 +115,27 @@ const TOP_CATEGORY_MENU_TEXT = `*Select a Category* 📋
 7️⃣ New Arrivals`;
 
 const CUSTOMER_SUPPORT_MESSAGE = "Customer Support\n+91 8668066503\n+91 7418755096";
+const DELIVERY_CHARGE_SUPPORT_REPLY = `🙏 Sorry about that. For delivery charge-related concerns, please contact our team and we'll help you further:\n📞 +91 8668066503\n📞 +91 7418755096`;
 const ORDER_GUIDANCE_VIDEO_FALLBACK = "Order Guidance Video\nhttps://drive.google.com/file/d/1wXwDqhYUpB_uv6v38kl9Gdh6mX2fTykG/view?usp=drivesdk";
+
+function isDeliveryChargeComplaint(text = '') {
+    const normalized = String(text || '').toLowerCase();
+    const deliveryChargeTerms = [
+        'delivery fee', 'delivery charge', 'delivery charges',
+        'shipping fee', 'shipping charge', 'shipping charges',
+        'shipping cost', 'courier fee', 'courier charge'
+    ];
+    const complaintSignals = [
+        'too high', 'very high', 'so high', 'high bro', 'too much',
+        'costly', 'expensive', 'not fair', 'unfair', 'wrong',
+        'problem', 'issue', 'error', 'bug', 'extra charge',
+        'extra fee', 'overcharged', 'over charged', 'romba jasthi',
+        'romba jaasthi', 'jasthi', 'jaasthi', 'adhigam'
+    ];
+
+    return deliveryChargeTerms.some(term => normalized.includes(term)) &&
+        complaintSignals.some(signal => normalized.includes(signal));
+}
 
 export async function getProducts() {
     try {
@@ -2745,6 +2765,12 @@ function detectIntent(text, products = [], session = null) {
         'shipping cost', 'shipping charge', 'courier fee', 'courier charge'
     ];
     const _hasFeeProblemPhrase = _feeProblemPhrases.some(k => t.includes(k));
+    if (isDeliveryChargeComplaint(t)) {
+        return {
+            type: 'FAQ',
+            reply: DELIVERY_CHARGE_SUPPORT_REPLY
+        };
+    }
     const _hasDeliveryFeeComplaint = _deliveryFeeTerms.some(k => t.includes(k)) &&
         _checkoutComplaintSignals.some(s => t.includes(s));
 
@@ -2785,7 +2811,7 @@ function detectIntent(text, products = [], session = null) {
         t.includes('shipping fee') || t.includes('delivery amount') || t.includes('shipping amount');
 
     if (isShippingCharge) {
-        return { type: 'FAQ', reply: '🚚 Delivery charge is ₹80.' };
+        return { type: 'FAQ', reply: DELIVERY_CHARGE_SUPPORT_REPLY };
     }
 
     // ─── COD Combination Match ───
@@ -5534,14 +5560,16 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         textLower.includes("delivery date") || textLower.includes("delivery when") || textLower.includes("when will i get") || textLower.includes("edhana naal") || textLower.includes("7 working days")) {
         return { replyText: "🚚 Delivery usually takes 7 working days across India with FREE Shipping! 😊\n\nFor your specific order status, please share your Order ID.", sendImages: [] };
     }
-    // Guard: don't reply "Delivery charge is ₹80" when the customer is complaining
-    // about a fee issue — hand off to the team instead.
+    // Route any delivery/shipping charge question straight to the support team.
     {
+        if (isDeliveryChargeComplaint(textLower)) {
+            return { replyText: DELIVERY_CHARGE_SUPPORT_REPLY, sendImages: [] };
+        }
         const _stmFeeComplaintSignals = ['problem', 'issue', 'not fair', 'unfair', 'wrong',
             'added', 'getting added', 'per item', 'per product', 'per selection', 'error', 'bug'];
         const _stmHasFeeComplaint = _stmFeeComplaintSignals.some(s => textLower.includes(s));
         if (!_stmHasFeeComplaint && (textLower.includes("delivery charge") || textLower.includes("delivery rate") || textLower.includes("delivery fee") || textLower.includes("shipping charge") || textLower.includes("courier charge"))) {
-            return { replyText: "🚚 Delivery charge is ₹80.", sendImages: [] };
+            return { replyText: DELIVERY_CHARGE_SUPPORT_REPLY, sendImages: [] };
         }
         if (_stmHasFeeComplaint && (textLower.includes("delivery fee") || textLower.includes("shipping fee") || textLower.includes("delivery charge") || textLower.includes("shipping charge"))) {
             return { replyText: `🙏 Sorry for the trouble! This needs our team's attention.\n\nPlease contact us directly and we'll sort it out right away:\n📞 +91 8668066503\n📞 +91 7418755096`, sendImages: [] };
