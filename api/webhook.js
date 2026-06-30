@@ -1729,7 +1729,7 @@ async function enterSubCategoryByIndex(session, products, idx, allSubs) {
     const matched = products.filter(p => Number(p.stock) > 0 && productMatchesSubCategory(p, selectedSub));
 
     if (matched.length === 0) {
-        return { replyText: "We are sorry, but this subcategory is currently out of stock. 😔", sendImages: [] };
+        return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
     }
 
     session.selectedSubCategory = selectedSub;
@@ -1955,7 +1955,7 @@ function applySizeSelection(session, entry, sizeInput) {
         const sizeButtonsOrList = sizeList.length <= 3 ? `Choose from: ${rawSizes.join(', ')}` : `Please select a size from the options below.`;
         session.state = entry.step;
         return {
-            replyText: `❌ This size is currently out of stock or invalid.\n\nAvailable sizes for ${product.name}:\n${rawSizes.join(', ')}\n\n${sizeButtonsOrList}`,
+            replyText: `❌ That size isn't available right now.\n\nAvailable sizes for ${product.name}:\n${rawSizes.join(', ')}\n\n${sizeButtonsOrList}`,
             sendImages: []
         };
     }
@@ -2302,7 +2302,7 @@ const SEARCH_EN_STOP = new Set(['is', 'are', 'available', 'do', 'you', 'have', '
     // Quantity/order-question filler — a customer asking "how many can I order" or "single
     // piece" about an already-identified product is asking about QUANTITY, not naming an extra
     // product attribute, so these must never be able to veto an otherwise-good category match
-    // (see Bug: "Brand T Shirt 10 pieces how much bro" was wrongly going to OUT_OF_STOCK_REPLY).
+    // (see Bug: "Brand T Shirt 10 pieces how much bro" was wrongly going to the not-found reply).
     'pieces', 'piece', 'pcs', 'pc', 'qty', 'quantity', 'single', 'minimum', 'min']);
 const SEARCH_TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku', 'iruke', 'pakanum',
     'vaikanum', 'panunga', 'sollu', 'kodu', 'kudu', 'da', 'bro', 'anna', 'sir', 'madam', 'la', 'ku',
@@ -2468,17 +2468,13 @@ function looksLikeProductQuery(rawText, products) {
     return terms.some(term => COLOR_KEYWORDS.includes(term) || inStock.some(p => searchTermMatches(p, term)));
 }
 
-// Generic short fallback for "we have no idea what this means" — replaces the old behavior of
-// dumping the entire numbered category+subcategory list in chat (see Bug 3 in the commit that
-// added this); the customer is pointed at the website instead of an in-chat list.
-const SHORT_NOT_FOUND_REPLY = `😔 Couldn't find that exact item.\nType *menu* to see our full collection, or visit our website:\nhttps://supercollections.in/shop/`;
-
-// Used specifically when makeSearchTerms flags a genuine catalog-unmatched term (a real
-// attribute/origin/brand the customer named that we don't carry at all, e.g. "Korean") — distinct
-// from SHORT_NOT_FOUND_REPLY, which is for queries that don't recognizably mention anything. This
-// one must NOT fall through to a category/product suggestion, since that's the exact bug it fixes
-// (e.g. "Korean lelin shirts" used to fall back to "White Shirts").
-const OUT_OF_STOCK_REPLY = `Sorry, this item is currently out of stock. 😔\nWe'll update you as soon as it's available!`;
+// Single reply for every "negative" case — nothing recognizable in the message, a genuine
+// catalog-unmatched term (e.g. "Korean"), or a named item/category/subcategory with zero stock.
+// Replaces the old SHORT_NOT_FOUND_REPLY ("couldn't find that exact item") and OUT_OF_STOCK_REPLY
+// ("currently out of stock") — both were landing on irrelevant/gibberish messages and reading as
+// false negatives to customers, so the bot now never claims an item is "out of stock" or that it
+// "couldn't find" something; it just points them at the menu or a human.
+const HELPFUL_MENU_CONTACT_REPLY = `😊 Let me help you find what you're looking for!\n\nType *menu* to browse our collection 🛍️\nOr contact our team directly:\n📞 +91 8668066503`;
 
 // Matches an Instagram/Facebook/YouTube link in an INCOMING customer message — e.g. a customer
 // pasting a Reel/post link and asking "is this available". Checked against the raw user message
@@ -4023,10 +4019,10 @@ async function handleIntent(intentResult, session, products, from) {
             // Guard: require at least one term DID match the catalog (terms.length > 0). If
             // every term failed to match (terms is empty), the message was never about a real
             // product at all — delivery complaints, random text, etc. that somehow slipped
-            // through to SEARCH. In that case fall through to SHORT_NOT_FOUND_REPLY instead
-            // of falsely claiming the item is "out of stock".
+            // through to SEARCH. In that case fall through to the helpful menu/contact reply
+            // instead of falsely claiming the item is "out of stock".
             if (hasUnmatchedTerm && terms.length > 0) {
-                return { replyText: OUT_OF_STOCK_REPLY, sendImages: [] };
+                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
             }
 
             // A query left with ONLY generic product-type word(s) (e.g. bare "shirt" or "tshirt",
@@ -4066,7 +4062,7 @@ async function handleIntent(intentResult, session, products, from) {
 
             // Nothing recognizable at all — short pointer to the menu/website instead of dumping
             // the entire numbered category+subcategory list in chat (see Bug 3).
-            return { replyText: SHORT_NOT_FOUND_REPLY, sendImages: [] };
+            return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
         }
         default:
             return null;
@@ -4321,7 +4317,7 @@ async function routeClassifiedIntent(c, userMessage, products, session) {
         case 'product_query': {
             if (!c.category && !c.subcategory) {
                 if (c.confidence === 'high') {
-                    return { replyText: OUT_OF_STOCK_REPLY, sendImages: [], _aiRoute: 'out_of_stock' };
+                    return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [], _aiRoute: 'not_found' };
                 }
                 return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [], _aiRoute: 'fallback_low_confidence' };
             }
@@ -4341,7 +4337,7 @@ async function routeClassifiedIntent(c, userMessage, products, session) {
                         return { ...buildCategoryAvailableReply(catOnly[0], products), _aiRoute: 'category_available_fallback' };
                     }
                 }
-                return { replyText: OUT_OF_STOCK_REPLY, sendImages: [], _aiRoute: 'out_of_stock' };
+                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [], _aiRoute: 'not_found' };
             }
 
             if (c.color) {
@@ -4967,7 +4963,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const categoryName = TOP_CATEGORY_MENU_NAMES[menuNumbers[0] - 1];
         const sampleProduct = findSampleProductForTopCategory(categoryName, products);
         if (!sampleProduct) {
-            return { replyText: "We are sorry, but this category is currently out of stock. 😔", sendImages: [] };
+            return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
         }
         const reply = buildCategoryAvailableReply(sampleProduct, products);
         if (menuNumbers.length > 1) {
@@ -5009,7 +5005,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 }
                 return response;
             } else {
-                return { replyText: "We are sorry, but this subcategory is currently out of stock. 😔", sendImages: [] };
+                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
             }
         } else {
             const max = session.subCategories?.length || 1;
@@ -5673,7 +5669,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             return { replyText, sendImages: [], searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
         } else {
-            return { replyText: "We are sorry, but those products are currently out of stock. 😔", sendImages: [] };
+            return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
         }
     }
 
@@ -5821,7 +5817,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
     // Dynamic general fallback — short pointer to the menu/website instead of dumping the entire
     // numbered category+subcategory list in chat (see Bug 3).
-    return { replyText: SHORT_NOT_FOUND_REPLY, sendImages: [] };
+    return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
 }
 
 export async function handleSalesAssistantJS(from, userMessage, products, session) {
