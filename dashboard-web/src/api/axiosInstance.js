@@ -6,7 +6,10 @@ const BASE_URL = rawBaseUrl.endsWith('/api') ? rawBaseUrl : `${rawBaseUrl.replac
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 15000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': import.meta.env.VITE_DASHBOARD_API_KEY || '',
+  },
 });
 
 export default api;

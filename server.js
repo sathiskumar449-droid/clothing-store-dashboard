@@ -27,6 +27,25 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true }));
 
+// Gate on the owner dashboard's own routes only (products/orders/chats/settings) — these
+// have no other auth and are otherwise reachable by anyone who finds the URL, which is how
+// an arbitrary WhatsApp message got sent to a customer through /api/chats/:phone/message
+// with no trace of it in this codebase. The WhatsApp/Razorpay/WooCommerce webhooks and the
+// image proxy are deliberately excluded: they're called by external services (Meta,
+// Razorpay, WooCommerce) that can't send this header and already verify requests their own
+// way (signature/HMAC checks, or Meta's verify-token handshake).
+function requireApiKey(req, res, next) {
+    const expected = process.env.DASHBOARD_API_KEY;
+    if (!expected) {
+        console.error('[Auth] DASHBOARD_API_KEY is not configured — rejecting dashboard request');
+        return res.status(500).json({ success: false, message: 'Server misconfigured' });
+    }
+    if (req.headers['x-api-key'] !== expected) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    next();
+}
+
 
 // =============================
 // ✅ Test Route
@@ -39,46 +58,46 @@ app.get('/', (req, res) => {
 // =============================
 // 👕 Outfit Matching API
 // =============================
-app.get('/api/matches', getOutfitMatches);
+app.get('/api/matches', requireApiKey, getOutfitMatches);
 
 
 // =============================
 // 📦 Products API
 // =============================
-app.post('/api/products', addProduct);
-app.get('/api/products', getProducts);
-app.put('/api/products/:id', updateProduct);
-app.delete('/api/products/:id', deleteProduct);
-app.post('/api/products/sync', syncProducts);
+app.post('/api/products', requireApiKey, addProduct);
+app.get('/api/products', requireApiKey, getProducts);
+app.put('/api/products/:id', requireApiKey, updateProduct);
+app.delete('/api/products/:id', requireApiKey, deleteProduct);
+app.post('/api/products/sync', requireApiKey, syncProducts);
 app.post('/api/webhook/woocommerce', handleWooWebhook);
 
 // =============================
 // 📦 Orders API
 // =============================
-app.get('/api/orders', getOrders);
-app.put('/api/orders/:id/status', updateOrderStatus);
+app.get('/api/orders', requireApiKey, getOrders);
+app.put('/api/orders/:id/status', requireApiKey, updateOrderStatus);
 
 
 // =============================
 // 💬 Chats API
 // =============================
-app.get('/api/chats', getAllChats);
-app.get('/api/chats/:phone', getChatHistory);
-app.post('/api/chats/:phone/message', sendChatMessage);
-app.post('/api/chats/:phone/toggle-bot', toggleBot);
-app.delete('/api/chats/:phone', deleteChat);
-app.put('/api/chats/:phone/rename', renameChat);
-app.put('/api/chats/:phone/messages/:index', editChatMessage);
-app.delete('/api/chats/:phone/messages/:index', deleteChatMessage);
+app.get('/api/chats', requireApiKey, getAllChats);
+app.get('/api/chats/:phone', requireApiKey, getChatHistory);
+app.post('/api/chats/:phone/message', requireApiKey, sendChatMessage);
+app.post('/api/chats/:phone/toggle-bot', requireApiKey, toggleBot);
+app.delete('/api/chats/:phone', requireApiKey, deleteChat);
+app.put('/api/chats/:phone/rename', requireApiKey, renameChat);
+app.put('/api/chats/:phone/messages/:index', requireApiKey, editChatMessage);
+app.delete('/api/chats/:phone/messages/:index', requireApiKey, deleteChatMessage);
 
 
 // =============================
 // ⚙️ Settings API
 // =============================
-app.get('/api/settings/woo', getWooSettings);
-app.post('/api/settings/woo', saveWooSettings);
-app.get('/api/settings/store', getStoreSettings);
-app.post('/api/settings/store', saveStoreSettings);
+app.get('/api/settings/woo', requireApiKey, getWooSettings);
+app.post('/api/settings/woo', requireApiKey, saveWooSettings);
+app.get('/api/settings/store', requireApiKey, getStoreSettings);
+app.post('/api/settings/store', requireApiKey, saveStoreSettings);
 
 
 // =============================

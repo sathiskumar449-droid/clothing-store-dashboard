@@ -2599,7 +2599,7 @@ function looksLikeProductQuery(rawText, products) {
 // ("currently out of stock") — both were landing on irrelevant/gibberish messages and reading as
 // false negatives to customers, so the bot now never claims an item is "out of stock" or that it
 // "couldn't find" something; it just points them at the menu or a human.
-const HELPFUL_MENU_CONTACT_REPLY = `😊 Let me help you find what you're looking for!\n\nType *menu* to browse our collection 🛍️\nOr contact our team directly:\n📞 +91 8668066503`;
+const HELPFUL_MENU_CONTACT_REPLY = `😔 Couldn't find that exact item.\n\n📹 *Order panna guide video:*\nhttps://youtube.com/shorts/7FRdStr8AKk\n\nType *menu* to browse our collection 🛍️\nOr visit: https://supercollections.in/shop/\n\n📞 Help: 8825325096 / 7418755096\n🕘 9 AM – 7 PM`;
 
 // Matches an Instagram/Facebook/YouTube link in an INCOMING customer message — e.g. a customer
 // pasting a Reel/post link and asking "is this available". Checked against the raw user message
@@ -4062,7 +4062,7 @@ async function handleIntent(intentResult, session, products, from) {
         case 'ORDER_HELP': {
             session.awaitingOrderHelpChoice = false;
             return {
-                replyText: "Please type your order details here. We will check and help you with your order.",
+                replyText: "📦 *Order Status & Delivery Info:*\n\n⏱️ *Delivery Time:*\n- Tamil Nadu — 5-7 working days\n- Other states — 7-9 working days\n\n📲 *Tracking:*\nOrder complete aana piragu tracking ID உங்கள் mobile number ku SMS வரும்!\n\n📞 *Order Enquiries:*\n- +91 8825325096\n- +91 7418755096\n🕘 Available: 9 AM – 7 PM",
                 sendImages: []
             };
         }
@@ -4389,7 +4389,13 @@ function extractOrderId(rawText, skipBareNumber = false) {
     let match = text.match(/\bORD-\d+\b/i);
     if (match) return match[0].toUpperCase();
 
+    match = text.match(/\bWOO-(\d+)\b/i);
+    if (match) return match[1];
+
     match = text.match(/\border\b\s*(?:id)?\s*[:#]?\s*(\d{3,})/i);
+    if (match) return match[1];
+
+    match = text.match(/#(\d{3,})/);
     if (match) return match[1];
 
     if (!skipBareNumber && /^\d{3,}$/.test(text)) return text;
@@ -4451,13 +4457,20 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (trackedOrderId) {
         const order = await getOrderById(trackedOrderId);
         if (order) {
+            const orderNumber = displayOrderId(order.id);
+            if (order.status === 'confirmed') {
+                return {
+                    replyText: `✅ உங்கள் Order *#${orderNumber}* confirm ஆகிவிட்டது! \n\n📦 Delivery:\n• Tamil Nadu — 5-7 working days\n• Other states — 7-9 working days\n\n📲 Tracking ID உங்கள் mobile ku SMS வரும்!\n\n📞 Help: 8825325096 / 7418755096\n🕘 9 AM – 7 PM`,
+                    sendImages: []
+                };
+            }
             return {
-                replyText: `📦 Thank you! We found your order (#${displayOrderId(order.id)}).\n\nOur team will dispatch it shortly and share the tracking ID with you here on WhatsApp once it's shipped. 🙏\n\nNeed anything else? Reply 'menu' to continue shopping.`,
+                replyText: `⏳ உங்கள் Order *#${orderNumber}* இன்னும் process ஆகுது!\n\nநாங்க confirm பண்ணியதும் உங்களுக்கு தெரிவிக்கிறோம் 😊\n\n📞 Help: 8825325096 / 7418755096\n🕘 9 AM – 7 PM`,
                 sendImages: []
             };
         }
         return {
-            replyText: "We couldn't find that order. Please double check the Order ID, or our team will verify and get back to you shortly.",
+            replyText: `❌ Order *#${trackedOrderId}* கிடைக்கவில்லை.\n\nOrder ID சரியா இருக்கா என்று check பண்ணுங்க.\n📞 Help: 8825325096 / 7418755096\n🕘 9 AM – 7 PM`,
             sendImages: []
         };
     }
