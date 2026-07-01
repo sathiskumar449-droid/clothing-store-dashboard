@@ -7,7 +7,6 @@ import { getOrders } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
-import { isWhatsAppAttributed } from '../utils/orderSource';
 import StatCard from '../components/ui/StatCard';
 import Loader from '../components/ui/Loader';
 import DateFilterBar from '../components/ui/DateFilterBar';
@@ -37,8 +36,7 @@ export default function DashboardPage() {
       ).size;
       const activeChats = chats.length;
       const botPausedChats = chats.filter(c => c.botPaused).length;
-      const whatsappOrders = orders.filter(isWhatsAppAttributed).length;
-      const websiteOrders = orders.length - whatsappOrders;
+      const whatsappReferred = orders.filter(o => o.isWhatsAppReferred).length;
 
       setStats({
         totalOrders: orders.length,
@@ -48,8 +46,7 @@ export default function DashboardPage() {
         uniqueCustomers,
         activeChats,
         botPausedChats,
-        whatsappOrders,
-        websiteOrders,
+        whatsappReferred,
       });
 
       setRecentOrders(
@@ -93,7 +90,7 @@ export default function DashboardPage() {
             value={stats.totalOrders}
             icon={ShoppingBag}
             color="indigo"
-            subtitle={`💬 WhatsApp: ${stats.whatsappOrders} | 🌐 Website: ${stats.websiteOrders}`}
+            subtitle={`💬 WhatsApp Referred: ${stats.whatsappReferred} orders`}
           />
           <StatCard
             title="Revenue"

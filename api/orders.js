@@ -22,22 +22,31 @@ export const getOrders = async (req, res) => {
         if (error) throw error;
 
         // Cross-reference each order's customer_phone against the chats table (no FK between the
-        // two, so this can't be done as a single embedded Supabase select) — lets the dashboard
-        // tell a WooCommerce order placed by a known WhatsApp contact apart from a first-time
-        // website visitor.
+        // two, so this can't be done as a single embedded Supabase select) to flag orders placed
+        // by a customer who actually engaged with the WhatsApp bot. Matching on phone existence
+        // alone (or on a chat containing the literal "Order Confirmed" text) isn't reliable: every
+        // WooCommerce order gets an automated "Order Confirmed" notification logged to the
+        // customer's chat row after the fact (see woocommerce-order-webhook.js's logChatMessage
+        // call), so nearly every website order would match regardless of real WhatsApp usage.
+        // Requiring an actual customer-sent message (sender: 'customer') proves the customer
+        // messaged the bot themselves, rather than just having received that one auto-reply.
         const phones = [...new Set(data.map(row => row.customer_phone).filter(Boolean))];
-        let chatPhones = new Set();
+        let referredPhones = new Set();
         if (phones.length > 0) {
             const { data: chatRows, error: chatsError } = await supabase
                 .from('chats')
-                .select('customer_phone')
+                .select('customer_phone, messages')
                 .in('customer_phone', phones);
             if (chatsError) throw chatsError;
-            chatPhones = new Set(chatRows.map(row => row.customer_phone));
+            referredPhones = new Set(
+                chatRows
+                    .filter(row => Array.isArray(row.messages) && row.messages.some(m => m.sender === 'customer'))
+                    .map(row => row.customer_phone)
+            );
         }
 
         // Return in the same format as the original JSON array
-        res.json(data.map(row => dbRowToOrder(row, chatPhones)));
+        res.json(data.map(row => dbRowToOrder(row, referredPhones)));
     } catch (error) {
         console.error('❌ Get Orders Error:', error);
         res.status(500).json({ success: false, message: error.message });
@@ -79,18 +88,18 @@ export const updateOrderStatus = async (req, res) => {
 // Helper: map DB row → original JSON shape
 // Handles both new-style and legacy flat orders
 // ─────────────────────────────────────────────────────────────
-function dbRowToOrder(row, chatPhones = new Set()) {
+function dbRowToOrder(row, referredPhones = new Set()) {
     const base = {
-        id:             row.id,
-        status:         row.status,
-        customerPhone:  row.customer_phone,
-        customerName:   row.customer_name,
-        customerAddress:row.customer_address,
-        items:          row.items || [],
-        totalPrice:     row.total_price,
-        date:           row.date,
-        source:         row.source || 'whatsapp',
-        isWhatsAppUser: chatPhones.has(row.customer_phone)
+        id:                 row.id,
+        status:             row.status,
+        customerPhone:      row.customer_phone,
+        customerName:       row.customer_name,
+        customerAddress:    row.customer_address,
+        items:              row.items || [],
+        totalPrice:         row.total_price,
+        date:               row.date,
+        source:             row.source || 'whatsapp',
+        isWhatsAppReferred: referredPhones.has(row.customer_phone)
     };
 
     // Attach legacy fields if they exist (non-null) so the dashboard still works
