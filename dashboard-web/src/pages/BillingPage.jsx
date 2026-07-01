@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { Receipt, Search, Printer, Download, RefreshCw, X } from 'lucide-react';
 import { getOrders } from '../api/ordersApi';
+import { isWhatsAppOrder } from '../utils/orderFilters';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
@@ -22,7 +23,7 @@ export default function BillingPage() {
     setRefreshing(true);
     try {
       const res = await getOrders();
-      setOrders(res.data || []);
+      setOrders((res.data || []).filter(isWhatsAppOrder));
     } catch {/* silent */} finally {
       setLoading(false);
       setRefreshing(false);

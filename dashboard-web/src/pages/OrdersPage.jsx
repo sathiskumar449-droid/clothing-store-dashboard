@@ -4,6 +4,7 @@ import { ShoppingBag, RefreshCw, ChevronDown } from 'lucide-react';
 import { getOrders, updateOrderStatus } from '../api/ordersApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
+import { isWhatsAppOrder } from '../utils/orderFilters';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import Badge from '../components/ui/Badge';
@@ -32,7 +33,7 @@ export default function OrdersPage() {
     setRefreshing(true);
     try {
       const res = await getOrders(getDateRangeParams(dateFilter));
-      setOrders(res.data || []);
+      setOrders((res.data || []).filter(isWhatsAppOrder));
     } catch {/* silent */} finally {
       setLoading(false);
       setRefreshing(false);

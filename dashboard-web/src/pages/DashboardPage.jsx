@@ -7,6 +7,7 @@ import { getOrders } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
+import { isWhatsAppOrder } from '../utils/orderFilters';
 import StatCard from '../components/ui/StatCard';
 import Loader from '../components/ui/Loader';
 import DateFilterBar from '../components/ui/DateFilterBar';
@@ -25,7 +26,7 @@ export default function DashboardPage() {
         getOrders(dateRangeParams),
         getAllChats(dateRangeParams),
       ]);
-      const orders = ordersRes.data || [];
+      const orders = (ordersRes.data || []).filter(isWhatsAppOrder);
       const chats = chatsRes.data?.chats || [];
 
       const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
