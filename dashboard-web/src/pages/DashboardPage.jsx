@@ -156,7 +156,7 @@ export default function DashboardPage() {
             recentOrders.map((order) => {
               const id = order.id || order.orderId;
               const name = order.customerName || order.customerDetails || order.customer || 'Customer';
-              const date = new Date(order.date || order.createdAt).toLocaleDateString('en-IN');
+              const date = new Date(order.date || order.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
               const total = `₹${(order.totalPrice || 0).toLocaleString('en-IN')}`;
               return (
                 <div

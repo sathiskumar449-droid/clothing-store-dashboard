@@ -14,7 +14,7 @@ const STATUS_OPTIONS = ['pending', 'confirmed', 'cancelled'];
 
 function formatDate(ts) {
   if (!ts) return '—';
-  return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(ts).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 export default function OrdersPage() {

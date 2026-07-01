@@ -7,7 +7,7 @@ import EmptyState from '../components/ui/EmptyState';
 
 function formatDate(ts) {
   if (!ts) return '—';
-  return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  return new Date(ts).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 export default function BillingPage() {
