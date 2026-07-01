@@ -8,7 +8,7 @@ const api = axios.create({
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
-    'x-api-key': import.meta.env.VITE_DASHBOARD_API_KEY || '',
+    'x-api-key': (import.meta.env.VITE_DASHBOARD_API_KEY || '').trim(),
   },
 });
 

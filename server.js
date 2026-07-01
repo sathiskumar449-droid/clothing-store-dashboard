@@ -35,12 +35,14 @@ app.use(express.urlencoded({ extended: true }));
 // Razorpay, WooCommerce) that can't send this header and already verify requests their own
 // way (signature/HMAC checks, or Meta's verify-token handshake).
 function requireApiKey(req, res, next) {
-    const expected = process.env.DASHBOARD_API_KEY;
+    // .trim() on both sides — env vars set via a piped `echo` (rather than `printf`) pick up
+    // a trailing newline that's invisible in dashboards/logs but breaks a strict `!==` match.
+    const expected = (process.env.DASHBOARD_API_KEY || '').trim();
     if (!expected) {
         console.error('[Auth] DASHBOARD_API_KEY is not configured — rejecting dashboard request');
         return res.status(500).json({ success: false, message: 'Server misconfigured' });
     }
-    if (req.headers['x-api-key'] !== expected) {
+    if ((req.headers['x-api-key'] || '').trim() !== expected) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
     next();
