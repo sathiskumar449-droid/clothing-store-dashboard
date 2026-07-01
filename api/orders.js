@@ -21,8 +21,23 @@ export const getOrders = async (req, res) => {
 
         if (error) throw error;
 
+        // Cross-reference each order's customer_phone against the chats table (no FK between the
+        // two, so this can't be done as a single embedded Supabase select) — lets the dashboard
+        // tell a WooCommerce order placed by a known WhatsApp contact apart from a first-time
+        // website visitor.
+        const phones = [...new Set(data.map(row => row.customer_phone).filter(Boolean))];
+        let chatPhones = new Set();
+        if (phones.length > 0) {
+            const { data: chatRows, error: chatsError } = await supabase
+                .from('chats')
+                .select('customer_phone')
+                .in('customer_phone', phones);
+            if (chatsError) throw chatsError;
+            chatPhones = new Set(chatRows.map(row => row.customer_phone));
+        }
+
         // Return in the same format as the original JSON array
-        res.json(data.map(dbRowToOrder));
+        res.json(data.map(row => dbRowToOrder(row, chatPhones)));
     } catch (error) {
         console.error('❌ Get Orders Error:', error);
         res.status(500).json({ success: false, message: error.message });
@@ -64,7 +79,7 @@ export const updateOrderStatus = async (req, res) => {
 // Helper: map DB row → original JSON shape
 // Handles both new-style and legacy flat orders
 // ─────────────────────────────────────────────────────────────
-function dbRowToOrder(row) {
+function dbRowToOrder(row, chatPhones = new Set()) {
     const base = {
         id:             row.id,
         status:         row.status,
@@ -74,7 +89,8 @@ function dbRowToOrder(row) {
         items:          row.items || [],
         totalPrice:     row.total_price,
         date:           row.date,
-        source:         row.source || 'whatsapp'
+        source:         row.source || 'whatsapp',
+        isWhatsAppUser: chatPhones.has(row.customer_phone)
     };
 
     // Attach legacy fields if they exist (non-null) so the dashboard still works

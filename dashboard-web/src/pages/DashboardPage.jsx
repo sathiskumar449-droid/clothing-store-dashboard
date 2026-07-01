@@ -7,7 +7,7 @@ import { getOrders } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
-import { isWhatsAppOrder } from '../utils/orderFilters';
+import { isWhatsAppAttributed } from '../utils/orderSource';
 import StatCard from '../components/ui/StatCard';
 import Loader from '../components/ui/Loader';
 import DateFilterBar from '../components/ui/DateFilterBar';
@@ -26,7 +26,7 @@ export default function DashboardPage() {
         getOrders(dateRangeParams),
         getAllChats(dateRangeParams),
       ]);
-      const orders = (ordersRes.data || []).filter(isWhatsAppOrder);
+      const orders = ordersRes.data || [];
       const chats = chatsRes.data?.chats || [];
 
       const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
@@ -37,6 +37,8 @@ export default function DashboardPage() {
       ).size;
       const activeChats = chats.length;
       const botPausedChats = chats.filter(c => c.botPaused).length;
+      const whatsappOrders = orders.filter(isWhatsAppAttributed).length;
+      const websiteOrders = orders.length - whatsappOrders;
 
       setStats({
         totalOrders: orders.length,
@@ -46,6 +48,8 @@ export default function DashboardPage() {
         uniqueCustomers,
         activeChats,
         botPausedChats,
+        whatsappOrders,
+        websiteOrders,
       });
 
       setRecentOrders(
@@ -89,7 +93,7 @@ export default function DashboardPage() {
             value={stats.totalOrders}
             icon={ShoppingBag}
             color="indigo"
-            subtitle={`${stats.pending} pending`}
+            subtitle={`💬 WhatsApp: ${stats.whatsappOrders} | 🌐 Website: ${stats.websiteOrders}`}
           />
           <StatCard
             title="Revenue"
