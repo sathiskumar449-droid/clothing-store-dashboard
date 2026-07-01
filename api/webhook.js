@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { supabase } from '../lib/supabase.js';
 import { createProductCollage, createRecommendationCollage, createPromoCollage } from '../lib/collage.js';
 import { getCategoryUrl } from '../lib/categoryUrls.js';
+import { detectNewFaqIntent } from '../lib/intents.js';
 
 dotenv.config();
 
@@ -4488,6 +4489,10 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     if (SOCIAL_MEDIA_LINK_REGEX.test(userMessage)) {
         return { replyText: SOCIAL_MEDIA_LINK_REPLY, sendImages: [] };
     }
+
+    // ─── New Intents (lib/intents.js) — checked first; falls through if no match ───
+    const newIntent = await detectNewFaqIntent(textLower, session);
+    if (newIntent) return newIntent;
 
     // ─── Intent Detection & Routing Layer ───
     const intentResult = detectIntent(textLower, products, session);
