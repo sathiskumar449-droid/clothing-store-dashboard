@@ -64,7 +64,11 @@ function buildOrderRow(order, phone) {
         // There's no "delivered" status in the dashboard anymore — a paid order is "confirmed"
         // and stays that way regardless of whether WooCommerce later marks it "completed".
         status: 'confirmed',
-        date: order.date_created || new Date().toISOString(),
+        // WooCommerce's date_created is the site's local wall-clock time with no timezone
+        // marker, so parsing it directly gets misread as UTC (shifting IST orders placed in
+        // the evening onto the next calendar day once displayed back in IST). date_created_gmt
+        // is the same wall-clock format but already in UTC, so appending 'Z' parses it correctly.
+        date: order.date_created_gmt ? `${order.date_created_gmt}Z` : (order.date_created || new Date().toISOString()),
         source: 'website'
     };
 }
