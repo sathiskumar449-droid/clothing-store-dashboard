@@ -185,6 +185,119 @@ const getPrimaryCategory = (categories) => {
     return specific ? specific.name.trim() : (categories[0]?.name?.trim() || 'General');
 };
 
+// ─────────────────────────────────────────────────────────────
+// Shared stock-mapping helper (used by BOTH syncProducts and handleWooWebhook)
+//
+// Priority rules:
+//   1. outofstock / onbackorder  → always 0 (authoritative WooCommerce status)
+//   2. instock + manage_stock=true + qty present → use qty (0 or more)
+//   3. instock + no qty tracking (manage_stock=false or qty null) → 1 (available, qty unknown)
+//   4. anything else → 0
+//
+// Variable products: the caller should pre-attach _effective_stock_status and
+// _effective_stock_quantity (computed from variation-level data) before calling
+// this helper. If those fields exist they take priority over the parent fields.
+// ─────────────────────────────────────────────────────────────
+function mapWooStockToSupabase(p) {
+    const stockStatus = p._effective_stock_status ?? p.stock_status;
+    const stockQty    = p._effective_stock_quantity !== undefined
+                            ? p._effective_stock_quantity
+                            : p.stock_quantity;
+    const managed     = p.manage_stock;
+
+    let stock;
+
+    if (stockStatus === 'outofstock' || stockStatus === 'onbackorder') {
+        stock = '0';
+    } else if (stockStatus === 'instock' && managed && stockQty !== null && stockQty !== undefined) {
+        stock = String(Math.max(0, Number(stockQty)));
+    } else if (stockStatus === 'instock') {
+        // No per-item quantity tracking — product is available but quantity unknown
+        stock = '1';
+    } else {
+        stock = '0';
+    }
+
+    console.log(
+        `[StockMap] id=${p.id} "${(p.name || '').substring(0, 35)}" ` +
+        `stock_status=${stockStatus} qty=${stockQty} manage_stock=${managed} type=${p.type ?? '?'} → stock=${stock}`
+    );
+
+    return stock;
+}
+
+// Fetch WooCommerce credentials from the Supabase settings table so the webhook
+// handler can make back-channel API calls for variable-product variation stock.
+async function getWooCredentials() {
+    const { data, error } = await supabase
+        .from('settings')
+        .select('key, value')
+        .in('key', ['woo_site_url', 'woo_consumer_key', 'woo_consumer_secret']);
+    if (error || !data) throw new Error('Failed to read WooCommerce credentials from Supabase');
+    const m = Object.fromEntries(data.map(r => [r.key, r.value]));
+    return { siteUrl: m.woo_site_url, consumerKey: m.woo_consumer_key, consumerSecret: m.woo_consumer_secret };
+}
+
+// For a variable WooCommerce product, fetch all its variations and compute the
+// true effective stock (parent product has manage_stock=false + qty=null; the
+// per-size stock lives entirely in the child variations).
+// Mutates the product object by attaching _effective_stock_quantity and
+// _effective_stock_status so that mapWooStockToSupabase() can use them.
+async function attachVariationStock(product, { siteUrl, consumerKey, consumerSecret }) {
+    try {
+        const base64 = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+        const url = `${siteUrl.replace(/\/$/, '')}/wp-json/wc/v3/products/${product.id}/variations?per_page=100`;
+        const resp = await fetch(url, { headers: { Authorization: `Basic ${base64}` } });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const variations = await resp.json();
+
+        let effectiveQty = 0;
+        for (const v of variations) {
+            if (v.stock_status === 'outofstock' || v.stock_status === 'onbackorder') continue;
+            if (v.manage_stock && v.stock_quantity !== null && v.stock_quantity !== undefined) {
+                effectiveQty += Math.max(0, Number(v.stock_quantity));
+            } else if (v.stock_status === 'instock' && !v.manage_stock) {
+                // Untracked variation that is marked instock → count as 1 available unit
+                effectiveQty += 1;
+            }
+        }
+
+        product._effective_stock_quantity = effectiveQty;
+        product._effective_stock_status   = effectiveQty > 0 ? 'instock' : 'outofstock';
+        console.log(
+            `[Variations] id=${product.id} variations=${variations.length} ` +
+            `effective_qty=${effectiveQty} → ${product._effective_stock_status}`
+        );
+    } catch (e) {
+        console.warn(`[Variations] Could not fetch variations for product ${product.id}: ${e.message}`);
+    }
+}
+
+// Helper: map a single WooCommerce product payload → database row schema.
+// Stock is computed by mapWooStockToSupabase (shared with syncProducts).
+const mapWooProductToDb = (p) => {
+    const sizeAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'size');
+    const sizes = sizeAttr ? (Array.isArray(sizeAttr.options) ? sizeAttr.options : []) : [];
+
+    const colorAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'color');
+    const color = colorAttr ? (Array.isArray(colorAttr.options) ? colorAttr.options[0] : colorAttr.options) : null;
+
+    return {
+        id:          p.id,
+        name:        p.name,
+        code:        p.sku || String(p.id),
+        category:    getPrimaryCategory(p.categories),
+        categories:  (p.categories || []).map(c => (c.name || '').trim()).filter(Boolean),
+        pattern:     p.pattern || null,
+        color:       color || p.color || null,
+        price:       p.price !== undefined ? String(p.price) : '0',
+        stock:       mapWooStockToSupabase(p),
+        sizes:       sizes,
+        image_uri:   p.images?.[0]?.src || null,
+        permalink:   p.permalink || null
+    };
+};
+
 // ✅ Batch Sync products from WooCommerce
 export const syncProducts = async (req, res) => {
     try {
@@ -199,34 +312,9 @@ export const syncProducts = async (req, res) => {
 
         console.log(`🔄 Syncing ${products.length} products from WooCommerce...`);
 
-        // Format products to match database schema
-        const dbProducts = products.map(p => {
-            // Find "Size" attribute options
-            const sizeAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'size');
-            const sizes = sizeAttr ? (Array.isArray(sizeAttr.options) ? sizeAttr.options : []) : [];
-
-            // Find "Color" attribute value
-            const colorAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'color');
-            const color = colorAttr ? (Array.isArray(colorAttr.options) ? colorAttr.options[0] : colorAttr.options) : null;
-
-            // Map WooCommerce fields
-            return {
-                id:          p.id, // WooCommerce numeric ID
-                name:        p.name,
-                code:        p.sku || String(p.id),
-                category:    getPrimaryCategory(p.categories),
-                categories:  (p.categories || []).map(c => (c.name || '').trim()).filter(Boolean),
-                pattern:     p.pattern || null,
-                color:       color || p.color || null,
-                price:       p.price !== undefined ? String(p.price) : '0',
-                stock:       p.stock_quantity !== null && p.stock_quantity !== undefined
-                                ? String(p.stock_quantity)
-                                : (p.stock_status === 'instock' ? '10' : '0'),
-                sizes:       sizes,
-                image_uri:   p.images?.[0]?.src || null,
-                permalink:   p.permalink || null
-            };
-        });
+        // mapWooProductToDb calls mapWooStockToSupabase which logs every product's
+        // stock_status / qty / computed result — visible in Vercel logs.
+        const dbProducts = products.map(p => mapWooProductToDb(p));
 
         if (dbProducts.length > 0) {
             console.log('[SyncProducts] First mapped row about to be upserted:', JSON.stringify(dbProducts[0]));
@@ -254,32 +342,6 @@ export const syncProducts = async (req, res) => {
         console.error('❌ Sync Products Error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
-};
-
-// Helper to map a single WooCommerce product payload into database schema
-const mapWooProductToDb = (p) => {
-    const sizeAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'size');
-    const sizes = sizeAttr ? (Array.isArray(sizeAttr.options) ? sizeAttr.options : []) : [];
-
-    const colorAttr = p.attributes?.find(a => a.name?.toLowerCase() === 'color');
-    const color = colorAttr ? (Array.isArray(colorAttr.options) ? colorAttr.options[0] : colorAttr.options) : null;
-
-    return {
-        id:          p.id,
-        name:        p.name,
-        code:        p.sku || String(p.id),
-        category:    getPrimaryCategory(p.categories),
-        categories:  (p.categories || []).map(c => (c.name || '').trim()).filter(Boolean),
-        pattern:     p.pattern || null,
-        color:       color || p.color || null,
-        price:       p.price !== undefined ? String(p.price) : '0',
-        stock:       p.stock_quantity !== null && p.stock_quantity !== undefined
-                        ? String(p.stock_quantity)
-                        : (p.stock_status === 'instock' ? '10' : '0'),
-        sizes:       sizes,
-        image_uri:   p.images?.[0]?.src || null,
-        permalink:   p.permalink || null
-    };
 };
 
 // ✅ WooCommerce Webhook Handler (Automatic Live Sync)
@@ -320,6 +382,18 @@ export const handleWooWebhook = async (req, res) => {
         if (topic === 'product.created' || topic === 'product.updated') {
             if (!payload || !payload.id) {
                 return res.status(400).json({ success: false, message: 'Invalid payload' });
+            }
+
+            // Variable products carry stock at the variation level (parent has manage_stock=false,
+            // stock_quantity=null). Fetch variation stock via back-channel API call so
+            // mapWooStockToSupabase() gets accurate _effective_stock_* fields.
+            if (payload.type === 'variable') {
+                try {
+                    const creds = await getWooCredentials();
+                    await attachVariationStock(payload, creds);
+                } catch (e) {
+                    console.warn(`[WooWebhook] Could not enrich variation stock for product ${payload.id}: ${e.message} — falling back to parent stock_status`);
+                }
             }
 
             const dbProduct = mapWooProductToDb(payload);
