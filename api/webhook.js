@@ -43,13 +43,35 @@ export async function getWelcomeMessagePrefix() {
     return "";
 }
 
+// Second message sent right after the welcome/menu greeting, only when a coupon is
+// currently active — mirrors the store_settings lookup in lib/intents.js's
+// matchCouponCode, but returns null (stay silent) instead of a "no offer" reply when
+// coupon_enabled is false, since this is an unprompted greeting add-on, not an answer to
+// a customer's direct question about coupons.
+async function getActiveCouponWelcomeReply() {
+    try {
+        const { data, error } = await supabase
+            .from('store_settings')
+            .select('coupon_code, coupon_enabled')
+            .eq('id', 1)
+            .single();
+
+        if (error || !data || !data.coupon_enabled || !data.coupon_code) return null;
+
+        return `🎉 *Today's Special Offer!*\nUse coupon code *${data.coupon_code}* at checkout\nfor FREE Shipping! 🚚`;
+    } catch (err) {
+        console.error('[Greeting] getActiveCouponWelcomeReply: unexpected error', err);
+        return null;
+    }
+}
+
 const ORDER_GUIDANCE_VIDEO_ENABLED = false;
 
 // Top-level welcome menu shown on every greeting — 6 product categories + 3 utility options.
 // Numbers 1-6 map 1:1 with CATEGORY_LINKS below; 7/8 route to the existing ORDER_HELP /
 // CUSTOMER_SUPPORT intents (see handleIntent's MAIN_MENU_SELECT case) instead of new logic.
 const MAIN_MENU_TEXT = `👋 Welcome to Super Collection!
-We offer premium shirts, t-shirts, pants & more with FREE Shipping 🚚
+We offer premium shirts, t-shirts, pants & more! 🛍️
 
 Please reply with a number:
 
@@ -4189,6 +4211,13 @@ async function handleIntent(intentResult, session, products, from) {
 
             console.log('[IntroMenu] Greeting detected — showing main menu for', from);
             session.state = "AWAITING_MAIN_MENU_SELECTION";
+
+            const couponWelcomeReply = await getActiveCouponWelcomeReply();
+            if (couponWelcomeReply) {
+                await sendText(from, MAIN_MENU_TEXT);
+                await logChatMessage(from, 'bot', MAIN_MENU_TEXT);
+                return { replyText: couponWelcomeReply, sendImages: [] };
+            }
             return {
                 replyText: MAIN_MENU_TEXT,
                 sendImages: []
