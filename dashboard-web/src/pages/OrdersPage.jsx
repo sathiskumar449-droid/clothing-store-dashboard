@@ -7,7 +7,6 @@ import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import Badge from '../components/ui/Badge';
-import SourceBadge from '../components/ui/SourceBadge';
 import DateFilterBar from '../components/ui/DateFilterBar';
 
 const TABS = ['all', 'pending', 'confirmed', 'cancelled'];
@@ -129,7 +128,6 @@ export default function OrdersPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold text-gray-800">{name}</p>
                         <Badge status={order.status} />
-                        <SourceBadge order={order} />
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">{id} · {formatDate(order.date || order.createdAt)}</p>
                     </div>

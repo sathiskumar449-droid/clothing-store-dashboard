@@ -36,7 +36,6 @@ export default function DashboardPage() {
       ).size;
       const activeChats = chats.length;
       const botPausedChats = chats.filter(c => c.botPaused).length;
-      const whatsappReferred = orders.filter(o => o.isWhatsAppReferred).length;
 
       setStats({
         totalOrders: orders.length,
@@ -46,7 +45,6 @@ export default function DashboardPage() {
         uniqueCustomers,
         activeChats,
         botPausedChats,
-        whatsappReferred,
       });
 
       setRecentOrders(
@@ -90,7 +88,7 @@ export default function DashboardPage() {
             value={stats.totalOrders}
             icon={ShoppingBag}
             color="indigo"
-            subtitle={`💬 WhatsApp Referred: ${stats.whatsappReferred} orders`}
+            subtitle={`${stats.pending} pending`}
           />
           <StatCard
             title="Revenue"

@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { supabase } from '../lib/supabase.js';
 import { createProductCollage, createRecommendationCollage, createPromoCollage } from '../lib/collage.js';
-import { getCategoryUrl, withUtm } from '../lib/categoryUrls.js';
+import { getCategoryUrl } from '../lib/categoryUrls.js';
 import { detectNewFaqIntent } from '../lib/intents.js';
 
 dotenv.config();
@@ -105,12 +105,12 @@ If in-between sizes la irundha, next size eduthukonga.`;
 // T-Shirts parent category's real slug is "t-shirts-2" (not "t-shirts"), a pre-existing slug
 // collision on the WooCommerce site, not a typo here.
 const CATEGORY_LINKS = {
-    "1": { name: "Shirts", label: "shirts", emoji: "👔", url: withUtm("https://www.supercollections.in/product-category/shirts/") },
-    "2": { name: "T-Shirts", label: "t-shirts", emoji: "👕", url: withUtm("https://www.supercollections.in/product-category/t-shirts-2/") },
-    "3": { name: "Pants", label: "pants", emoji: "👖", url: withUtm("https://www.supercollections.in/product-category/pants/") },
-    "4": { name: "Track Pants", label: "track pants", emoji: "🏃", url: withUtm("https://www.supercollections.in/product-category/track-pants/") },
-    "5": { name: "Imported Shorts", label: "imported shorts", emoji: "🩳", url: withUtm("https://www.supercollections.in/product-category/imported-shorts/") },
-    "6": { name: "New Arrivals", label: "new arrivals", emoji: "✨", url: withUtm("https://www.supercollections.in/product-category/new-arrivals/") }
+    "1": { name: "Shirts", label: "shirts", emoji: "👔", url: "https://www.supercollections.in/product-category/shirts/" },
+    "2": { name: "T-Shirts", label: "t-shirts", emoji: "👕", url: "https://www.supercollections.in/product-category/t-shirts-2/" },
+    "3": { name: "Pants", label: "pants", emoji: "👖", url: "https://www.supercollections.in/product-category/pants/" },
+    "4": { name: "Track Pants", label: "track pants", emoji: "🏃", url: "https://www.supercollections.in/product-category/track-pants/" },
+    "5": { name: "Imported Shorts", label: "imported shorts", emoji: "🩳", url: "https://www.supercollections.in/product-category/imported-shorts/" },
+    "6": { name: "New Arrivals", label: "new arrivals", emoji: "✨", url: "https://www.supercollections.in/product-category/new-arrivals/" }
 };
 // Simplified 7-item "pick a category" quick menu shown by goToTopCategoryMenu() — replaces the
 // old flat list of every WooCommerce subcategory across all parents at once. Mirrors MAIN_MENU_TEXT's
@@ -153,17 +153,13 @@ function isDeliveryChargeComplaint(text = '') {
 
 // ─── New intent reply constants (see detectIntent: Intent 1 = size/qty availability,
 // Intent 2 = COD/payment method, Intent 3 = general collection request) ───
-// Bare shop-page link, UTM-tagged once here and reused by every reply that points there —
-// see withUtm() in lib/categoryUrls.js.
-const SHOP_URL = withUtm('https://supercollections.in/shop/');
-
-const SIZE_QTY_AVAILABLE_REPLY = `✅ Yes, available!\n\nPlease check our website for all sizes, colours & to place your order 👇\n${SHOP_URL}`;
-const COD_NOT_AVAILABLE_REPLY = `😊 Sorry, Cash on Delivery is not available currently.\n\nWe accept secure online payments only. Just place your order on our website & pay easily 👇\n${SHOP_URL}`;
-const ONLINE_PAYMENT_INFO_REPLY = `💳 We accept secure online payments!\n\nJust place your order on our website and pay easily via UPI/cards 👇\n${SHOP_URL}`;
+const SIZE_QTY_AVAILABLE_REPLY = `✅ Yes, available!\n\nPlease check our website for all sizes, colours & to place your order 👇\nhttps://supercollections.in/shop/`;
+const COD_NOT_AVAILABLE_REPLY = `😊 Sorry, Cash on Delivery is not available currently.\n\nWe accept secure online payments only. Just place your order on our website & pay easily 👇\nhttps://supercollections.in/shop/`;
+const ONLINE_PAYMENT_INFO_REPLY = `💳 We accept secure online payments!\n\nJust place your order on our website and pay easily via UPI/cards 👇\nhttps://supercollections.in/shop/`;
 const HOW_TO_ORDER_REPLY = `🛍️ Ordering is super easy!\n\n1️⃣ Type *menu* to browse, or tell me what you want (e.g. "plain shirt")\n2️⃣ Tap the website link we send you\n3️⃣ On the website: choose size & colour, add to cart\n4️⃣ Checkout & pay securely online ✅\n\nIt takes just 2 minutes! 😊\n\nNeed help? Contact our team:\n📞 +91 8668066503`;
 const SHOP_ADDRESS_REPLY = `📍 Super Collections\nUdumalpet, Tamil Nadu\n\nVisit pannanuma illa direction venuma? Engateam ah contact pannunga:\n📞 +91 8668066503\n\nOnline la order panna *menu* type pannunga! 😊`;
 const STOCK_OUT_COMPLAINT_REPLY = `😔 Sorry for the trouble! Stock vanthathum udane update panrom. 🙏\n\nPlease konja naal kazhichu check pannunga, illa engateam ah contact pannunga:\n📞 +91 8668066503`;
-const GENERAL_COLLECTION_REPLY = `🛍️ Yes, we have lots of collections!\n\nPlease visit our website to explore everything 👇\n${SHOP_URL}`;
+const GENERAL_COLLECTION_REPLY = `🛍️ Yes, we have lots of collections!\n\nPlease visit our website to explore everything 👇\nhttps://supercollections.in/shop/`;
 
 // Distinctive multi-letter size tokens (XL, XXL, 2XL, 3XL, XS) are safe to match anywhere in the
 // message. Single-letter S/M/L are only counted when paired with the word "size" (either order)
@@ -798,7 +794,7 @@ export async function sendCtaUrlWelcomeMessage(to) {
                 name: 'cta_url',
                 parameters: {
                     display_text: 'Visit Website',
-                    url: withUtm('http://supercollections.in')
+                    url: 'http://supercollections.in'
                 }
             }
         }
@@ -2625,7 +2621,7 @@ function looksLikeProductQuery(rawText, products) {
 // ("currently out of stock") — both were landing on irrelevant/gibberish messages and reading as
 // false negatives to customers, so the bot now never claims an item is "out of stock" or that it
 // "couldn't find" something; it just points them at the menu or a human.
-const HELPFUL_MENU_CONTACT_REPLY = `😔 Couldn't find that exact item.\n\n📹 *Order panna guide video:*\nhttps://youtube.com/shorts/7FRdStr8AKk\n\nType *menu* to browse our collection 🛍️\nOr visit: ${SHOP_URL}\n\n📞 Help: 8825325096 / 7418755096\n🕘 9 AM – 7 PM`;
+const HELPFUL_MENU_CONTACT_REPLY = `😔 Couldn't find that exact item.\n\n📹 *Order panna guide video:*\nhttps://youtube.com/shorts/7FRdStr8AKk\n\nType *menu* to browse our collection 🛍️\nOr visit: https://supercollections.in/shop/\n\n📞 Help: 8825325096 / 7418755096\n🕘 9 AM – 7 PM`;
 
 // Matches an Instagram/Facebook/YouTube link in an INCOMING customer message — e.g. a customer
 // pasting a Reel/post link and asking "is this available". Checked against the raw user message
@@ -2668,7 +2664,7 @@ const GENERIC_FALLBACK_REPLY = `Sorry, I didn't quite get that! 😊 Type *menu*
 const GENERIC_COLOR_INQUIRY_REPLY = `🎨 Yes! We have lots of colours available across all our collections 😊
 
 Check them out here 👇
-${SHOP_URL}
+https://supercollections.in/shop/
 
 Illana product name sollunga (e.g. "plain shirt"), naan exact colours kaatturen!`;
 
@@ -3710,7 +3706,7 @@ function getShortProductName(p) {
 // nothing to page through.
 function buildProductCardsResponse(productsPool, products, queryLabel) {
     const cards = products.map(p => {
-        let url = p.permalink ? withUtm(p.permalink) : null;
+        let url = p.permalink;
         if (!url) {
             console.warn(`[ProductCards] Product ${p.id} ("${p.name}") has no permalink — falling back to category URL`);
             url = getCategoryUrl(p.category);
@@ -3939,7 +3935,7 @@ function buildCrossGroupConflictReply(specificTerms, actualCategory, requestedPa
 // the same cta_url path every other product card already goes through.
 function buildSpecificProductReply(product, productsPool) {
     const colorPrefix = product.color ? `${product.color} ` : '';
-    let url = product.permalink ? withUtm(product.permalink) : null;
+    let url = product.permalink;
     if (!url) {
         console.warn(`[ProductAvailability] Product ${product.id} ("${product.name}") has no permalink — falling back to category URL`);
         url = getCategoryUrl(product.category);
@@ -4171,7 +4167,7 @@ async function handleIntent(intentResult, session, products, from) {
         }
         case 'CHECKOUT': {
             return {
-                replyText: `🛒 Order panna website ku ponga - size & colour select panni, easy ah checkout pannalam! 👇\n${SHOP_URL}\n\n*menu* type panni products paarunga! 😊`,
+                replyText: `🛒 Order panna website ku ponga - size & colour select panni, easy ah checkout pannalam! 👇\nhttps://supercollections.in/shop/\n\n*menu* type panni products paarunga! 😊`,
                 sendImages: []
             };
         }

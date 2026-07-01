@@ -4,7 +4,6 @@ import { getOrders } from '../api/ordersApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
-import SourceBadge from '../components/ui/SourceBadge';
 
 function formatDate(ts) {
   if (!ts) return '—';
@@ -224,10 +223,7 @@ export default function BillingPage() {
                   className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all group"
                 >
                   <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-gray-800">{name}</p>
-                      <SourceBadge order={order} />
-                    </div>
+                    <p className="text-sm font-semibold text-gray-800">{name}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{id} · {formatDate(order.date || order.createdAt)}</p>
                     <p className="text-xs text-gray-500 mt-1">{items.length} item{items.length !== 1 ? 's' : ''}</p>
                   </div>
