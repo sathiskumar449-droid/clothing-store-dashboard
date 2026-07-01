@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Save, Store, Phone, MapPin, MessageSquare, Bot, Globe, Key, CheckCircle } from 'lucide-react';
 import api from '../api/axiosInstance';
+import CouponSettings from '../components/CouponSettings';
 
 const STORE_KEY = 'store_settings';
 const WOO_KEY = 'woo_settings';
@@ -288,6 +289,9 @@ export default function SettingsPage() {
             </button>
           </div>
         </Section>
+
+        {/* Coupon Settings */}
+        <CouponSettings />
       </div>
     </div>
   );
