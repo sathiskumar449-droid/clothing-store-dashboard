@@ -96,6 +96,19 @@ function buildOrderConfirmationMessage(order) {
     return msg;
 }
 
+// Records which channel (WhatsApp vs website) actually reached the customer for this order,
+// used by the /api/order-stats dashboard cards. Best-effort — a failure here shouldn't affect
+// the webhook's 200 ack to WooCommerce, so errors are just logged.
+async function setOrderSource(orderId, orderSource) {
+    const { error } = await supabase
+        .from('orders')
+        .update({ order_source: orderSource })
+        .eq('id', orderId);
+    if (error) {
+        console.error(`[Woo Order Webhook] ❌ Failed to set order_source="${orderSource}" for #${orderId}:`, error.message);
+    }
+}
+
 export async function handleWooOrderWebhook(req, res) {
     const topic = req.headers['x-wc-webhook-topic'] || '';
     console.log(`[Woo Order Webhook] Received — topic="${topic}"`);
@@ -194,20 +207,28 @@ export async function handleWooOrderWebhook(req, res) {
 
         if (!phone) {
             console.error(`[Woo Order Webhook] ❌ No usable billing phone on order #${order.id} — cannot notify customer`);
+            await setOrderSource(row.id, 'website');
             return res.sendStatus(200);
         }
 
-        const message = buildOrderConfirmationMessage(order);
-        await sendText(phone, message);
-        await logChatMessage(phone, 'bot', message);
+        try {
+            const message = buildOrderConfirmationMessage(order);
+            await sendText(phone, message);
+            await logChatMessage(phone, 'bot', message);
 
-        // This order was just confirmed, so any WhatsApp bot conversation this customer had going
-        // (e.g. mid numeric subcategory/menu selection from an earlier, abandoned chat) is now
-        // stale context. Clear it so their next WhatsApp message starts fresh instead of being
-        // validated against a leftover menu that no longer applies.
-        await deleteSession(phone);
+            // This order was just confirmed, so any WhatsApp bot conversation this customer had going
+            // (e.g. mid numeric subcategory/menu selection from an earlier, abandoned chat) is now
+            // stale context. Clear it so their next WhatsApp message starts fresh instead of being
+            // validated against a leftover menu that no longer applies.
+            await deleteSession(phone);
 
-        console.log(`[Woo Order Webhook] ✅ Sent ${notifyKind === 'status_changed' ? 'status update' : 'order confirmation'} for #${order.number || order.id} to ${phone}`);
+            await setOrderSource(row.id, 'whatsapp');
+            console.log(`[Woo Order Webhook] ✅ Sent ${notifyKind === 'status_changed' ? 'status update' : 'order confirmation'} for #${order.number || order.id} to ${phone}`);
+        } catch (sendErr) {
+            console.error(`[Woo Order Webhook] ❌ Failed to send WhatsApp confirmation for #${order.id}:`, sendErr.message);
+            await setOrderSource(row.id, 'website');
+        }
+
         return res.sendStatus(200);
     } catch (err) {
         console.error('[Woo Order Webhook] ❌ Processing error:', err.message);

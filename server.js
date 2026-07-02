@@ -7,6 +7,7 @@ import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook, handleRazorpayWeb
 import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook } from './api/products.js';
 import { handleWooOrderWebhook } from './api/woocommerce-order-webhook.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
+import { getOrderStats } from './api/order-stats.js';
 import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat, editChatMessage, deleteChatMessage } from './api/chats.js';
 import { getWooSettings, saveWooSettings, getStoreSettings, saveStoreSettings } from './api/settings.js';
 
@@ -78,6 +79,7 @@ app.post('/api/webhook/woocommerce', handleWooWebhook);
 // =============================
 app.get('/api/orders', requireApiKey, getOrders);
 app.put('/api/orders/:id/status', requireApiKey, updateOrderStatus);
+app.get('/api/order-stats', requireApiKey, getOrderStats);
 
 
 // =============================
