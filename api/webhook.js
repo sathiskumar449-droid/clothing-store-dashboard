@@ -2652,7 +2652,16 @@ const NUMERIC_INPUT_STATES = ['AWAITING_CHECKOUT_PHONE', 'AWAITING_CHECKOUT_PINC
 // session.searchProducts is empty) — typically a freshly reset/idle session left over after checkout.
 // Showing "reply with a number from the list" when no list was ever shown is confusing, so we use this
 // friendlier, neutral nudge instead.
-const GENERIC_FALLBACK_REPLY = `Sorry, I didn't quite get that! 😊 Type *menu* to browse our shop, or *order help* if you have a question about your order.`;
+const GENERIC_FALLBACK_REPLY = `Sorry, I didn't quite get that! 😊
+
+📹 *Order panna guide video paruga:*
+https://youtube.com/shorts/7FRdStr8AKk
+
+Type *menu* to browse our collection 🛍️
+Or visit: https://supercollections.in/shop/
+
+📞 Help: 8825325096 / 7418755096
+🕘 9 AM – 7 PM`;
 
 // Standalone color question with no product/category mentioned at all (e.g. "colours", "colors
 // available?", "enna colour irukku") — checked in the FAQ fallback chain below, well after
