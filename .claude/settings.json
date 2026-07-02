@@ -12,7 +12,16 @@
       "Bash(node --input-type=module -e ' *)",
       "Bash(node fuzzy_test2.mjs)",
       "Bash(node --check api/woocommerce-order-webhook.js)",
-      "Bash(npx --no-install eslint src/pages/OrdersPage.jsx src/pages/DashboardPage.jsx src/components/ui/Badge.jsx)"
+      "Bash(npx --no-install eslint src/pages/OrdersPage.jsx src/pages/DashboardPage.jsx src/components/ui/Badge.jsx)",
+      "Bash(node scratch/test_chat_logging_regression.js)",
+      "Bash(node scratch/test_chat_logging_regression2.js)",
+      "Bash(node scratch/inspect_chat_row.js)",
+      "Bash(curl -s -H 'apikey: ' -H 'Authorization: Bearer ' 'https://jybkkttgfzupkfdodbvy.supabase.co/rest/v1/settings?key=in.\\(woo_site_url,woo_consumer_key,woo_consumer_secret\\)&select=key,value')",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(vercel ls *)",
+      "Bash(yes)",
+      "Bash(vercel env *)"
     ]
   }
 }
