@@ -1,9 +1,9 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ShoppingBag, MessageSquare, IndianRupee, Clock, Users, TrendingUp, MessageCircle, Globe
+  ShoppingBag, MessageSquare, IndianRupee, Clock, Users, TrendingUp
 } from 'lucide-react';
-import { getOrders, getOrderStats } from '../api/ordersApi';
+import { getOrders } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
@@ -21,20 +21,12 @@ export default function DashboardPage() {
   const fetchStats = useCallback(async () => {
     try {
       const dateRangeParams = getDateRangeParams(dateFilter);
-      // order-stats is a single-day endpoint (it has no range param) — only the custom date
-      // picker maps onto it directly; the quick filters (today/week/month/all) fall back to
-      // the server's own "today" default.
-      const orderStatsParams = dateFilter.mode === 'custom' && dateFilter.date
-        ? { date: dateFilter.date }
-        : {};
-      const [ordersRes, chatsRes, orderStatsRes] = await Promise.all([
+      const [ordersRes, chatsRes] = await Promise.all([
         getOrders(dateRangeParams),
         getAllChats(dateRangeParams),
-        getOrderStats(orderStatsParams),
       ]);
       const orders = ordersRes.data || [];
       const chats = chatsRes.data?.chats || [];
-      const orderStats = orderStatsRes.data || {};
 
       const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
       const pending = orders.filter(o => o.status === 'pending').length;
@@ -53,10 +45,6 @@ export default function DashboardPage() {
         uniqueCustomers,
         activeChats,
         botPausedChats,
-        whatsappOrders: orderStats.whatsapp_orders || 0,
-        whatsappRevenue: orderStats.whatsapp_revenue || 0,
-        websiteOrders: orderStats.website_orders || 0,
-        websiteRevenue: orderStats.website_revenue || 0,
       });
 
       setRecentOrders(
@@ -120,20 +108,6 @@ export default function DashboardPage() {
             value={stats.uniqueCustomers}
             icon={Users}
             color="amber"
-          />
-          <StatCard
-            title="📱 WhatsApp Orders"
-            value={stats.whatsappOrders}
-            icon={MessageCircle}
-            color="emerald"
-            subtitle={`₹${stats.whatsappRevenue.toLocaleString('en-IN')}`}
-          />
-          <StatCard
-            title="🌐 Website Orders"
-            value={stats.websiteOrders}
-            icon={Globe}
-            color="rose"
-            subtitle={`₹${stats.websiteRevenue.toLocaleString('en-IN')}`}
           />
         </div>
       )}
