@@ -3772,11 +3772,14 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel, ct
     // it was never paginated to begin with (ctaOptions never exposed Next/Prev buttons).
     const previewProducts = allProducts.slice(0, 9);
     console.log('[Collage] Order going into createProductCollage:', previewProducts.map((p, i) => `${i + 1}=${p.color || ''} ${p.name}`.trim()));
-    // Include the ordered product IDs in the cache key so a cache hit only ever serves a
-    // collage that was built from this exact same product order — if the underlying products
-    // array order ever drifts between requests, the key changes and the collage regenerates
-    // instead of silently showing a stale order that no longer matches the list below.
-    const orderSignature = crypto.createHash('md5').update(previewProducts.map(p => p.id).join(',')).digest('hex').substring(0, 12);
+    // Include the ordered product IDs AND each product's own image URL in the cache key — IDs
+    // alone caught an order drift, but a store owner correcting a wrong/duplicated photo on an
+    // existing product (same ID, new image) left the key unchanged, so the stale collage with
+    // the old wrong photo kept being served from cache forever (see Bug: two Popcorn Track Pant
+    // colours sharing one photo — fixing it in WooCommerce didn't fix the collage until this).
+    const orderSignature = crypto.createHash('md5')
+        .update(previewProducts.map(p => `${p.id}:${p.imageUri || p.image_uri || ''}`).join(','))
+        .digest('hex').substring(0, 12);
     // COLLAGE_CACHE_VERSION is prefixed into the key so changing how createProductCollage()
     // renders (e.g. removing the number badges) automatically invalidates every previously
     // cached row instead of silently keeping stale-looking collages alive — bump this

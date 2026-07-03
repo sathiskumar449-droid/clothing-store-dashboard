@@ -131,7 +131,7 @@ async function runConversation(phoneSuffix, texts) {
 }
 
 async function main() {
-    await runConversation(1, ['pants', '3']);
+    await runConversation(1, ['pants', '1']);
     process.exit(0);
 }
 
