@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase.js';
 import { createProductCollage, createRecommendationCollage, createPromoCollage } from '../lib/collage.js';
 import { getCategoryUrl } from '../lib/categoryUrls.js';
 import { detectNewFaqIntent } from '../lib/intents.js';
+import { addWhatsAppUTM, SIZE_QTY_STRUCTURED_STATES, ORDER_GUIDE_VIDEO_URL, GUIDED_FALLBACK_REPLY, buildGuidedFallbackReply } from '../lib/utils.js';
 
 dotenv.config();
 
@@ -105,12 +106,12 @@ If in-between sizes la irundha, next size eduthukonga.`;
 // T-Shirts parent category's real slug is "t-shirts-2" (not "t-shirts"), a pre-existing slug
 // collision on the WooCommerce site, not a typo here.
 const CATEGORY_LINKS = {
-    "1": { name: "Shirts", label: "shirts", emoji: "👔", url: "https://www.supercollections.in/product-category/shirts/" },
-    "2": { name: "T-Shirts", label: "t-shirts", emoji: "👕", url: "https://www.supercollections.in/product-category/t-shirts-2/" },
-    "3": { name: "Pants", label: "pants", emoji: "👖", url: "https://www.supercollections.in/product-category/pants/" },
-    "4": { name: "Track Pants", label: "track pants", emoji: "🏃", url: "https://www.supercollections.in/product-category/track-pants/" },
-    "5": { name: "Imported Shorts", label: "imported shorts", emoji: "🩳", url: "https://www.supercollections.in/product-category/imported-shorts/" },
-    "6": { name: "New Arrivals", label: "new arrivals", emoji: "✨", url: "https://www.supercollections.in/product-category/new-arrivals/" }
+    "1": { name: "Shirts", label: "shirts", emoji: "👔", url: addWhatsAppUTM("https://www.supercollections.in/product-category/shirts/") },
+    "2": { name: "T-Shirts", label: "t-shirts", emoji: "👕", url: addWhatsAppUTM("https://www.supercollections.in/product-category/t-shirts-2/") },
+    "3": { name: "Pants", label: "pants", emoji: "👖", url: addWhatsAppUTM("https://www.supercollections.in/product-category/pants/") },
+    "4": { name: "Track Pants", label: "track pants", emoji: "🏃", url: addWhatsAppUTM("https://www.supercollections.in/product-category/track-pants/") },
+    "5": { name: "Imported Shorts", label: "imported shorts", emoji: "🩳", url: addWhatsAppUTM("https://www.supercollections.in/product-category/imported-shorts/") },
+    "6": { name: "New Arrivals", label: "new arrivals", emoji: "✨", url: addWhatsAppUTM("https://www.supercollections.in/product-category/new-arrivals/") }
 };
 // Simplified 7-item "pick a category" quick menu shown by goToTopCategoryMenu() — replaces the
 // old flat list of every WooCommerce subcategory across all parents at once. Mirrors MAIN_MENU_TEXT's
@@ -153,13 +154,16 @@ function isDeliveryChargeComplaint(text = '') {
 
 // ─── New intent reply constants (see detectIntent: Intent 1 = size/qty availability,
 // Intent 2 = COD/payment method, Intent 3 = general collection request) ───
-const SIZE_QTY_AVAILABLE_REPLY = `✅ Yes, available!\n\nPlease check our website for all sizes, colours & to place your order 👇\nhttps://supercollections.in/shop/`;
-const COD_NOT_AVAILABLE_REPLY = `😊 Sorry, Cash on Delivery is not available currently.\n\nWe accept secure online payments only. Just place your order on our website & pay easily 👇\nhttps://supercollections.in/shop/`;
-const ONLINE_PAYMENT_INFO_REPLY = `💳 We accept secure online payments!\n\nJust place your order on our website and pay easily via UPI/cards 👇\nhttps://supercollections.in/shop/`;
+// Bare shop-page link, UTM-tagged once here and reused by every reply that points there.
+const SHOP_URL = addWhatsAppUTM('https://supercollections.in/shop/');
+
+const SIZE_QTY_AVAILABLE_REPLY = `✅ Yes, available!\n\n👇 எல்லா sizes & colours பாக்க, order போட இந்த link click பண்ணுங்க:\n${SHOP_URL}`;
+const COD_NOT_AVAILABLE_REPLY = `😊 Sorry, Cash on Delivery is not available currently.\n\nWe accept secure online payments only. Just place your order on our website & pay easily 👇\n${SHOP_URL}`;
+const ONLINE_PAYMENT_INFO_REPLY = `💳 We accept secure online payments!\n\nJust place your order on our website and pay easily via UPI/cards 👇\n${SHOP_URL}`;
 const HOW_TO_ORDER_REPLY = `🛍️ Ordering is super easy!\n\n1️⃣ Type *menu* to browse, or tell me what you want (e.g. "plain shirt")\n2️⃣ Tap the website link we send you\n3️⃣ On the website: choose size & colour, add to cart\n4️⃣ Checkout & pay securely online ✅\n\nIt takes just 2 minutes! 😊\n\nNeed help? Contact our team:\n📞 +91 8668066503`;
-const SHOP_ADDRESS_REPLY = `📍 Super Collections\nUdumalpet, Tamil Nadu\n\nVisit pannanuma illa direction venuma? Engateam ah contact pannunga:\n📞 +91 8668066503\n\nOnline la order panna *menu* type pannunga! 😊`;
+const SHOP_ADDRESS_REPLY = `📍 *Super Collections*\n127/100, Srinivasa Street\nUdumalpet – 642126, Tamil Nadu\n\nVisit pannanuma illa direction venuma? Engateam ah contact pannunga:\n📞 +91 8668066503\n\nOnline la order panna *menu* type pannunga! 😊`;
 const STOCK_OUT_COMPLAINT_REPLY = `😔 Sorry for the trouble! Stock vanthathum udane update panrom. 🙏\n\nPlease konja naal kazhichu check pannunga, illa engateam ah contact pannunga:\n📞 +91 8668066503`;
-const GENERAL_COLLECTION_REPLY = `🛍️ Yes, we have lots of collections!\n\nPlease visit our website to explore everything 👇\nhttps://supercollections.in/shop/`;
+const GENERAL_COLLECTION_REPLY = `🛍️ Yes, we have lots of collections!\n\nPlease visit our website to explore everything 👇\n${SHOP_URL}`;
 
 // Distinctive multi-letter size tokens (XL, XXL, 2XL, 3XL, XS) are safe to match anywhere in the
 // message. Single-letter S/M/L are only counted when paired with the word "size" (either order)
@@ -794,7 +798,7 @@ export async function sendCtaUrlWelcomeMessage(to) {
                 name: 'cta_url',
                 parameters: {
                     display_text: 'Visit Website',
-                    url: 'http://supercollections.in'
+                    url: addWhatsAppUTM('http://supercollections.in')
                 }
             }
         }
@@ -1265,8 +1269,10 @@ const getTargetRecommendationTags = (tag) => {
 // Strips a trailing "(color)" variant suffix, e.g. "five sleeve t shirt (black)" -> "five sleeve t shirt".
 const stripVariantSuffix = (name) => (name || '').toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
 
-// Helper to retrieve fallback/self-healing image URI if the database row has 'null' or missing image
-const getProductImageUri = (product, allProducts = []) => {
+// Helper to retrieve fallback/self-healing image URI if the database row has 'null' or missing image.
+// Exported for lib/intents.js's colour-context matcher (see matchColorQuery), which needs the same
+// fuzzy image-fallback chain a normal product-card reply gets — not just a bare product.imageUri check.
+export const getProductImageUri = (product, allProducts = []) => {
     if (product.imageUri && product.imageUri.startsWith('http') && product.imageUri !== 'null' && product.imageUri !== 'undefined') {
 
         return product.imageUri;
@@ -1833,7 +1839,7 @@ async function enterSubCategoryByIndex(session, products, idx, allSubs) {
     const matched = products.filter(p => Number(p.stock) > 0 && productMatchesSubCategory(p, selectedSub));
 
     if (matched.length === 0) {
-        return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+        return buildGuidedFallbackReply(session);
     }
 
     session.selectedSubCategory = selectedSub;
@@ -2445,13 +2451,20 @@ const normalizeSearchSpelling = (s) => s
     .replace(/\bshir\b/g, 'shirt')
     .replace(/\btrousers?\b/g, 'trouser');
 
+// Parentheses are stripped alongside the rest of the punctuation so a colour typed the same way
+// the catalog itself names variants (e.g. "(Navy Blue)") still tokenizes to plain "navy"/"blue"
+// words instead of "(navy"/"blue)". Shared by cleanSearchQuery (the customer's query) AND
+// buildCatalogIndex (product/category names) below — both sides tokenize the same "(Colour)"
+// naming convention, so both need this same stripping or a parenthesised colour word silently
+// stops contributing to that product's category score without ever erroring (see buildCatalogIndex).
+const stripSearchPunctuation = (s) => s.replace(/[?!.,'"()]/g, ' ').replace(/\s+/g, ' ').trim();
+
 function cleanSearchQuery(rawText) {
     return normalizeSearchSpelling(
-        (rawText || '').toLowerCase()
-            .replace(/(?:under|below|less than)\s*₹?\s*\d+/g, '')
-            .replace(/[?!.,'"]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
+        stripSearchPunctuation(
+            (rawText || '').toLowerCase()
+                .replace(/(?:under|below|less than)\s*₹?\s*\d+/g, '')
+        )
     );
 }
 
@@ -2491,7 +2504,9 @@ function findFuzzyCatalogMatch(term, vocabulary) {
     return null;
 }
 
-function searchTermMatches(p, term) {
+// Exported for lib/intents.js's colour-context matcher (matchColorQuery) — the same loose
+// full-name/category/color/pattern substring fallback a normal SEARCH colour match uses.
+export function searchTermMatches(p, term) {
     const cats = Array.isArray(p.categories) && p.categories.length > 0
         ? p.categories : [p.category];
     return normalizeSearchSpelling((p.name || '').toLowerCase()).includes(term) ||
@@ -2540,12 +2555,12 @@ function buildCatalogIndex(inStockProducts) {
         const cats = Array.from(catSet);
         for (const cat of cats) {
             if (!cat) continue;
-            const catWords = normalizeSearchSpelling(cat.toLowerCase()).split(/\s+/);
+            const catWords = normalizeSearchSpelling(stripSearchPunctuation(cat.toLowerCase())).split(/\s+/);
             for (const w of catWords) {
                 addWord(w, cat, 2);
                 addWord(simpleStem(w), cat, 2);
             }
-            const nameWords = normalizeSearchSpelling((p.name || '').toLowerCase()).split(/\s+/);
+            const nameWords = normalizeSearchSpelling(stripSearchPunctuation((p.name || '').toLowerCase())).split(/\s+/);
             for (const w of nameWords) {
                 addWord(w, cat, 1);
                 addWord(simpleStem(w), cat, 1);
@@ -2615,14 +2630,6 @@ function looksLikeProductQuery(rawText, products) {
     return terms.some(term => COLOR_KEYWORDS.includes(term) || inStock.some(p => searchTermMatches(p, term)));
 }
 
-// Single reply for every "negative" case — nothing recognizable in the message, a genuine
-// catalog-unmatched term (e.g. "Korean"), or a named item/category/subcategory with zero stock.
-// Replaces the old SHORT_NOT_FOUND_REPLY ("couldn't find that exact item") and OUT_OF_STOCK_REPLY
-// ("currently out of stock") — both were landing on irrelevant/gibberish messages and reading as
-// false negatives to customers, so the bot now never claims an item is "out of stock" or that it
-// "couldn't find" something; it just points them at the menu or a human.
-const HELPFUL_MENU_CONTACT_REPLY = `😔 Couldn't find that exact item.\n\n📹 *Order panna guide video:*\nhttps://youtube.com/shorts/7FRdStr8AKk\n\nType *menu* to browse our collection 🛍️\nOr visit: https://supercollections.in/shop/\n\n📞 Help: 8825325096 / 7418755096\n🕘 9 AM – 7 PM`;
-
 // Matches an Instagram/Facebook/YouTube link in an INCOMING customer message — e.g. a customer
 // pasting a Reel/post link and asking "is this available". Checked against the raw user message
 // (see the early-return in _handleSalesAssistantJS below), never against anything the bot itself
@@ -2647,33 +2654,17 @@ Illana *menu* type pannunga, categories paathu website la  paarunga 🛍️`;
 // so a bare numeric message must NOT be hijacked as an order-id lookup.
 const NUMERIC_INPUT_STATES = ['AWAITING_CHECKOUT_PHONE', 'AWAITING_CHECKOUT_PINCODE'];
 
-// Used when session.state nominally expects a numbered-list reply (e.g. AWAITING_SUBCATEGORY_SELECTION,
-// AWAITING_MODEL_SELECTION) but there's no actual list backing it (session.subCategories /
-// session.searchProducts is empty) — typically a freshly reset/idle session left over after checkout.
-// Showing "reply with a number from the list" when no list was ever shown is confusing, so we use this
-// friendlier, neutral nudge instead.
-const GENERIC_FALLBACK_REPLY = `Sorry, I didn't quite get that! 😊
-
-📹 *Order panna guide video paruga:*
-https://youtube.com/shorts/7FRdStr8AKk
-
-Type *menu* to browse our collection 🛍️
-Or visit: https://supercollections.in/shop/
-
-📞 Help: 8825325096 / 7418755096
-🕘 9 AM – 7 PM`;
-
 // Standalone color question with no product/category mentioned at all (e.g. "colours", "colors
 // available?", "enna colour irukku") — checked in the FAQ fallback chain below, well after
 // detectIntent's SEARCH-routing checks (parentCategories/searchKeywords/looksLikeProductQuery)
-// have already failed to find a category match, and before the final GENERIC_FALLBACK_REPLY.
+// have already failed to find a category match, and before the final buildGuidedFallbackReply().
 // Reaching that FAQ chain at all already implies no category/product keyword was recognized —
 // SEARCH always returns its own reply and never falls through here — so this only needs to check
 // for a color word, not separately re-verify the absence of a category word.
 const GENERIC_COLOR_INQUIRY_REPLY = `🎨 Yes! We have lots of colours available across all our collections 😊
 
 Check them out here 👇
-https://supercollections.in/shop/
+${SHOP_URL}
 
 Illana product name sollunga (e.g. "plain shirt"), naan exact colours kaatturen!`;
 
@@ -2725,7 +2716,7 @@ function extractMenuNumbers(text) {
 // Appended to a numbered-menu reply when the customer listed more than one number at once (e.g.
 // "1,2 & 3") — we act on the first one rather than either spamming every option back-to-back or
 // rejecting the whole message as unparseable (see MULTIPLE_CATEGORY_NOTE callers below).
-const MULTIPLE_CATEGORY_NOTE = "You mentioned multiple categories. Here's the first one. Reply with another number if you want to see another category.";
+const MULTIPLE_CATEGORY_NOTE = "நீங்க பல categories சொன்னீங்க. இதோ முதல்லது 👇 வேற category பாக்கணும்னா இன்னொரு number அனுப்புங்க.";
 
 // ─── GREETING matching (used by detectIntent's GREETING check below) ───
 // Base words match on their own; phrases are multi-word greetings matched whole. Tamil entries
@@ -2739,7 +2730,7 @@ const GREETING_BASE_WORDS = [
     'வணக்கம்', 'ஹாய்', 'ஹலோ'
 ];
 const GREETING_PHRASES = [
-    'good morning', 'good evening', 'good afternoon',
+    'good morning', 'good evening', 'good afternoon', 'good night',
     'வணக்கம் சார்', 'வணக்கம் அண்ணா', 'காலை வணக்கம்', 'மாலை வணக்கம்',
     'kaalai vanakkam', 'maalai vanakkam'
 ];
@@ -2747,8 +2738,15 @@ const GREETING_PHRASES = [
 // e.g. "hai sir"/"hello boss"/"good morning sir" all match without enumerating every combination.
 const GREETING_SUFFIXES = ['sir', 'bro', 'anna', 'madam', 'boss', 'sami'];
 const GREETING_EMOJI = '[\u{1F64F}\u{1F44B}]'; // 🙏 (folded hands), 👋 (waving hand)
+// Base words/phrases matched at either the head of the message or (after an address suffix)
+// a second time — this is what lets a combined greeting like "Hai sir good evening" match: a
+// base word ("hai"), an address suffix ("sir"), then a second full greeting phrase ("good
+// evening"), all still anchored so trailing non-greeting text after them still fails the match.
+const GREETING_TOKENS = [...GREETING_PHRASES, ...GREETING_BASE_WORDS].sort((a, b) => b.length - a.length).join('|');
 const GREETING_REGEX = new RegExp(
-    '^(?:' + [...GREETING_PHRASES, ...GREETING_BASE_WORDS].sort((a, b) => b.length - a.length).join('|') + ')' +
+    '^(?:' + GREETING_TOKENS + ')' +
+    '(?:\\s*,?\\s*(?:' + GREETING_SUFFIXES.join('|') + '))*' +
+    '(?:\\s*,?\\s*(?:' + GREETING_TOKENS + '))?' +
     '(?:\\s*,?\\s*(?:' + GREETING_SUFFIXES.join('|') + '))*' +
     '(?:\\s*' + GREETING_EMOJI + ')*' +
     '\\s*[!.,]*\\s*$',
@@ -2955,7 +2953,7 @@ function detectIntent(text, products = [], session = null) {
         'address', 'address send me', 'send address', 'shop address', 'store address',
         'shop location', 'store location', 'where is your shop', 'shop enga', 'store enga',
         'kadai enga', 'location', 'shop located', 'address kudunga', 'where are you located',
-        'shop where'
+        'shop where', 'shop place'
     ];
     if (!isCollectingCheckoutAddress && shopLocationKeywords.some(k => t.includes(k))) {
         return { type: 'FAQ', reply: SHOP_ADDRESS_REPLY };
@@ -3206,7 +3204,6 @@ function detectIntent(text, products = [], session = null) {
     // product (e.g. the customer typed "XL" or "40" as their real answer to "what size?") — that
     // free-text reply must reach the existing AWAITING_SIZE_SELECTION/AWAITING_PRODUCT_SIZE/
     // AWAITING_PRODUCT_QTY/AWAITING_CART_CONFIRM handling further down, not this generic FAQ.
-    const SIZE_QTY_STRUCTURED_STATES = ['AWAITING_SIZE_SELECTION', 'AWAITING_PRODUCT_SIZE', 'AWAITING_PRODUCT_QTY', 'AWAITING_CART_CONFIRM'];
     const inStructuredSizeQtyFlow = session && SIZE_QTY_STRUCTURED_STATES.includes(session.state);
     if (!inStructuredSizeQtyFlow && isSizeQtyAvailabilityQuery(t)) {
         return { type: 'FAQ', reply: SIZE_QTY_AVAILABLE_REPLY };
@@ -3707,26 +3704,33 @@ function getShortProductName(p) {
     return name.trim();
 }
 
+// Tamil "how to order" steps appended to product replies — most customers messaging the bot
+// don't know the website checkout flow, so every specific-product reply teaches it inline.
+// Online payment only; we never accept COD, so it's never mentioned here. No step numbers —
+// requested removed since the 1️⃣2️⃣3️⃣4️⃣ emoji markers read as clutter next to the product info.
+const ORDER_STEPS_TEXT = `🛒 *Order போட:*\nLink-ஐ Click பண்ணுங்க\nSize select பண்ணி *Add to Cart*\nமுகவரி + phone number போடுங்க\nOnline payment பண்ணி confirm பண்ணுங்க`;
+
+// Points at the same order-guide video used elsewhere in the bot (see ORDER_GUIDE_VIDEO_URL).
+const ORDER_VIDEO_PROMPT = `📹 Order போட இந்த video பாருங்க: ${ORDER_GUIDE_VIDEO_URL}`;
+
 // Builds one cta_url card per matched product — image header (that product's own photo), body
-// text (name/color + price + sizes), and a "See More" button linking straight to that
-// product's own page. Falls back to the product's category page (lib/categoryUrls.js) when a
-// product has no permalink (sync gap), logging a warning, so a missing field never sends a
-// broken link. Every matched product gets a card in one go — there's no pagination, so there's
-// nothing to page through.
+// text (name/color + price), and a "See More" button linking straight to that product's own
+// page. Falls back to the product's category page (lib/categoryUrls.js) when a product has no
+// permalink (sync gap), logging a warning, so a missing field never sends a broken link. Every
+// matched product gets a card in one go — there's no pagination, so there's nothing to page
+// through. Order steps + video guide are sent once in the header text rather than repeated on
+// every card — with several results, that would mean re-sending the same video link once per
+// product.
 function buildProductCardsResponse(productsPool, products, queryLabel) {
     const cards = products.map(p => {
-        let url = p.permalink;
+        let url = p.permalink ? addWhatsAppUTM(p.permalink) : null;
         if (!url) {
             console.warn(`[ProductCards] Product ${p.id} ("${p.name}") has no permalink — falling back to category URL`);
             url = getCategoryUrl(p.category);
         }
 
         const colorPrefix = p.color ? `${p.color} ` : '';
-        let body = `*${colorPrefix}${p.name}*\n💰 ₹${p.price}`;
-        const sizeList = (Array.isArray(p.sizes) ? p.sizes : []).filter(Boolean);
-        if (sizeList.length > 0) {
-            body += `\n📐 Sizes: ${sizeList.map(s => String(s).toUpperCase()).join(' ')}`;
-        }
+        const body = `*${colorPrefix}${p.name}*\n💰 ₹${p.price}`;
 
         return {
             imageUrl: getProductImageUri(p, productsPool),
@@ -3737,7 +3741,7 @@ function buildProductCardsResponse(productsPool, products, queryLabel) {
     });
 
     return {
-        replyText: `👔 *${queryLabel}*`,
+        replyText: `👔 *${queryLabel}*\n\n${ORDER_STEPS_TEXT}\n\n${ORDER_VIDEO_PROMPT}`,
         sendProductCards: cards,
         sendImages: []
     };
@@ -3870,8 +3874,29 @@ async function handleOrderHelpChoice(choice, customerPhone) {
 // Common shirt/pant colors recognized in free-text product queries (see SEARCH case below) —
 // distinguishes a generic category mention ("plain shirt iruka") from a specific color/variant
 // request ("plain shirt cream") so the right reply (category page vs. exact product page) goes out.
-const COLOR_KEYWORDS = ['cream', 'white', 'black', 'blue', 'navy', 'grey', 'gray', 'maroon', 'green',
+// Exported for lib/intents.js's colour-context matcher (matchColorQuery), which reuses the exact
+// same colour vocabulary for its "message is just a colour" guard.
+export const COLOR_KEYWORDS = ['cream', 'white', 'black', 'blue', 'navy', 'grey', 'gray', 'maroon', 'green',
     'beige', 'pink', 'yellow', 'red', 'orange', 'brown', 'purple', 'mustard', 'khaki', 'wine', 'olive'];
+
+// Two/three-word colour names COLOR_KEYWORDS can't represent on its own (it's single words only) —
+// without this, "Navy Blue" only registers as the bare word "blue", and "Sage Green"/"Olive Green"
+// both collapse to the same ambiguous "green", unable to tell the two shades apart. Checked against
+// the cleaned query STRING (before word-splitting) so the whole phrase — not just its last word —
+// becomes the colorTerm in the SEARCH case below.
+export const COMPOUND_COLOR_KEYWORDS = ['navy blue', 'royal blue', 'sage green', 'olive green', 'dark grey', 'light steel grey'];
+
+// Extracts the colour token WooCommerce's own product-title convention puts in parentheses (e.g.
+// "Premium Cotton Pant (Navy Blue)" -> "navy blue"). This is the authoritative colour for a
+// listing: these per-colour products never populate the structured p.color column (color sync gap),
+// and some titles carry a stray leftover colour word OUTSIDE the parens too (e.g. "Premium Cotton
+// Pant Grey (Navy Blue)" is actually Navy Blue, not Grey) — a plain full-name substring search
+// can't tell those apart, but the parenthesised segment always names the real variant. Exported for
+// lib/intents.js's colour-context matcher, which needs the exact same authoritative-colour lookup.
+export function extractParenColor(name) {
+    const match = (name || '').match(/\(([^)]+)\)/);
+    return match ? match[1].toLowerCase().trim() : null;
+}
 
 // Size/quantity words a customer tacks onto a search query (e.g. "stripe t shirts xl size") —
 // these never describe a category/pattern/color, so the SEARCH case strips them out of
@@ -3941,25 +3966,36 @@ function buildCrossGroupConflictReply(specificTerms, actualCategory, requestedPa
 // Product Availability Check, Scenario B (exact category + color match) — replies with that one
 // product's own image/price and a button straight to its own page. Returned as a declarative
 // reply object (sendProductCards) so the existing dispatcher sends it via sendProductCtaCard,
-// the same cta_url path every other product card already goes through.
-function buildSpecificProductReply(product, productsPool) {
+// the same cta_url path every other product card already goes through. Exported for
+// lib/intents.js's colour-context matcher (matchColorQuery) so a category-scoped colour match gets
+// the exact same reply formatting as every other specific-product reply, with no duplication.
+export function buildSpecificProductReply(product, productsPool) {
     const colorPrefix = product.color ? `${product.color} ` : '';
-    let url = product.permalink;
+    let url = product.permalink ? addWhatsAppUTM(product.permalink) : null;
     if (!url) {
         console.warn(`[ProductAvailability] Product ${product.id} ("${product.name}") has no permalink — falling back to category URL`);
         url = getCategoryUrl(product.category);
     }
+    const body = `*${colorPrefix}${product.name}*\n💰 ₹${product.price}\n\n${ORDER_STEPS_TEXT}\n\n${ORDER_VIDEO_PROMPT}`;
     return {
         replyText: null,
         sendImages: [],
         sendProductCards: [{
             imageUrl: getProductImageUri(product, productsPool),
-            body: `*${colorPrefix}${product.name}*\n💰 ₹${product.price}`,
+            body,
             buttonText: 'View & Buy 🛒',
             url
         }]
     };
 }
+
+// Product families where every colour variant shares one WooCommerce category (the "X (Colour)"
+// naming pattern — same as Cotton Pants) and a bare-name free-text search should show every
+// colour at once via the same collage the numbered subcategory-browse menu already sends,
+// instead of Scenario A's single-sample-photo reply below. An explicit allowlist rather than
+// applied to every category's free-text search store-wide, since that's a broader behavior
+// change than requested — see the SEARCH case's use of this constant.
+const COLLAGE_ON_SEARCH_CATEGORIES = ['Adidas Popcorn Track Pant'];
 
 // Product Availability Check, Scenario A (category mentioned with no color, or a mentioned color
 // that isn't in stock) — replies "Yes, available" with one sample in-stock product's image and a
@@ -3967,13 +4003,14 @@ function buildSpecificProductReply(product, productsPool) {
 function buildCategoryAvailableReply(sampleProduct, productsPool) {
     const categoryName = sampleProduct.category || 'this category';
     const capName = categoryName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    const body = `Yes, available ✅\n\n👔 *${capName}*\n\n${ORDER_STEPS_TEXT}\n\n${ORDER_VIDEO_PROMPT}`;
     return {
         replyText: null,
         sendImages: [],
         sendProductCards: [{
             imageUrl: getProductImageUri(sampleProduct, productsPool),
-            body: `Yes, available ✅\n\n👔 *${capName}*`,
-            buttonText: 'See More Colours 👀',
+            body,
+            buttonText: 'Click Here Colours',
             url: getCategoryUrl(categoryName)
         }]
     };
@@ -4176,7 +4213,7 @@ async function handleIntent(intentResult, session, products, from) {
         }
         case 'CHECKOUT': {
             return {
-                replyText: `🛒 Order panna website ku ponga - size & colour select panni, easy ah checkout pannalam! 👇\nhttps://supercollections.in/shop/\n\n*menu* type panni products paarunga! 😊`,
+                replyText: `🛒 Order panna website ku ponga - size & colour select panni, easy ah checkout pannalam! 👇\n${SHOP_URL}\n\n*menu* type panni products paarunga! 😊`,
                 sendImages: []
             };
         }
@@ -4240,7 +4277,7 @@ async function handleIntent(intentResult, session, products, from) {
             const link = CATEGORY_LINKS[intentResult.choice];
             if (link) {
                 return {
-                    replyText: `${link.emoji} *${link.name} Collection*\nCheck out all our ${link.label} here 👇\n${link.url}${note}`,
+                    replyText: `${link.emoji} *${link.name} Collection*\n${link.name} Order பண்ண இந்த Link-ஐ Click பண்ணுங்க 👇\n${link.url}\n\n${ORDER_STEPS_TEXT}\n\n${ORDER_VIDEO_PROMPT}${note}`,
                     sendImages: []
                 };
             }
@@ -4296,6 +4333,10 @@ async function handleIntent(intentResult, session, products, from) {
             // ("shirt", "tshirt") vs. everything else ("specific" words — brand/style/pattern,
             // e.g. "branded", "polo", "stripe" — read straight from catalog data, not a fixed list).
             const cleanedQ = cleanSearchQuery(query);
+            // Checked against the full cleaned string, before word-splitting, so a compound colour
+            // name is captured whole (see COMPOUND_COLOR_KEYWORDS above) rather than losing all but
+            // its last word once queryWords splits it apart.
+            const compoundColorMatch = COMPOUND_COLOR_KEYWORDS.find(c => cleanedQ.includes(c)) || null;
             const queryWords = cleanedQ.split(/\s+/).filter(w =>
                 w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w) &&
                 !SIZE_KEYWORDS.has(w) && !/^\d+$/.test(w)
@@ -4328,7 +4369,7 @@ async function handleIntent(intentResult, session, products, from) {
             }
 
             if (queryWords.length === 0) {
-                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+                return buildGuidedFallbackReply(session);
             }
 
             // STEP B — build a fresh category-keyword index from the live in-stock catalog (no
@@ -4343,7 +4384,7 @@ async function handleIntent(intentResult, session, products, from) {
             // specific attribute/origin/brand we don't carry at all — refuse to fall back to ANY
             // category/product suggestion instead of guessing from the remaining words.
             if (hasUnmatchedTerm) {
-                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+                return buildGuidedFallbackReply(session);
             }
 
             // Cross-group conflict check — a specific brand/style/pattern word (e.g. "stripe")
@@ -4376,7 +4417,7 @@ async function handleIntent(intentResult, session, products, from) {
             }
 
             if (allScores.size === 0) {
-                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+                return buildGuidedFallbackReply(session);
             }
 
             // Highest score wins; ties broken toward the longer/more specific category name (e.g.
@@ -4396,19 +4437,58 @@ async function handleIntent(intentResult, session, products, from) {
                 )
             );
             if (categoryProducts.length === 0) {
-                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+                return buildGuidedFallbackReply(session);
             }
+
+            // Records which category this search resolved to — both the exact subcategory
+            // (bestCategory, e.g. "Cotton Pants") and its parent group ("Pants") — so a bare
+            // follow-up typed right afterwards can be answered without re-asking. A bare letter
+            // size ("M size" — see lib/intents.js's matchSizeQuery) only needs the parent (Shirts
+            // vs T-Shirts is the only ambiguity there). A bare colour ("dark green" — see
+            // lib/intents.js's matchColorQuery) needs the EXACT subcategory: Cotton Pants and Track
+            // Pants share the same parent ("Pants"), so parent-only scoping would still let a
+            // colour match resolve to the wrong subcategory.
+            session.selectedParentCategory = getParentCategory(bestCategory);
+            session.selectedSubCategory = bestCategory;
 
             // STEP C — a color/variant word among the search terms decides Scenario B (specific
             // product page) vs. Scenario A (generic "yes, available" + category page). A
             // mentioned-but-out-of-stock color (e.g. "stripes shirt blue" with no blue in stock)
             // still falls through to the category page instead of a dead-end "not found".
-            const colorTerm = colorTerms[0] || null;
+            const colorTerm = compoundColorMatch || colorTerms[0] || null;
             if (colorTerm) {
-                const colorFiltered = categoryProducts.filter(p => searchTermMatches(p, colorTerm));
+                // The parenthesised colour in a product's title is authoritative (see
+                // extractParenColor above) — only fall back to the looser full-name/category/
+                // pattern substring search (searchTermMatches) when NO product in this category
+                // carries a parenthesised colour at all, so titles without that convention still work.
+                const parenFiltered = categoryProducts.filter(p => {
+                    const parenColor = extractParenColor(p.name);
+                    return parenColor && parenColor.includes(colorTerm);
+                });
+                const colorFiltered = parenFiltered.length > 0
+                    ? parenFiltered
+                    : categoryProducts.filter(p => searchTermMatches(p, colorTerm));
+
                 if (colorFiltered.length > 0) {
-                    return buildSpecificProductReply(colorFiltered[0], products);
+                    // Several products can still match loosely (e.g. requested "grey" hitting both
+                    // a genuine grey listing and one merely mislabeled with a leftover "Grey" word)
+                    // — prefer whichever one's parenthesised colour is an EXACT match to the
+                    // requested term over just taking the first of the list.
+                    const exactParenMatch = colorFiltered.find(p => extractParenColor(p.name) === colorTerm);
+                    return buildSpecificProductReply(exactParenMatch || colorFiltered[0], products);
                 }
+            }
+
+            // A no-colour search for one of these product families shows every colour at once
+            // (same collage + CTA the numbered subcategory-browse menu already sends for e.g.
+            // Cotton Pants) instead of the generic single-sample-photo Scenario A reply below —
+            // see COLLAGE_ON_SEARCH_CATEGORIES for why this is an explicit allowlist rather than
+            // every category's free-text search.
+            if (COLLAGE_ON_SEARCH_CATEGORIES.includes(bestCategory) && categoryProducts.length > 1) {
+                session.searchProducts = categoryProducts;
+                const capSub = bestCategory.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                const emoji = getCategoryEmoji(session.selectedParentCategory || '');
+                return await prepareProductsPageResponse(session, products, `${emoji} ${capSub}`, { subCategoryDisplayName: capSub });
             }
 
             return buildCategoryAvailableReply(categoryProducts[0], products);
@@ -4542,7 +4622,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
 
     // ─── New Intents (lib/intents.js) — checked first; falls through if no match ───
-    const newIntent = await detectNewFaqIntent(textLower, session);
+    const newIntent = await detectNewFaqIntent(textLower, session, products);
     if (newIntent) return newIntent;
 
     // ─── Intent Detection & Routing Layer ───
@@ -4975,7 +5055,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         const categoryName = TOP_CATEGORY_MENU_NAMES[menuNumbers[0] - 1];
         const sampleProduct = findSampleProductForTopCategory(categoryName, products);
         if (!sampleProduct) {
-            return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+            return buildGuidedFallbackReply(session);
         }
         const reply = buildCategoryAvailableReply(sampleProduct, products);
         if (menuNumbers.length > 1) {
@@ -5017,7 +5097,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 }
                 return response;
             } else {
-                return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+                return buildGuidedFallbackReply(session);
             }
         } else {
             const max = session.subCategories?.length || 1;
@@ -5052,7 +5132,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
                 // No real product list behind this state (stale/idle session) — don't show a
                 // fabricated "1 to 1" range, fall back to the friendly generic reply instead.
                 if (maxVal === 0) {
-                    return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
+                    return buildGuidedFallbackReply(session);
                 }
 
                 return {
@@ -5690,7 +5770,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
 
             return { replyText, sendImages: [], searchProducts: displayProducts, listContext: { type: 'products', data: displayProducts } };
         } else {
-            return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+            return buildGuidedFallbackReply(session);
         }
     }
 
@@ -5781,7 +5861,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         // AWAITING_TOP_CATEGORY_SELECTION handler above. This covers mixed text that merely
         // contains a digit (e.g. "category 5 please").
         if (!/\d/.test(textLower)) {
-            return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
+            return buildGuidedFallbackReply(session);
         }
         return {
             replyText: hasMultipleNumbers(textLower) ? MULTIPLE_NUMBERS_REPLY : `⚠️ Invalid format. Please reply with a category number from 1 to ${TOP_CATEGORY_MENU_NAMES.length}. 😊`,
@@ -5796,7 +5876,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         // a stale/idle session has no list, and even a real list shouldn't force non-numeric
         // text through list-validation wording.
         if (!(session.searchProducts?.length > 0) || !/\d/.test(textLower)) {
-            return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
+            return buildGuidedFallbackReply(session);
         }
         return {
             replyText: hasMultipleNumbers(textLower) ? MULTIPLE_NUMBERS_REPLY : `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
@@ -5808,7 +5888,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
         // empty subCategories list means no menu is actually active right now. And digit-free text
         // was never a list-selection attempt, so it shouldn't get list-validation wording either.
         if (!(session.subCategories?.length > 0) || !/\d/.test(textLower)) {
-            return { replyText: GENERIC_FALLBACK_REPLY, sendImages: [] };
+            return buildGuidedFallbackReply(session);
         }
         return {
             replyText: hasMultipleNumbers(textLower) ? MULTIPLE_NUMBERS_REPLY : `⚠️ Invalid format. Please reply with a number from the list (1, 2, 3...). 😊`,
@@ -5838,7 +5918,7 @@ async function _handleSalesAssistantJS(from, userMessage, products, session) {
     }
     // Dynamic general fallback — short pointer to the menu/website instead of dumping the entire
     // numbered category+subcategory list in chat (see Bug 3).
-    return { replyText: HELPFUL_MENU_CONTACT_REPLY, sendImages: [] };
+    return buildGuidedFallbackReply(session);
 }
 
 export async function handleSalesAssistantJS(from, userMessage, products, session) {

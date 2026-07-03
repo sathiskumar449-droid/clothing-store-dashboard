@@ -21,7 +21,8 @@
       "Skill(run:*)",
       "Bash(vercel ls *)",
       "Bash(yes)",
-      "Bash(vercel env *)"
+      "Bash(vercel env *)",
+      "Bash(node scratch/investigate_popcorn_search.js)"
     ]
   }
 }
