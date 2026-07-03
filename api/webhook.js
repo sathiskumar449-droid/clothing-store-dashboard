@@ -3825,7 +3825,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel, ct
     return {
         sendImages: collageUrl ? [{ url: collageUrl, caption: displayName }] : [],
         sendCtaUrl: {
-            body: displayName,
+            body: `${displayName}\n\n${ORDER_STEPS_TEXT}\n\n${ORDER_VIDEO_PROMPT}`,
             buttonText,
             url
         }

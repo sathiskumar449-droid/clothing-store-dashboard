@@ -131,26 +131,7 @@ async function runConversation(phoneSuffix, texts) {
 }
 
 async function main() {
-    const queries = [
-        'Adidas Popcorn Track Pant',
-        'popcorn track pant',
-        'track pant',
-        'adidas pant',
-        'navy blue track pant',
-        'royal blue track pant',
-        'dark grey track pant',
-        'black track pant',
-        'white track pant',
-        'cotton pant',
-        'navy blue cotton pant',
-        'cargo pant',
-        'cargo pant black'
-    ];
-    let i = 0;
-    for (const q of queries) {
-        i += 1;
-        await runQuery(i, q);
-    }
+    await runConversation(1, ['pants', '3']);
     process.exit(0);
 }
 
