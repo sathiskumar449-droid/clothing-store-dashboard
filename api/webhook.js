@@ -3708,7 +3708,12 @@ function getShortProductName(p) {
 // don't know the website checkout flow, so every specific-product reply teaches it inline.
 // Online payment only; we never accept COD, so it's never mentioned here. No step numbers —
 // requested removed since the 1️⃣2️⃣3️⃣4️⃣ emoji markers read as clutter next to the product info.
-const ORDER_STEPS_TEXT = `🛒 *Order போட:*\nLink-ஐ Click பண்ணுங்க\nSize select பண்ணி *Add to Cart*\nமுகவரி + phone number போடுங்க\nOnline payment பண்ணி confirm பண்ணுங்க`;
+// Parameterized on the button's own label — a reply whose button literally says "Shop Now"
+// should tell the customer to click "Shop Now", not the generic "Link" every other reply's
+// button (e.g. "View & Buy 🛒") gets called by here.
+const buildOrderStepsText = (buttonLabel) =>
+    `🛒 *Order போட:*\n${buttonLabel}-ஐ Click பண்ணுங்க\nSize select பண்ணி *Add to Cart*\nமுகவரி + phone number போடுங்க\nOnline payment பண்ணி confirm பண்ணுங்க`;
+const ORDER_STEPS_TEXT = buildOrderStepsText('Link');
 
 // Points at the same order-guide video used elsewhere in the bot (see ORDER_GUIDE_VIDEO_URL).
 const ORDER_VIDEO_PROMPT = `📹 Order போட இந்த video பாருங்க: ${ORDER_GUIDE_VIDEO_URL}`;
@@ -3828,7 +3833,7 @@ async function prepareProductsPageResponse(session, productsPool, queryLabel, ct
     return {
         sendImages: collageUrl ? [{ url: collageUrl, caption: displayName }] : [],
         sendCtaUrl: {
-            body: `${displayName}\n\n${ORDER_STEPS_TEXT}\n\n${ORDER_VIDEO_PROMPT}`,
+            body: `${displayName}\n\n${buildOrderStepsText(buttonText)}\n\n${ORDER_VIDEO_PROMPT}`,
             buttonText,
             url
         }
