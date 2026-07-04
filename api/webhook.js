@@ -2582,7 +2582,18 @@ function buildCatalogIndex(inStockProducts) {
 // catalog index (built fresh per request in buildCatalogIndex). hasUnmatchedTerm is true when a
 // meaningful word matches nothing at all in the catalog, signalling we should fall back to the
 // generic "couldn't find that" reply rather than guessing.
-function scoreCategoryMatches(queryWords, catalogIndex, catalogVocab) {
+//
+// nameOnlyWords (typically the query's recognized colour words - see colorTerms in the SEARCH
+// case) restricts those specific words to weight-2 "this word is literally part of the category's
+// own name" hits only, discarding their weight-1 hits ("some product in this OTHER category
+// happens to mention the word in its title/color field"). Without this, a single Lenin Plain
+// Shirts listing named "Lenin plain shirt (White)" leaks a weight-1 "white" hit into Lenin Plain
+// Shirts' score, which - stacked on "lenin"(2) + "shirt"(2) - let it outscore the actual "White
+// Shirts" category (2+2=4) on a query like "linen shirt white", so the bot showed the wrong
+// product/link entirely. Colour words are still free to score normally as a *filter* once a
+// category is chosen (see the colorTerm handling after bestCategory is picked) - this only keeps
+// them from letting incidental title mentions hijack which category gets picked in the first place.
+function scoreCategoryMatches(queryWords, catalogIndex, catalogVocab, nameOnlyWords = new Set()) {
     const scores = new Map(); // category -> score
     let hasUnmatchedTerm = false;
 
@@ -2609,7 +2620,14 @@ function scoreCategoryMatches(queryWords, catalogIndex, catalogVocab) {
                 }
             }
         }
+        // Only restrict to weight-2 hits when a category is genuinely NAMED after this colour
+        // somewhere in the catalog (e.g. "White Shirts") - if no such category exists (e.g. "grey"
+        // with no "Grey Shirts" category), the weight-1 per-product hit is the ONLY signal telling
+        // us which category actually carries that colour, so it must still count normally.
+        const hasNameLevelHit = [...wordCatWeights.values()].some(w => w >= 2);
+        const isNameOnlyWord = nameOnlyWords.has(word) && hasNameLevelHit;
         for (const [cat, weight] of wordCatWeights) {
+            if (isNameOnlyWord && weight < 2) continue;
             scores.set(cat, (scores.get(cat) || 0) + weight);
         }
         if (!matched) hasUnmatchedTerm = true;
@@ -4386,7 +4404,8 @@ async function handleIntent(intentResult, session, products, from) {
             // NAME, so a specific subcategory ("Branded Shirts") naturally outscores an unrelated
             // category that merely shares a generic word ("shirt").
             const { index: catalogIndex, vocab: catalogVocab } = buildCatalogIndex(inStock);
-            const { scores: allScores, hasUnmatchedTerm } = scoreCategoryMatches(queryWords, catalogIndex, catalogVocab);
+            const { scores: allScores, hasUnmatchedTerm } = scoreCategoryMatches(
+                queryWords, catalogIndex, catalogVocab, new Set(colorTerms));
 
             // A genuine catalog-unmatched word (e.g. "Korean") means the customer asked for a
             // specific attribute/origin/brand we don't carry at all — refuse to fall back to ANY
@@ -4428,13 +4447,31 @@ async function handleIntent(intentResult, session, products, from) {
                 return buildGuidedFallbackReply(session);
             }
 
-            // Highest score wins; ties broken toward the longer/more specific category name (e.g.
-            // "Branded Shirts" over plain "Shirts") since a longer name carrying the same score
-            // packed more distinct matching words into a more specific label.
+            // Highest score wins. Ties are broken FIRST toward a category whose own name directly
+            // names the customer's colour word (e.g. "White Shirts" for a "white" query) - a colour
+            // is the customer identifying a specific look, not a fabric/pattern, so it should win
+            // over a fabric/pattern subcategory tied on the same score purely because both share the
+            // generic word "shirt" (e.g. "linen shirt white"/"Lenin Plain Shirts" tying "White
+            // Shirts" - without this, the longer name "Lenin Plain Shirts" used to win the tie and
+            // the reply showed a Lenin Plain (White) product instead of the actual White Shirts
+            // page). Only then fall back to the longer/more specific category name (e.g. "Branded
+            // Shirts" over plain "Shirts").
+            const colorPriorityTerm = compoundColorMatch || colorTerms[0] || null;
+            const categoryNameHasColorWord = (cat) =>
+                !!colorPriorityTerm && !!cat &&
+                normalizeSearchSpelling(stripSearchPunctuation(cat.toLowerCase())).includes(colorPriorityTerm);
             let bestCategory = null, bestScore = 0;
             for (const [cat, score] of allScores) {
-                if (score > bestScore || (score === bestScore && cat.length > (bestCategory || '').length)) {
+                if (score > bestScore) {
                     bestScore = score; bestCategory = cat;
+                } else if (score === bestScore) {
+                    const candidateHasColor = categoryNameHasColorWord(cat);
+                    const currentHasColor = categoryNameHasColorWord(bestCategory);
+                    if (candidateHasColor && !currentHasColor) {
+                        bestCategory = cat;
+                    } else if (candidateHasColor === currentHasColor && cat.length > (bestCategory || '').length) {
+                        bestCategory = cat;
+                    }
                 }
             }
 
