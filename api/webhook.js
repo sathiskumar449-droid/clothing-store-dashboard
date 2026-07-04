@@ -2440,8 +2440,13 @@ const normalizeSearchSpelling = (s) => s
     // loses its leading "t" to punctuation-stripping, the remaining "shirs" gets fuzzy-corrected
     // to the generic "shirt" (see findFuzzyCatalogMatch), and the T-Shirt signal is gone entirely,
     // leaving a bare "shirt" that can match into the unrelated "Shirts" (formal shirts) group —
-    // e.g. "White Shirts" — instead of "T-Shirts".
-    .replace(/\bt[.\s-]?shirt?s?\b/g, 'tshirt')
+    // e.g. "White Shirts" — instead of "T-Shirts". The separator between "t" and "shirt" is `*`
+    // (zero or more), not `?` (zero or one), because real catalog category names use a hyphen AND
+    // a space together ("White Collar T- Shirts", "Round Neck T- Shirts", "T- Shirts") — with `?`
+    // that two-character gap never collapsed, so "white collar t- shirts" indexed as bare stray
+    // words "white"/"t-"/"shirts" instead of "tshirt", letting it wrongly tie/outscore the real
+    // "White Shirts" category on a plain "white shirt" search.
+    .replace(/\bt[.\s-]*shirt?s?\b/g, 'tshirt')
     .replace(/\bphants?\b/g, 'pant')
     .replace(/\bpants?\b/g, 'pant')
     .replace(/\bfoot\s*bal+s?\b/g, 'football')
