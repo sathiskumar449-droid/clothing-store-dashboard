@@ -4518,9 +4518,14 @@ async function handleIntent(intentResult, session, products, from) {
                     // Several products can still match loosely (e.g. requested "grey" hitting both
                     // a genuine grey listing and one merely mislabeled with a leftover "Grey" word)
                     // — prefer whichever one's parenthesised colour is an EXACT match to the
-                    // requested term over just taking the first of the list.
+                    // requested term. Failing that, prefer the newest listing (getProducts orders
+                    // ascending by created_at/id, so the LAST entry is the most recently added) over
+                    // just taking the first/oldest of the list - e.g. "White Shirts" has several
+                    // plain-named "white shirt ..." listings with no parenthesised colour at all, so
+                    // a freshly added "Linen White Shirt" should win over years-old listings instead
+                    // of being buried behind them.
                     const exactParenMatch = colorFiltered.find(p => extractParenColor(p.name) === colorTerm);
-                    return buildSpecificProductReply(exactParenMatch || colorFiltered[0], products);
+                    return buildSpecificProductReply(exactParenMatch || colorFiltered[colorFiltered.length - 1], products);
                 }
             }
 
