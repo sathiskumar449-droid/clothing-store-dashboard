@@ -128,6 +128,12 @@ export default function OrdersPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold text-gray-800">{name}</p>
                         <Badge status={order.status} />
+                        {order.orderSource && (
+                          <Badge
+                            status={order.orderSource}
+                            label={order.orderSource === 'whatsapp' ? '📱 WhatsApp' : '🌐 Website'}
+                          />
+                        )}
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">{id} · {formatDate(order.date || order.createdAt)}</p>
                     </div>

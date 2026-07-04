@@ -5,6 +5,8 @@ const variants = {
   active:    'bg-green-100 text-green-700 border border-green-200',
   paused:    'bg-gray-100 text-gray-600 border border-gray-200',
   default:   'bg-gray-100 text-gray-600 border border-gray-200',
+  whatsapp:  'bg-green-100 text-green-700 border border-green-200',
+  website:   'bg-slate-100 text-slate-600 border border-slate-200',
 };
 
 export default function Badge({ label, status }) {
