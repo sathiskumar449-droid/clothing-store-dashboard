@@ -40,6 +40,19 @@ function extractMetaValue(metaData, keyPattern) {
     return entry ? String(entry.value) : null;
 }
 
+// Determines which channel actually drove this order using WooCommerce's own built-in Order
+// Attribution data (order.meta_data), NOT whether our bot's WhatsApp confirmation send happened
+// to succeed — that was tried before (see git history: "Revert order-source tracking...") and
+// was unreliable, since send success/failure says nothing about how the customer actually placed
+// the order. Every bot link already carries ?utm_source=whatsapp (see addWhatsAppUTM in
+// lib/utils.js), and WooCommerce's core Order Attribution feature (WC 8.5+) captures that as
+// order-level meta — confirmed against a real bot-link order (#5591) in WP Admin's "Order
+// attribution" panel, which showed Source type "utm" / Source "whatsapp" for it.
+function getOrderSource(order) {
+    const utmSource = extractMetaValue(order.meta_data, /^_wc_order_attribution_utm_source$/);
+    return (utmSource || '').toLowerCase().trim() === 'whatsapp' ? 'whatsapp' : 'website';
+}
+
 // Shapes a WooCommerce order into the exact same row shape the WhatsApp-bot checkout flow
 // writes (see the `newOrder` object in api/webhook.js) so the dashboard renders it identically.
 function buildOrderRow(order, phone) {
@@ -69,7 +82,8 @@ function buildOrderRow(order, phone) {
         // the evening onto the next calendar day once displayed back in IST). date_created_gmt
         // is the same wall-clock format but already in UTC, so appending 'Z' parses it correctly.
         date: order.date_created_gmt ? `${order.date_created_gmt}Z` : (order.date_created || new Date().toISOString()),
-        source: 'website'
+        source: 'website',
+        order_source: getOrderSource(order)
     };
 }
 
@@ -137,6 +151,10 @@ export async function handleWooOrderWebhook(req, res) {
 
         const phone = normalizeIndianPhone(order.billing?.phone);
         const row = buildOrderRow(order, phone);
+        // Logged unconditionally (not just on mismatch) while this is newly rolled out, so the
+        // very first live orders confirm the attribution meta is actually present and reads as
+        // expected before relying on it — see getOrderSource above.
+        console.log(`[Woo Order Webhook] Order #${order.id} order_source="${row.order_source}" (utm_source meta: ${extractMetaValue(order.meta_data, /^_wc_order_attribution_utm_source$/) || 'none'})`);
 
         // Idempotency: WooCommerce can fire this webhook more than once for the same
         // order (creation + a later stock/meta update event), and we must only message

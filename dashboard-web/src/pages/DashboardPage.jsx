@@ -1,9 +1,9 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ShoppingBag, MessageSquare, IndianRupee, Clock, Users, TrendingUp
+  ShoppingBag, MessageSquare, IndianRupee, Clock, Users, TrendingUp, Smartphone, Globe
 } from 'lucide-react';
-import { getOrders } from '../api/ordersApi';
+import { getOrders, getOrderStats } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
@@ -14,6 +14,7 @@ import DateFilterBar from '../components/ui/DateFilterBar';
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
+  const [channelStats, setChannelStats] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState(DEFAULT_DATE_FILTER);
@@ -21,12 +22,14 @@ export default function DashboardPage() {
   const fetchStats = useCallback(async () => {
     try {
       const dateRangeParams = getDateRangeParams(dateFilter);
-      const [ordersRes, chatsRes] = await Promise.all([
+      const [ordersRes, chatsRes, orderStatsRes] = await Promise.all([
         getOrders(dateRangeParams),
         getAllChats(dateRangeParams),
+        getOrderStats(dateRangeParams),
       ]);
       const orders = ordersRes.data || [];
       const chats = chatsRes.data?.chats || [];
+      setChannelStats(orderStatsRes.data || null);
 
       const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
       const pending = orders.filter(o => o.status === 'pending').length;
@@ -108,6 +111,29 @@ export default function DashboardPage() {
             value={stats.uniqueCustomers}
             icon={Users}
             color="amber"
+          />
+        </div>
+      )}
+
+      {/* WhatsApp vs Website order breakdown — order_source comes from WooCommerce's own Order
+          Attribution meta at webhook time (?utm_source=whatsapp on every bot link), not guessed
+          from chat activity. Falls back to "today" (IST) server-side when no date filter is
+          selected — see api/order-stats.js. */}
+      {channelStats && (
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <StatCard
+            title="📱 WhatsApp Orders"
+            value={channelStats.whatsapp_orders}
+            icon={Smartphone}
+            color="emerald"
+            subtitle={`₹${(channelStats.whatsapp_revenue || 0).toLocaleString('en-IN')}`}
+          />
+          <StatCard
+            title="🌐 Website Orders"
+            value={channelStats.website_orders}
+            icon={Globe}
+            color="indigo"
+            subtitle={`₹${(channelStats.website_revenue || 0).toLocaleString('en-IN')}`}
           />
         </div>
       )}
