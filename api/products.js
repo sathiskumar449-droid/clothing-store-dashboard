@@ -294,11 +294,18 @@ const mapWooProductToDb = (p) => {
         stock:       mapWooStockToSupabase(p),
         sizes:       sizes,
         image_uri:   p.images?.[0]?.src || null,
-        permalink:   p.permalink || null
+        permalink:   p.permalink || null,
+        status:      p.status || 'publish'
     };
 };
 
-// ✅ Batch Sync products from WooCommerce
+// ✅ Batch Sync products from WooCommerce — also the self-healing reconciliation point (no
+// Vercel Cron on the Hobby plan: 10s function timeout and once-a-day-only cron schedules rule
+// out a background job for a ~214-product catalog). The dashboard's "Refresh" button already
+// does the slow part (fetching every published product + per-variation stock) in the OWNER'S
+// BROWSER via getWooProducts() — that has no Vercel timeout at all, since it never touches a
+// Vercel function until it POSTs the finished array here. This endpoint only does one bulk
+// upsert plus one delete query, so it stays fast regardless of catalog size.
 export const syncProducts = async (req, res) => {
     try {
         const { products } = req.body;
@@ -310,15 +317,24 @@ export const syncProducts = async (req, res) => {
             });
         }
 
+        // Safety guard — an empty payload (WooCommerce credentials expired, site unreachable
+        // mid-fetch, etc.) must never be treated as "the store now has 0 products" and wipe
+        // everything in the reconciliation step below. Bail out before touching Supabase at all.
+        if (products.length === 0) {
+            console.warn('[SyncProducts] Received an empty products array — skipping sync entirely (no upsert, no delete) to protect existing data.');
+            return res.status(400).json({
+                success: false,
+                message: 'Received 0 products from WooCommerce — sync skipped to protect existing data. Check the WooCommerce connection and try again.'
+            });
+        }
+
         console.log(`🔄 Syncing ${products.length} products from WooCommerce...`);
 
         // mapWooProductToDb calls mapWooStockToSupabase which logs every product's
         // stock_status / qty / computed result — visible in Vercel logs.
         const dbProducts = products.map(p => mapWooProductToDb(p));
 
-        if (dbProducts.length > 0) {
-            console.log('[SyncProducts] First mapped row about to be upserted:', JSON.stringify(dbProducts[0]));
-        }
+        console.log('[SyncProducts] First mapped row about to be upserted:', JSON.stringify(dbProducts[0]));
 
         // Batch upsert to Supabase
         const { data, error } = await supabase
@@ -331,12 +347,44 @@ export const syncProducts = async (req, res) => {
         const sample = (data || []).find(r => r.id === dbProducts[0]?.id);
         console.log('[SyncProducts] Row returned by Supabase after upsert:', JSON.stringify(sample));
 
-        console.log(`✅ Successfully synced ${dbProducts.length} products to database!`);
+        // ─── Reconciliation: remove anything no longer live ───
+        // getWooProducts() (dashboard-web/src/api/productsApi.js) fetches the FULL published
+        // catalog with status=publish before calling this endpoint, so `products` here IS the
+        // complete live catalog, not a partial slice — any Supabase row whose id isn't in it has
+        // been deleted, trashed, or unpublished in WooCommerce since the last sync. This is
+        // exactly how a handful of dead "white shirt" listings lingered in Supabase and kept
+        // getting recommended by the bot with 404 links — syncProducts previously only ever
+        // upserted, never removed anything.
+        //
+        // Guarded the same way the webhook's own status check is guarded: skip the delete if
+        // more than half of today's known catalog would vanish — that smells like a bad/partial
+        // fetch rather than the catalog actually shrinking that much. The upsert above still ran,
+        // so nothing is lost by waiting for the owner's next Refresh click to retry the delete.
+        const { data: existingRows, error: existingError } = await supabase.from('products').select('id');
+        if (existingError) throw existingError;
+
+        const knownIds = existingRows || [];
+        const liveIds = new Set(dbProducts.map(p => p.id));
+        const staleIds = knownIds.map(r => r.id).filter(id => !liveIds.has(id));
+        const staleRatio = knownIds.length > 0 ? staleIds.length / knownIds.length : 0;
+
+        let deletedCount = 0;
+        if (staleIds.length > 0 && staleRatio <= 0.5) {
+            const { error: deleteError } = await supabase.from('products').delete().in('id', staleIds);
+            if (deleteError) throw deleteError;
+            deletedCount = staleIds.length;
+            console.log(`🗑️ [SyncProducts] Removed ${deletedCount} product(s) no longer published in WooCommerce: ${staleIds.join(', ')}`);
+        } else if (staleIds.length > 0) {
+            console.warn(`[SyncProducts] ${staleIds.length}/${knownIds.length} Supabase products (${Math.round(staleRatio * 100)}%) are missing from this sync's fetch — skipping delete as a safety guard.`);
+        }
+
+        console.log(`✅ Successfully synced ${dbProducts.length} products to database! (${deletedCount} removed)`);
 
         res.json({
             success: true,
-            message: `Successfully synced ${dbProducts.length} products to database!`,
-            count: dbProducts.length
+            message: `Successfully synced ${dbProducts.length} products to database! Removed ${deletedCount} no-longer-published product(s).`,
+            count: dbProducts.length,
+            deleted: deletedCount
         });
     } catch (error) {
         console.error('❌ Sync Products Error:', error);
@@ -384,6 +432,18 @@ export const handleWooWebhook = async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Invalid payload' });
             }
 
+            // A status transition (trash/draft/pending/private) arrives as 'product.updated', not
+            // 'product.deleted' — WooCommerce only fires product.deleted on a genuine permanent
+            // delete. Previously this branch upserted the payload regardless of status, so
+            // un-publishing a product (without permanently deleting it) left it fully visible to
+            // the bot forever. Remove it from Supabase the moment it's no longer 'publish' instead.
+            if (payload.status && payload.status !== 'publish') {
+                const { error } = await supabase.from('products').delete().eq('id', payload.id);
+                if (error) throw error;
+                console.log(`🗑️ [WooCommerce Webhook] Product ${payload.id} (${payload.name}) status="${payload.status}" — removed from Supabase.`);
+                return res.json({ success: true });
+            }
+
             // Variable products carry stock at the variation level (parent has manage_stock=false,
             // stock_quantity=null). Fetch variation stock via back-channel API call so
             // mapWooStockToSupabase() gets accurate _effective_stock_* fields.
@@ -404,7 +464,7 @@ export const handleWooWebhook = async (req, res) => {
 
             if (error) throw error;
             console.log(`✅ [WooCommerce Webhook] Product ${payload.id} (${payload.name}) synced successfully.`);
-        } 
+        }
         
         else if (topic === 'product.deleted') {
             if (!payload || !payload.id) {

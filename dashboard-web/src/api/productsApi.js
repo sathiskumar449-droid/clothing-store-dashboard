@@ -25,8 +25,12 @@ export const getWooProducts = async () => {
   const auth = { username: consumerKey, password: consumerSecret };
 
   while (hasMore) {
+    // status: 'publish' — WooCommerce's REST API returns EVERY status (draft/trash/pending/
+    // private) to an authenticated request unless status is explicitly filtered. Without this,
+    // a manual sync re-upserts drafts/trashed products right back into Supabase, which is how
+    // several dead "white shirt" listings ended up being recommended by the bot with 404 links.
     const response = await axios.get(url, {
-      params: { per_page: perPage, page },
+      params: { status: 'publish', per_page: perPage, page },
       auth,
     });
 

@@ -203,9 +203,14 @@ export async function getProducts() {
         // 'id' is a tiebreaker: rows sharing the same created_at (common with bulk imports)
         // otherwise have no guaranteed order between queries, which let the product array
         // order drift between requests and desync collage images (see prepareProductsPageResponse).
+        // status='publish' — defense in depth on top of handleWooWebhook and syncProducts
+        // (api/products.js) only ever writing/keeping published rows: guarantees the bot can
+        // never surface a draft/trashed/pending product even in the window before the owner's
+        // next dashboard Refresh reconciles one away.
         const { data, error } = await supabase
             .from('products')
             .select('*')
+            .eq('status', 'publish')
             .order('created_at', { ascending: true })
             .order('id', { ascending: true });
 

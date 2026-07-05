@@ -18,11 +18,18 @@ CREATE TABLE IF NOT EXISTS products (
     sizes       JSONB    DEFAULT '[]',       -- array of size strings e.g. ["S","M","L"]
     image_uri   TEXT,
     permalink   TEXT,                        -- WooCommerce's direct product page URL (p.permalink)
+    status      TEXT     DEFAULT 'publish',  -- WooCommerce post status (publish/draft/trash/pending/private).
+                                              -- Only 'publish' rows are synced going forward (see
+                                              -- handleWooWebhook/syncProducts in api/products.js) — kept as a
+                                              -- real column (rather than just filtering at sync time) so every
+                                              -- reader (api/webhook.js, api/matchOutfit.js) can defend in depth
+                                              -- against ever surfacing a non-published product to a customer.
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Safe to re-run: adds the column if this script is applied to an existing database
 ALTER TABLE products ADD COLUMN IF NOT EXISTS permalink TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'publish';
 
 -- ============================================================
 -- 2. ORDERS TABLE

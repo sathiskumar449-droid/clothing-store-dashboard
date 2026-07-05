@@ -46,6 +46,7 @@ export const getOutfitMatches = async (req, res) => {
         const { data: shirt, error: shirtError } = await supabase
             .from('products')
             .select('*')
+            .eq('status', 'publish')
             .ilike('code', formattedCode)
             .single();
 
@@ -74,6 +75,7 @@ export const getOutfitMatches = async (req, res) => {
         const { data: matchingPants, error: pantsError } = await supabase
             .from('products')
             .select('*')
+            .eq('status', 'publish')
             .eq('category', 'pant')
             .in('color', allowedColors);
 
