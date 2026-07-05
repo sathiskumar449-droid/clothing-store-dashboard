@@ -4028,6 +4028,21 @@ export function buildSpecificProductReply(product, productsPool) {
 // change than requested — see the SEARCH case's use of this constant.
 const COLLAGE_ON_SEARCH_CATEGORIES = ['Adidas Popcorn Track Pant'];
 
+// A category that exists in the catalog but currently has zero stock across every listing in it
+// (see the out-of-stock short-circuit in the SEARCH case above) — tells the customer plainly
+// instead of silently substituting a different category's product. Points to the parent group's
+// browse page as the closest available alternative, same as buildCrossGroupConflictReply does.
+function buildCategoryOutOfStockReply(categoryName) {
+    const capName = categoryName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    const parent = getParentCategory(categoryName);
+    const parentDisplay = PARENT_GROUP_DISPLAY[parent];
+    const altLine = parentDisplay
+        ? `\n\nஇதற்குள் மத்த ${parentDisplay.name.replace(' (formal)', '')} collection பாருங்களா? 👉 ${getCategoryUrl(parent)}`
+        : '';
+    const replyText = `😔 *${capName}* தற்போது Out of Stock Sir.\n\nStock வந்தவுடன் தெரிவிக்கிறோம்! 🙏${altLine}\n\n📞 Help: 8825325096 / 7418755096`;
+    return { replyText, sendImages: [] };
+}
+
 // Product Availability Check, Scenario A (category mentioned with no color, or a mentioned color
 // that isn't in stock) — replies "Yes, available" with one sample in-stock product's image and a
 // button to that category's page on the website. Never lists products in chat text.
@@ -4401,6 +4416,35 @@ async function handleIntent(intentResult, session, products, from) {
 
             if (queryWords.length === 0) {
                 return buildGuidedFallbackReply(session);
+            }
+
+            // ─── Out-of-stock category short-circuit ───
+            // STEP B below scores categories using an index built ONLY from in-stock products, by
+            // design, so a customer is never sent to a dead product page. But that means a category
+            // that still exists in the catalog yet currently has ZERO stock across every listing in
+            // it (e.g. "White Shirts" with its one item sold out) silently vanishes from that index,
+            // and the query falls through to whichever unrelated in-stock category happens to share
+            // a word (e.g. "linen white shirt" resolving to "Lenin Plain Shirts" purely because both
+            // share "shirt") — the customer gets shown the wrong product instead of "out of stock".
+            // Score against the FULL catalog (including out-of-stock listings) first; if that
+            // clearly names one specific category and NONE of its products are in stock, say so
+            // directly instead of silently substituting a different category's answer.
+            const { index: fullCatalogIndex, vocab: fullCatalogVocab } = buildCatalogIndex(products);
+            const { scores: fullScores } = scoreCategoryMatches(
+                queryWords, fullCatalogIndex, fullCatalogVocab, new Set(colorTerms));
+            let bestFullCategory = null, bestFullScore = 0;
+            for (const [cat, score] of fullScores) {
+                if (score > bestFullScore) { bestFullScore = score; bestFullCategory = cat; }
+            }
+            // Threshold of 3 requires at least one category-NAME-level hit (weight 2) plus
+            // something else, so a single loose weight-1 title mention can't trigger this alone.
+            if (bestFullCategory && bestFullScore >= 3) {
+                const hasStock = products.some(p =>
+                    Number(p.stock) > 0 &&
+                    (p.category === bestFullCategory || (Array.isArray(p.categories) && p.categories.includes(bestFullCategory))));
+                if (!hasStock) {
+                    return buildCategoryOutOfStockReply(bestFullCategory);
+                }
             }
 
             // STEP B — build a fresh category-keyword index from the live in-stock catalog (no
