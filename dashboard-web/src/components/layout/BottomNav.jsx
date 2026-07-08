@@ -7,6 +7,7 @@ import {
   Package,
   Users,
   Settings,
+  MonitorPlay,
 } from 'lucide-react';
 
 const navItems = [
@@ -16,6 +17,7 @@ const navItems = [
   { to: '/billing', icon: Receipt, label: 'Billing' },
   { to: '/products', icon: Package, label: 'Products' },
   { to: '/customers', icon: Users, label: 'Customers' },
+  { to: '/demo-manager', icon: MonitorPlay, label: 'Demo' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
