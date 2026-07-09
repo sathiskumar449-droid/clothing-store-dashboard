@@ -4025,14 +4025,6 @@ export function buildSpecificProductReply(product, productsPool) {
     };
 }
 
-// Product families where every colour variant shares one WooCommerce category (the "X (Colour)"
-// naming pattern — same as Cotton Pants) and a bare-name free-text search should show every
-// colour at once via the same collage the numbered subcategory-browse menu already sends,
-// instead of Scenario A's single-sample-photo reply below. An explicit allowlist rather than
-// applied to every category's free-text search store-wide, since that's a broader behavior
-// change than requested — see the SEARCH case's use of this constant.
-const COLLAGE_ON_SEARCH_CATEGORIES = ['Adidas Popcorn Track Pant'];
-
 // A category that exists in the catalog but currently has zero stock across every listing in it
 // (see the out-of-stock short-circuit in the SEARCH case above) — tells the customer plainly
 // instead of silently substituting a different category's product. Points to the parent group's
@@ -4583,12 +4575,13 @@ async function handleIntent(intentResult, session, products, from) {
                 }
             }
 
-            // A no-colour search for one of these product families shows every colour at once
-            // (same collage + CTA the numbered subcategory-browse menu already sends for e.g.
-            // Cotton Pants) instead of the generic single-sample-photo Scenario A reply below —
-            // see COLLAGE_ON_SEARCH_CATEGORIES for why this is an explicit allowlist rather than
-            // every category's free-text search.
-            if (COLLAGE_ON_SEARCH_CATEGORIES.includes(bestCategory) && categoryProducts.length > 1) {
+            // A no-colour search for a category with more than one in-stock listing shows every
+            // listing at once (same collage + CTA the numbered subcategory-browse menu already
+            // sends, e.g. Cotton Pants) instead of a single random sample photo — a customer
+            // typing e.g. "dry fit t shirt" should see the whole Round Neck T-Shirts spread, not
+            // one arbitrary listing's image. Only an actual single-product category still falls
+            // through to the plain Scenario A single-photo reply below.
+            if (categoryProducts.length > 1) {
                 session.searchProducts = categoryProducts;
                 const capSub = bestCategory.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
                 const emoji = getCategoryEmoji(session.selectedParentCategory || '');
