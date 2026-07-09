@@ -10,6 +10,8 @@ import { getOrders, updateOrderStatus } from './api/orders.js';
 import { getOrderStats } from './api/order-stats.js';
 import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat, editChatMessage, deleteChatMessage } from './api/chats.js';
 import { getWooSettings, saveWooSettings, getStoreSettings, saveStoreSettings } from './api/settings.js';
+// import publicProducts from './api/public-products.js';
+
 
 dotenv.config();
 
@@ -123,6 +125,9 @@ app.post('/api/woocommerce-order-webhook', handleWooOrderWebhook);
 // 👉 Image proxy — lets Meta's WhatsApp media fetcher pull product images via our domain
 // instead of supercollections.in directly (see handleImageProxy in api/webhook.js for why)
 app.get('/api/image-proxy', handleImageProxy);
+
+// 👉 Public read-only products endpoint — demo store ku mattum, no auth (GET)
+// app.get('/api/public-products', publicProducts);
 
 
 // =============================
