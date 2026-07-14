@@ -2658,6 +2658,34 @@ function looksLikeProductQuery(rawText, products) {
     return terms.some(term => COLOR_KEYWORDS.includes(term) || inStock.some(p => searchTermMatches(p, term)));
 }
 
+// Real-catalog guard for the isCOD FAQ branch in detectIntent below: a category can be literally
+// named with "COD" in it (e.g. "COD T-Shirts", a collection WooCommerce-side where Cash on
+// Delivery actually is offered) — a customer typing "cod t shirt" (or the full product name,
+// "cod t shirt off white") is naming that real category/product, not asking the generic "is COD
+// available" payment question, and must never get the blanket "Cash on Delivery not available"
+// reply. Matches word-by-word (same substring-per-term approach as searchTermMatches/
+// looksLikeProductQuery above) against category+name text pulled live from `products`, never a
+// hardcoded category list, so a newly added COD-branded category is picked up automatically on
+// the next product sync — no code change needed here when the catalog changes. Requires at least
+// one non-stopword word besides "cod" itself, so a bare "cod" / "cod available" / "cod iruka"
+// (that last word is filtered as a Tamil stopword) can never accidentally match.
+function matchesCodCatalogCategory(text, products) {
+    const words = (text || '').toLowerCase().split(/[^a-z0-9]+/)
+        .filter(w => w.length > 1 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w));
+    if (!words.includes('cod') || words.length < 2) return false;
+
+    for (const p of products) {
+        const cats = Array.isArray(p.categories) && p.categories.length > 0 ? p.categories : [p.category];
+        for (const c of cats) {
+            if (!c || !c.toLowerCase().includes('cod')) continue;
+            // Hyphens/spaces stripped so "tshirt" (no space) still matches a catalog "T-Shirts".
+            const haystack = `${c.toLowerCase()} ${(p.name || '').toLowerCase()}`.replace(/[^a-z0-9]+/g, '');
+            if (words.every(w => haystack.includes(w))) return true;
+        }
+    }
+    return false;
+}
+
 // Matches an Instagram/Facebook/YouTube link in an INCOMING customer message — e.g. a customer
 // pasting a Reel/post link and asking "is this available". Checked against the raw user message
 // (see the early-return in _handleSalesAssistantJS below), never against anything the bot itself
@@ -3119,6 +3147,11 @@ function detectIntent(text, products = [], session = null) {
         (matchesGroup(words, codGroupA) && matchesGroup(words, codGroupB));
 
     if (isCOD) {
+        // A real catalog category can itself be COD-branded (e.g. "COD T-Shirts") — route those
+        // to SEARCH so the customer sees the actual products instead of a blanket "not available".
+        if (matchesCodCatalogCategory(t, products)) {
+            return { type: 'SEARCH', query: t };
+        }
         return { type: 'FAQ', reply: COD_NOT_AVAILABLE_REPLY };
     }
 
