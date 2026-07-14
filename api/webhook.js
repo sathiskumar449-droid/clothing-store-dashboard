@@ -2660,19 +2660,20 @@ function looksLikeProductQuery(rawText, products) {
 
 // Real-catalog guard for the isCOD FAQ branch in detectIntent below: a category can be literally
 // named with "COD" in it (e.g. "COD T-Shirts", a collection WooCommerce-side where Cash on
-// Delivery actually is offered) — a customer typing "cod t shirt" (or the full product name,
-// "cod t shirt off white") is naming that real category/product, not asking the generic "is COD
-// available" payment question, and must never get the blanket "Cash on Delivery not available"
-// reply. Matches word-by-word (same substring-per-term approach as searchTermMatches/
+// Delivery actually is offered) — a customer typing "cod t shirt", the full product name ("cod t
+// shirt off white"), or even a bare "cod"/"cod available"/"cod iruka" is, in this store, always
+// answerable with that real COD-branded collection (shop owner's explicit call: any "cod" mention
+// should surface it), so none of those must fall into the blanket "Cash on Delivery not available"
+// FAQ reply. Matches word-by-word (same substring-per-term approach as searchTermMatches/
 // looksLikeProductQuery above) against category+name text pulled live from `products`, never a
 // hardcoded category list, so a newly added COD-branded category is picked up automatically on
-// the next product sync — no code change needed here when the catalog changes. Requires at least
-// one non-stopword word besides "cod" itself, so a bare "cod" / "cod available" / "cod iruka"
-// (that last word is filtered as a Tamil stopword) can never accidentally match.
+// the next product sync — no code change needed here when the catalog changes. Only the literal
+// word "cod" gates this — spelled-out phrasing ("cash on delivery", "cash payment") never
+// contains that token, so those still correctly fall through to the FAQ reply.
 function matchesCodCatalogCategory(text, products) {
     const words = (text || '').toLowerCase().split(/[^a-z0-9]+/)
         .filter(w => w.length > 1 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w));
-    if (!words.includes('cod') || words.length < 2) return false;
+    if (!words.includes('cod')) return false;
 
     for (const p of products) {
         const cats = Array.isArray(p.categories) && p.categories.length > 0 ? p.categories : [p.category];
