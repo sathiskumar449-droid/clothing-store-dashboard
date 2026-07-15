@@ -7,6 +7,11 @@ import EmptyState from '../components/ui/EmptyState';
 
 const PAGE_SIZE = 24;
 
+// A product is considered visible in the dashboard only if it's in stock on the store.
+// Out-of-stock products stay in the DB (so they come back automatically on restock) but
+// are hidden everywhere in this page: grid, counts, categories.
+const isInStock = (product) => parseInt(product?.stock, 10) > 0;
+
 export default function ProductsPage() {
   // Displayed products always come from our own DB (/api/products) — fast, since it's a
   // single local Supabase query instead of paginated live calls to the WooCommerce REST API.
@@ -90,22 +95,30 @@ export default function ProductsPage() {
     return `₹${parseFloat(price).toLocaleString('en-IN')}`;
   };
 
+  // Everything below (counts, categories, filtering, paging) works off the in-stock subset
+  // only, so an out-of-stock product never appears in the grid, the "All Products" count,
+  // the category counts, or the "showing X of Y" line.
+  const inStockProducts = useMemo(
+    () => products.filter(isInStock),
+    [products]
+  );
+
   // The DB only stores one flat category string per product (see getPrimaryCategory() in
   // api/products.js), not WooCommerce's full parent/child category tree, so the sidebar is a
   // flat, alphabetised list of distinct categories with counts rather than a nested tree.
   const categories = useMemo(() => {
     const counts = {};
-    products.forEach(p => {
+    inStockProducts.forEach(p => {
       const cat = p.category || 'Uncategorized';
       counts[cat] = (counts[cat] || 0) + 1;
     });
     return Object.entries(counts)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [products]);
+  }, [inStockProducts]);
 
   const filteredProducts = useMemo(() => {
-    return products.filter(product => {
+    return inStockProducts.filter(product => {
       const matchesCategory = !selectedCategory || (product.category || 'Uncategorized') === selectedCategory;
       let matchesSearch = true;
       if (searchQuery) {
@@ -118,7 +131,7 @@ export default function ProductsPage() {
       }
       return matchesCategory && matchesSearch;
     });
-  }, [products, selectedCategory, searchQuery]);
+  }, [inStockProducts, selectedCategory, searchQuery]);
 
   // Reset to page 1 whenever the filtered set changes shape, so you don't land on an empty
   // page 4 after a search/category change shrinks the results.
@@ -128,7 +141,7 @@ export default function ProductsPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
 
-  // Renders one page (24 cards) at a time instead of all 171 at once — keeps the number of
+  // Renders one page (24 cards) at a time instead of all at once — keeps the number of
   // <img> tags mounted (and decoding) at any given moment small.
   const pagedProducts = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
@@ -148,7 +161,7 @@ export default function ProductsPage() {
         <Grid size={12} className={!selectedCategory ? 'text-indigo-600' : 'text-gray-400'} />
         <span className="text-xs">All Products</span>
         <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full ml-auto font-medium">
-          {products.length}
+          {inStockProducts.length}
         </span>
       </div>
       {categories.map(cat => {
@@ -376,10 +389,10 @@ export default function ProductsPage() {
             )}
 
             <p className="text-xs text-gray-500 mb-4 ml-1">
-              {filteredProducts.length === products.length ? (
-                <>Found {products.length} product{products.length !== 1 ? 's' : ''}</>
+              {filteredProducts.length === inStockProducts.length ? (
+                <>Found {inStockProducts.length} product{inStockProducts.length !== 1 ? 's' : ''}</>
               ) : (
-                <>Showing {filteredProducts.length} of {products.length} product{products.length !== 1 ? 's' : ''} after filtering</>
+                <>Showing {filteredProducts.length} of {inStockProducts.length} product{inStockProducts.length !== 1 ? 's' : ''} after filtering</>
               )}
             </p>
 
@@ -393,7 +406,7 @@ export default function ProductsPage() {
               <>
                 <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {pagedProducts.map(product => {
-                    const inStock = parseInt(product.stock, 10) > 0;
+                    const inStock = isInStock(product);
                     return (
                       <div key={product.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow group flex flex-col justify-between">
                         <div>
