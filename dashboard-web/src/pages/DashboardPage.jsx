@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ShoppingBag, MessageSquare, IndianRupee, Clock, Users, TrendingUp, Smartphone, Globe
+  ShoppingBag, MessageSquare, IndianRupee, Clock, Users, TrendingUp, Smartphone, Globe, Lock
 } from 'lucide-react';
 import { getOrders, getOrderStats } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
@@ -10,9 +10,11 @@ import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
 import StatCard from '../components/ui/StatCard';
 import Loader from '../components/ui/Loader';
 import DateFilterBar from '../components/ui/DateFilterBar';
+import { useDashboardLock } from '../components/DashboardPasswordGate';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const dashboardLock = useDashboardLock();
   const [stats, setStats] = useState(null);
   const [channelStats, setChannelStats] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
@@ -75,9 +77,20 @@ export default function DashboardPage() {
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-1">Welcome back! Here's what's happening today.</p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-1">Welcome back! Here's what's happening today.</p>
+        </div>
+        {dashboardLock && (
+          <button
+            onClick={dashboardLock.lock}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 hover:text-gray-800 transition-colors shrink-0"
+          >
+            <Lock size={13} />
+            Lock
+          </button>
+        )}
       </div>
 
       {/* Date Filter */}

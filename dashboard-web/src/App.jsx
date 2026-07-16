@@ -31,7 +31,14 @@ export default function App() {
           <Route path="products" element={<ProductsPage />} />
           <Route path="customers" element={<CustomersPage />} />
           <Route path="demo-manager" element={<DemoManager />} />
-          <Route path="settings" element={<SettingsPage />} />
+          <Route
+            path="settings"
+            element={
+              <DashboardPasswordGate>
+                <SettingsPage />
+              </DashboardPasswordGate>
+            }
+          />
         </Route>
       </Routes>
     </BrowserRouter>
