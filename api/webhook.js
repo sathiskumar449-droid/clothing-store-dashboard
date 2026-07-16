@@ -6081,6 +6081,105 @@ export async function handleSalesAssistantJS(from, userMessage, products, sessio
 // Core Message Handler (async — uses await for all DB calls)
 // =============================
 
+// =============================
+// DEMO MODE — fully isolated from Super Collections logic.
+// Reads/writes ONLY demo_shops / demo_products. Never touches products,
+// orders, WooCommerce, Razorpay, or the real sales assistant. Any error in
+// here is caught locally and can't crash or fall through into the real bot.
+// =============================
+async function handleDemoFlow(message, session, from) {
+    try {
+        const { data: demoShop, error: shopError } = await supabase
+            .from('demo_shops')
+            .select('*')
+            .eq('id', session.active_demo_id)
+            .maybeSingle();
+
+        if (shopError) throw shopError;
+
+        // Shop was deleted from the dashboard mid-demo — bail out of demo mode cleanly.
+        if (!demoShop) {
+            session.active_demo_id = null;
+            await saveSession(from, session);
+            const msg = "Demo shop kedaikala 🙁. Demo mode-a off panniten. 'demo <CODE>' nu type pannunga try pannunga.";
+            await sendText(from, msg);
+            await logChatMessage(from, 'bot', msg, 'text');
+            return;
+        }
+
+        const { data: demoProducts, error: productsError } = await supabase
+            .from('demo_products')
+            .select('*')
+            .eq('demo_shop_id', demoShop.id)
+            .order('created_at', { ascending: false });
+
+        if (productsError) throw productsError;
+
+        const products = demoProducts || [];
+        const text = (message || '').toLowerCase().trim();
+
+        const formatMenuText = () => {
+            if (products.length === 0) {
+                return `🏪 *${demoShop.shop_name}* (DEMO MODE)\n\nInnum products add pannala. Dashboard Demo Manager-la products add pannunga!`;
+            }
+            let out = `🏪 *${demoShop.shop_name}* (DEMO MODE)\n\nEngal products:\n\n`;
+            products.forEach((p, i) => {
+                out += `${i + 1}. ${p.name} — ₹${Number(p.price).toLocaleString('en-IN')}\n`;
+            });
+            out += `\nProduct peru type pannunga, illa "order" nu sollunga sample order eppadi irukum nu paakka.\n'exit demo' nu type panna real store-ku thirumba varalam.`;
+            return out;
+        };
+
+        // 1. Greeting / menu request
+        if (/^(hi|hello|hey|menu|vanakkam|start|products?|hai)$/i.test(text)) {
+            const menuMsg = formatMenuText();
+            await sendText(from, menuMsg);
+            await logChatMessage(from, 'bot', menuMsg, 'text');
+            return;
+        }
+
+        // 2. Order intent — FAKE confirmation only. No row is written anywhere,
+        //    no WooCommerce/Razorpay call is made, no message goes to anyone else.
+        if (/\b(order|book|buy|confirm)\b/i.test(text)) {
+            const confirmMsg = `✅ *Order received ✅ ${demoShop.shop_name}*\n\n_(DEMO ONLY — no real order was placed, nothing was charged, no one else was notified.)_`;
+            await sendText(from, confirmMsg);
+            await logChatMessage(from, 'bot', confirmMsg, 'text');
+            return;
+        }
+
+        // 3. Product / category name query
+        const matches = products.filter(p =>
+            (p.name && p.name.toLowerCase().includes(text)) ||
+            (p.category && p.category.toLowerCase().includes(text))
+        );
+
+        if (matches.length > 0) {
+            for (const p of matches.slice(0, 5)) {
+                const sizesLine = Array.isArray(p.sizes) && p.sizes.length ? `\nSizes: ${p.sizes.join(', ')}` : '';
+                const caption = `*${p.name}*\n₹${Number(p.price).toLocaleString('en-IN')}${p.category ? `\nCategory: ${p.category}` : ''}${sizesLine}`;
+                if (p.image_url) {
+                    await sendImage(from, p.image_url, caption);
+                } else {
+                    await sendText(from, caption);
+                }
+                await logChatMessage(from, 'bot', caption, p.image_url ? 'image' : 'text', p.image_url || null);
+            }
+            const followUp = `Order panna "order" nu type pannunga, illa vera product peru sollunga.`;
+            await sendText(from, followUp);
+            await logChatMessage(from, 'bot', followUp, 'text');
+            return;
+        }
+
+        // 4. Fallback — show the menu again
+        const fallbackMsg = formatMenuText();
+        await sendText(from, fallbackMsg);
+        await logChatMessage(from, 'bot', fallbackMsg, 'text');
+    } catch (err) {
+        console.error('❌ [handleDemoFlow] Error:', err.message);
+        await sendText(from, "⚠️ Demo mode-la konjam error. Try pannunga malli.");
+    }
+}
+
 async function handleMessage(msg) {
     const text = msg.text?.body?.trim() || msg.interactive?.button_reply?.id?.trim() || msg.interactive?.list_reply?.id?.trim() || '';
     const from = msg.from;
@@ -6156,6 +6255,62 @@ async function handleMessage(msg) {
         }
 
         const session = await getSession(from);
+
+        // =============================
+        // DEMO MODE — early, self-contained check. Handles "demo <CODE>" /
+        // "exit demo" / "demo off", and routes any message while
+        // session.active_demo_id is set entirely to handleDemoFlow(),
+        // returning before any Super Collections logic below can run.
+        // =============================
+        const demoStartMatch = text.match(/^demo\s+(\w+)/i);
+        const isDemoExitCommand = /^(exit demo|demo off)$/i.test(text.trim());
+
+        if (demoStartMatch) {
+            const code = demoStartMatch[1].toUpperCase();
+            const { data: demoShop, error: demoShopError } = await supabase
+                .from('demo_shops')
+                .select('*')
+                .eq('demo_code', code)
+                .maybeSingle();
+
+            if (demoShopError) {
+                console.error('❌ Error looking up demo shop:', demoShopError.message);
+            }
+
+            if (demoShop) {
+                session.active_demo_id = demoShop.id;
+                await saveSession(from, session);
+                const welcomeMsg = demoShop.welcome_message
+                    || `Vanakkam! 🙏 *${demoShop.shop_name}*-ku welcome pannuren.\nEppadi help pannalam? Products paakanuma?`;
+                await sendText(from, welcomeMsg);
+                await logChatMessage(from, 'bot', welcomeMsg, 'text');
+            } else {
+                const notFoundMsg = "Demo code thappu, sari-a type pannunga";
+                await sendText(from, notFoundMsg);
+                await logChatMessage(from, 'bot', notFoundMsg, 'text');
+            }
+            return;
+        }
+
+        if (isDemoExitCommand) {
+            if (session.active_demo_id) {
+                session.active_demo_id = null;
+                await saveSession(from, session);
+                const exitMsg = "Demo mode off pannitten. Normal store-ku thirumbi vandhutom! 🛍️";
+                await sendText(from, exitMsg);
+                await logChatMessage(from, 'bot', exitMsg, 'text');
+            } else {
+                const notInDemoMsg = "Demo mode already off dhaan irukku.";
+                await sendText(from, notInDemoMsg);
+                await logChatMessage(from, 'bot', notInDemoMsg, 'text');
+            }
+            return;
+        }
+
+        if (session.active_demo_id) {
+            await handleDemoFlow(text, session, from);
+            return;
+        }
 
         // Recover state context if replying to a listed menu message
         const quotedMsgId = msg.context?.id;

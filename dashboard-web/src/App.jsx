@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
+import DashboardPasswordGate from './components/DashboardPasswordGate';
 import DashboardPage from './pages/DashboardPage';
 import ChatsPage from './pages/ChatsPage';
 import OrdersPage from './pages/OrdersPage';
@@ -15,7 +16,14 @@ export default function App() {
       <Routes>
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
+          <Route
+            path="dashboard"
+            element={
+              <DashboardPasswordGate>
+                <DashboardPage />
+              </DashboardPasswordGate>
+            }
+          />
           <Route path="chats" element={<ChatsPage />} />
           <Route path="chats/:phone" element={<ChatsPage />} />
           <Route path="orders" element={<OrdersPage />} />
