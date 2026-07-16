@@ -53,7 +53,7 @@ export default function DashboardPasswordGate({ children }) {
         </div>
         <h1 className="text-lg font-bold text-gray-900">Dashboard Locked</h1>
         <p className="text-sm text-gray-500 mt-1 mb-4">
-          Enter the owner password to view revenue and stats.
+          Enter password to continue.
         </p>
         <form onSubmit={handleSubmit}>
           <div className="relative">
