@@ -181,7 +181,7 @@ export default function OrdersPage() {
         getCustomerPhone(order),
         getCustomerName(order),
         Number(order.totalPrice || 0),
-        items.map(item => item.product || item.name || '').filter(Boolean).join(' | '),
+        items.map(item => item.product || item.name || '').filter(Boolean).join(', '),
         items.map(item => item.size || '').filter(Boolean).join(', '),
         getTotalQty(items),
         getOrderTakenBy(order),
