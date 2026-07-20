@@ -112,6 +112,7 @@ export default function OrdersPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [updating, setUpdating] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [dateFilter, setDateFilter] = useState(DEFAULT_DATE_FILTER);
 
   const activeTab = searchParams.get('tab') || 'all';
@@ -157,6 +158,20 @@ export default function OrdersPage() {
   const tabCount = tab =>
     tab === 'all' ? orders.length : orders.filter(order => order.status === tab).length;
 
+  const selectedOrders = orders.filter(order =>
+    selectedOrderIds.includes(order.id || order.orderId)
+  );
+
+  const exportOrders = selectedOrders.length > 0 ? selectedOrders : sortedFilteredOrders;
+
+  const toggleOrderSelection = (id) => {
+    setSelectedOrderIds(prev =>
+      prev.includes(id) ? prev.filter(orderId => orderId !== id) : [...prev, id]
+    );
+  };
+
+  const clearSelection = () => setSelectedOrderIds([]);
+
   const handleExport = () => {
     const headers = [
       'S.No',
@@ -173,7 +188,7 @@ export default function OrdersPage() {
       'Dispatch No',
     ];
 
-    const rows = sortedFilteredOrders.map((order, index) => {
+    const rows = exportOrders.map((order, index) => {
       const items = getOrderItems(order);
 
       return [
@@ -212,15 +227,28 @@ export default function OrdersPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
           <p className="mt-0.5 text-sm text-gray-500">{orders.length} total orders</p>
+          {selectedOrders.length > 0 && (
+            <p className="mt-1 text-xs font-medium text-emerald-600">
+              {selectedOrders.length} selected for export
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {selectedOrders.length > 0 && (
+            <button
+              onClick={clearSelection}
+              className="flex min-h-11 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 shadow-sm transition-all duration-200 hover:bg-gray-50 active:scale-95"
+            >
+              Clear Selection
+            </button>
+          )}
           <button
             onClick={handleExport}
-            disabled={sortedFilteredOrders.length === 0}
+            disabled={exportOrders.length === 0}
             className="flex min-h-11 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm text-white shadow-sm transition-all duration-200 hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download size={14} />
-            Export CSV
+            {selectedOrders.length > 0 ? 'Export Selected' : 'Export CSV'}
           </button>
           <button
             onClick={fetchOrders}
@@ -267,6 +295,7 @@ export default function OrdersPage() {
             const address = getCustomerAddress(order);
             const items = getOrderItems(order);
             const isExpanded = expandedId === id;
+            const isSelected = selectedOrderIds.includes(id);
 
             return (
               <div key={id} className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
@@ -274,6 +303,18 @@ export default function OrdersPage() {
                   className="flex cursor-pointer items-center gap-3 px-5 py-4 transition-colors hover:bg-gray-50"
                   onClick={() => setExpandedId(isExpanded ? null : id)}
                 >
+                  <label
+                    className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
+                    onClick={event => event.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleOrderSelection(id)}
+                      className="h-4 w-4 cursor-pointer rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      aria-label={`Select ${name}`}
+                    />
+                  </label>
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
                     <ShoppingBag size={16} className="text-indigo-500" />
                   </div>
