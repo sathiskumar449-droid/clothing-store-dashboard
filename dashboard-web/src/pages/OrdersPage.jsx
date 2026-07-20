@@ -78,9 +78,11 @@ function getCustomerAddress(order) {
 }
 
 function getPaymentLabel(order) {
-  if (order.paymentMethod) return order.paymentMethod;
   if (order.status === 'pending_payment') return 'Pending';
-  return (order.orderSource || order.source) === 'website' ? 'Online' : '-';
+  if (String(order.paymentMethod || '').toLowerCase() === 'cod') return 'COD';
+  if (order.orderSource === 'whatsapp' || order.orderSource === 'website') return 'Online';
+  if (order.source === 'whatsapp' || order.source === 'website') return 'Online';
+  return order.paymentMethod || '-';
 }
 
 function getOrderTakenBy(order) {
