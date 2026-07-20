@@ -167,7 +167,6 @@ export default function OrdersPage() {
       'Size',
       'Qty',
       'Order Taken By',
-      'Address',
       'Return',
       'Dispatch No',
     ];
@@ -186,7 +185,6 @@ export default function OrdersPage() {
         items.map(item => item.size || '').filter(Boolean).join(', '),
         getTotalQty(items),
         getOrderTakenBy(order),
-        getCustomerAddress(order),
         getReturnLabel(order),
         order.dispatchNo || order.dispatchNumber || '',
       ].map(escapeCsvValue).join(',');
