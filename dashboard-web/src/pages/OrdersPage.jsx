@@ -99,6 +99,10 @@ function escapeCsvValue(value) {
   return stringValue;
 }
 
+function getTotalQty(items) {
+  return items.reduce((total, item) => total + Number(item.qty || 1), 0);
+}
+
 export default function OrdersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState([]);
@@ -179,8 +183,8 @@ export default function OrdersPage() {
         getCustomerName(order),
         Number(order.totalPrice || 0),
         items.map(item => item.product || item.name || '').filter(Boolean).join(' | '),
-        items.map(item => item.size || '').filter(Boolean).join(' | '),
-        items.map(item => item.qty || 1).join(' | '),
+        items.map(item => item.size || '').filter(Boolean).join(', '),
+        getTotalQty(items),
         getOrderTakenBy(order),
         getCustomerAddress(order),
         getReturnLabel(order),
