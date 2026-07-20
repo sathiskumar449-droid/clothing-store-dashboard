@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ShoppingBag, RefreshCw, ChevronDown } from 'lucide-react';
+import { ChevronDown, Download, RefreshCw, ShoppingBag } from 'lucide-react';
 import { getOrders, updateOrderStatus } from '../api/ordersApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
@@ -13,8 +13,90 @@ const TABS = ['all', 'pending', 'confirmed', 'cancelled'];
 const STATUS_OPTIONS = ['pending', 'confirmed', 'cancelled'];
 
 function formatDate(ts) {
-  if (!ts) return '—';
-  return new Date(ts).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });
+  if (!ts) return '-';
+  return new Date(ts).toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function formatExportDate(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function getOrderItems(order) {
+  if (Array.isArray(order.items) && order.items.length > 0) {
+    return order.items.filter(Boolean);
+  }
+
+  return [
+    order.shirtName && {
+      product: order.shirtName,
+      size: order.shirtSize,
+      color: order.shirtColor,
+      price: order.shirtPrice,
+      qty: 1,
+    },
+    order.pantName && {
+      product: order.pantName,
+      size: order.pantSize,
+      color: order.pantColor,
+      price: order.pantPrice,
+      qty: 1,
+    },
+  ].filter(Boolean);
+}
+
+function getCustomerDetailParts(order) {
+  return String(order.customerDetails || '')
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+function getCustomerName(order) {
+  const detailParts = getCustomerDetailParts(order);
+  return order.customerName || detailParts[0] || order.customer || 'Customer';
+}
+
+function getCustomerPhone(order) {
+  const detailParts = getCustomerDetailParts(order);
+  return order.customerPhone || detailParts[1] || order.customer || '-';
+}
+
+function getCustomerAddress(order) {
+  const detailParts = getCustomerDetailParts(order);
+  return order.customerAddress || detailParts.slice(2).join(', ') || '-';
+}
+
+function getPaymentLabel(order) {
+  if (order.paymentMethod) return order.paymentMethod;
+  if (order.status === 'pending_payment') return 'Pending';
+  return (order.orderSource || order.source) === 'website' ? 'Online' : '-';
+}
+
+function getOrderTakenBy(order) {
+  return (order.orderSource || order.source) === 'website' ? 'Website' : 'WhatsApp';
+}
+
+function getReturnLabel(order) {
+  return order.deliveryComplaintAt ? 'Yes' : '';
+}
+
+function escapeCsvValue(value) {
+  const stringValue = value == null ? '' : String(value);
+  if (/[",\n]/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
 }
 
 export default function OrdersPage() {
@@ -33,7 +115,9 @@ export default function OrdersPage() {
     try {
       const res = await getOrders(getDateRangeParams(dateFilter));
       setOrders(res.data || []);
-    } catch {/* silent */} finally {
+    } catch {
+      // silent
+    } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -47,44 +131,111 @@ export default function OrdersPage() {
     try {
       await updateOrderStatus(id, newStatus);
       setOrders(prev =>
-        prev.map(o => (o.id === id || o.orderId === id) ? { ...o, status: newStatus } : o)
+        prev.map(o => (o.id === id || o.orderId === id ? { ...o, status: newStatus } : o))
       );
-    } catch {/* silent */} finally {
+    } catch {
+      // silent
+    } finally {
       setUpdating(null);
     }
   };
 
   const filtered = activeTab === 'all'
     ? orders
-    : orders.filter(o => o.status === activeTab);
+    : orders.filter(order => order.status === activeTab);
 
-  const tabCount = (tab) =>
-    tab === 'all' ? orders.length : orders.filter(o => o.status === tab).length;
+  const sortedFilteredOrders = [...filtered].sort(
+    (a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt)
+  );
+
+  const tabCount = tab =>
+    tab === 'all' ? orders.length : orders.filter(order => order.status === tab).length;
+
+  const handleExport = () => {
+    const headers = [
+      'S.No',
+      'Date',
+      'Payment',
+      'Phone Number',
+      'Name',
+      'Amount',
+      'Items',
+      'Size',
+      'Qty',
+      'Order Taken By',
+      'Address',
+      'Return',
+      'Dispatch No',
+    ];
+
+    const rows = sortedFilteredOrders.map((order, index) => {
+      const items = getOrderItems(order);
+
+      return [
+        index + 1,
+        formatExportDate(order.date || order.createdAt),
+        getPaymentLabel(order),
+        getCustomerPhone(order),
+        getCustomerName(order),
+        Number(order.totalPrice || 0),
+        items.map(item => item.product || item.name || '').filter(Boolean).join(' | '),
+        items.map(item => item.size || '').filter(Boolean).join(' | '),
+        items.map(item => item.qty || 1).join(' | '),
+        getOrderTakenBy(order),
+        getCustomerAddress(order),
+        getReturnLabel(order),
+        order.dispatchNo || order.dispatchNumber || '',
+      ].map(escapeCsvValue).join(',');
+    });
+
+    const csvContent = [headers.map(escapeCsvValue).join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const today = new Date().toISOString().slice(0, 10);
+
+    link.href = url;
+    link.setAttribute('download', `orders-export-${activeTab}-${today}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{orders.length} total orders</p>
+          <p className="mt-0.5 text-sm text-gray-500">{orders.length} total orders</p>
         </div>
-        <button onClick={fetchOrders} className="flex items-center gap-1.5 px-3 py-2 min-h-11 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 active:scale-95 shadow-sm transition-all duration-200">
-          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleExport}
+            disabled={sortedFilteredOrders.length === 0}
+            className="flex min-h-11 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm text-white shadow-sm transition-all duration-200 hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download size={14} />
+            Export CSV
+          </button>
+          <button
+            onClick={fetchOrders}
+            className="flex min-h-11 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 shadow-sm transition-all duration-200 hover:bg-gray-50 active:scale-95"
+          >
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
 
-      {/* Date Filter */}
       <DateFilterBar filter={dateFilter} onChange={setDateFilter} />
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl overflow-x-auto">
+      <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1">
         {TABS.map(tab => (
           <button
             key={tab}
             onClick={() => setSearchParams({ tab })}
-            className={`flex-1 min-w-max px-3 py-2 min-h-11 rounded-lg text-xs font-semibold capitalize transition-colors duration-300 ease-in-out ${
+            className={`flex-1 min-w-max rounded-lg px-3 py-2 text-xs font-semibold capitalize transition-colors duration-300 ease-in-out ${
               activeTab === tab
                 ? 'bg-white text-indigo-700 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -95,100 +246,113 @@ export default function OrdersPage() {
         ))}
       </div>
 
-      {/* Orders list */}
       {loading ? (
         <Loader text="Loading orders..." />
-      ) : filtered.length === 0 ? (
-        <EmptyState icon={ShoppingBag} title={`No ${activeTab} orders`} description="Orders will appear here when placed via WhatsApp." />
+      ) : sortedFilteredOrders.length === 0 ? (
+        <EmptyState
+          icon={ShoppingBag}
+          title={`No ${activeTab} orders`}
+          description="Orders will appear here when placed via WhatsApp."
+        />
       ) : (
         <div className="space-y-3">
-          {[...filtered]
-            .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
-            .map(order => {
-              const id = order.id || order.orderId;
-              const name = order.customerName || order.customerDetails || order.customer || 'Customer';
-              const phone = order.customerPhone || order.customer || '—';
-              const address = order.customerAddress || '—';
-              const items = order.items || [
-                order.shirtName && { product: order.shirtName, size: order.shirtSize, price: order.shirtPrice },
-                order.pantName && { product: order.pantName, size: order.pantSize, price: order.pantPrice },
-              ].filter(Boolean);
-              const isExpanded = expandedId === id;
+          {sortedFilteredOrders.map(order => {
+            const id = order.id || order.orderId;
+            const name = getCustomerName(order);
+            const phone = getCustomerPhone(order);
+            const address = getCustomerAddress(order);
+            const items = getOrderItems(order);
+            const isExpanded = expandedId === id;
 
-              return (
-                <div key={id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div
-                    className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => setExpandedId(isExpanded ? null : id)}
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                      <ShoppingBag size={16} className="text-indigo-500" />
+            return (
+              <div key={id} className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+                <div
+                  className="flex cursor-pointer items-center gap-3 px-5 py-4 transition-colors hover:bg-gray-50"
+                  onClick={() => setExpandedId(isExpanded ? null : id)}
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
+                    <ShoppingBag size={16} className="text-indigo-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-800">{name}</p>
+                      <Badge status={order.status} />
+                      {order.orderSource && (
+                        <Badge
+                          status={order.orderSource}
+                          label={order.orderSource === 'whatsapp' ? 'WhatsApp' : 'Website'}
+                        />
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-gray-800">{name}</p>
-                        <Badge status={order.status} />
-                        {order.orderSource && (
-                          <Badge
-                            status={order.orderSource}
-                            label={order.orderSource === 'whatsapp' ? '📱 WhatsApp' : '🌐 Website'}
-                          />
-                        )}
+                    <p className="mt-0.5 text-xs text-gray-400">{id} | {formatDate(order.date || order.createdAt)}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className="text-sm font-bold text-gray-800">
+                      Rs.{(order.totalPrice || 0).toLocaleString('en-IN')}
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    />
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="border-t border-gray-50 px-5 pb-4">
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-gray-600">
+                      <div>
+                        <span className="font-medium text-gray-500">Phone:</span> {phone}
                       </div>
-                      <p className="text-xs text-gray-400 mt-0.5">{id} · {formatDate(order.date || order.createdAt)}</p>
+                      <div>
+                        <span className="font-medium text-gray-500">Payment:</span> {getPaymentLabel(order)}
+                      </div>
+                      <div className="col-span-2">
+                        <span className="font-medium text-gray-500">Address:</span> {address}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-sm font-bold text-gray-800">₹{(order.totalPrice || 0).toLocaleString('en-IN')}</span>
-                      <ChevronDown size={16} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+
+                    {items.length > 0 && (
+                      <div className="mt-3">
+                        <p className="mb-2 text-xs font-semibold text-gray-500">Items</p>
+                        <div className="space-y-1">
+                          {items.map((item, index) => (
+                            <div
+                              key={`${id}-${index}`}
+                              className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs"
+                            >
+                              <span className="text-gray-700">
+                                {item.product || item.name}
+                                {item.color ? ` | ${item.color}` : ''}
+                                {item.size ? ` | Size ${item.size}` : ''}
+                                {item.qty ? ` | Qty ${item.qty}` : ''}
+                              </span>
+                              <span className="font-semibold text-gray-800">
+                                Rs.{(Number(item.price) * (item.qty || 1)).toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold text-gray-500">Update status:</p>
+                      {STATUS_OPTIONS.filter(status => status !== order.status).map(status => (
+                        <button
+                          key={status}
+                          disabled={updating === id}
+                          onClick={() => handleStatusUpdate(order, status)}
+                          className="min-h-11 rounded-lg border border-gray-200 px-3 py-1 text-xs font-medium capitalize transition-all duration-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95 disabled:opacity-50"
+                        >
+                          {updating === id ? '...' : status}
+                        </button>
+                      ))}
                     </div>
                   </div>
-
-                  {isExpanded && (
-                    <div className="px-5 pb-4 border-t border-gray-50">
-                      <div className="grid grid-cols-2 gap-3 mt-3 text-xs text-gray-600">
-                        <div><span className="font-medium text-gray-500">Phone:</span> {phone}</div>
-                        <div><span className="font-medium text-gray-500">Payment:</span> {order.paymentMethod || '—'}</div>
-                        <div className="col-span-2"><span className="font-medium text-gray-500">Address:</span> {address}</div>
-                      </div>
-
-                      {items.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-xs font-semibold text-gray-500 mb-2">Items</p>
-                          <div className="space-y-1">
-                            {items.map((item, i) => (
-                              <div key={i} className="flex justify-between text-xs bg-gray-50 rounded-lg px-3 py-2">
-                                <span className="text-gray-700">
-                                  {item.product || item.name}
-                                  {item.color ? ` · ${item.color}` : ''}
-                                  {item.size ? ` · Size ${item.size}` : ''}
-                                  {item.qty ? ` · Qty ${item.qty}` : ''}
-                                </span>
-                                <span className="font-semibold text-gray-800">₹{(Number(item.price) * (item.qty || 1)).toLocaleString('en-IN')}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Status update */}
-                      <div className="mt-4 flex items-center gap-2 flex-wrap">
-                        <p className="text-xs font-semibold text-gray-500">Update status:</p>
-                        {STATUS_OPTIONS.filter(s => s !== order.status).map(s => (
-                          <button
-                            key={s}
-                            disabled={updating === id}
-                            onClick={() => handleStatusUpdate(order, s)}
-                            className="px-3 py-1 min-h-11 text-xs font-medium rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95 transition-all duration-200 disabled:opacity-50 capitalize"
-                          >
-                            {updating === id ? '...' : s}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
