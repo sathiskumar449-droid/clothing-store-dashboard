@@ -4078,6 +4078,18 @@ function buildCategoryOutOfStockReply(categoryName) {
 // that isn't in stock) — replies "Yes, available" with one sample in-stock product's image and a
 // button to that category's page on the website. Never lists products in chat text.
 function buildCategoryAvailableReply(sampleProduct, productsPool) {
+    const productName = (sampleProduct.name || '').toLowerCase();
+    
+    // If this is a specific product like "Bermuda Shorts", use its specific URL
+    let url = null;
+    if (productName.includes('bermuda') || productName.includes('barmuda')) {
+        url = addWhatsAppUTM('https://www.supercollections.in/product-category/shorts/barmuda-shorts/');
+    } else {
+        // Otherwise, use the category URL
+        const categoryName = sampleProduct.category || 'this category';
+        url = getCategoryUrl(categoryName);
+    }
+    
     const categoryName = sampleProduct.category || 'this category';
     const capName = categoryName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
     const body = `Yes, available ✅\n\n👔 *${capName}*\n\n${ORDER_STEPS_TEXT}\n\n${ORDER_VIDEO_PROMPT}`;
@@ -4088,7 +4100,7 @@ function buildCategoryAvailableReply(sampleProduct, productsPool) {
             imageUrl: getProductImageUri(sampleProduct, productsPool),
             body,
             buttonText: 'Shop Now',
-            url: getCategoryUrl(categoryName)
+            url: url
         }]
     };
 }
