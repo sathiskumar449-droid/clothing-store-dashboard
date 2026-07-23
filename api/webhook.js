@@ -4087,7 +4087,7 @@ function buildCategoryAvailableReply(sampleProduct, productsPool) {
         sendProductCards: [{
             imageUrl: getProductImageUri(sampleProduct, productsPool),
             body,
-            buttonText: 'Click Here Colours',
+            buttonText: 'Shop Now',
             url: getCategoryUrl(categoryName)
         }]
     };
