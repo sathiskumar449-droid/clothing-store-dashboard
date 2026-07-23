@@ -3985,7 +3985,7 @@ const SIZE_KEYWORDS = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl', '2xl', 
 // "T-Shirts" the customer explicitly named). Neither is right: when the customer explicitly names
 // a group via one of these words, a pattern that doesn't exist in THAT group should never be
 // silently redirected into a different one.
-const GENERIC_PRODUCT_WORDS = new Set(['shirt', 'shirts', 'tshirt', 'pant', 'short', 'shorts', 'jeans', 'trouser']);
+const GENERIC_PRODUCT_WORDS = new Set(['shirt', 'shirts', 'tshirt', 'pant', 'short', 'shorts', 'trouser']);
 
 // Maps a generic product-type term to the parent category group the customer explicitly named by
 // using it — e.g. "tshirt" unambiguously means the T-Shirts group specifically, not generic
@@ -3993,7 +3993,7 @@ const GENERIC_PRODUCT_WORDS = new Set(['shirt', 'shirts', 'tshirt', 'pant', 'sho
 const GENERIC_TERM_TO_PARENT = {
     shirt: 'Shirts', shirts: 'Shirts',
     tshirt: 'T-Shirts',
-    pant: 'Pants', jeans: 'Pants', trouser: 'Pants',
+    pant: 'Pants', trouser: 'Pants',
     short: 'Shorts', shorts: 'Shorts'
 };
 
@@ -4423,6 +4423,7 @@ async function handleIntent(intentResult, session, products, from) {
                 GENERIC_PRODUCT_WORDS.has(w) || GENERIC_PRODUCT_WORDS.has(simpleStem(w)));
             const specificWords = queryWords.filter(w =>
                 !COLOR_KEYWORDS.includes(w) && !GENERIC_PRODUCT_WORDS.has(w) && !GENERIC_PRODUCT_WORDS.has(simpleStem(w)));
+            const hasJeansTerm = queryWords.includes('jeans') || queryWords.includes('jean');
 
             // Reset per-flow state regardless of which branch below fires — mirrors the
             // housekeeping the old single-card path always did, minus AWAITING_MODEL_SELECTION/
@@ -4440,7 +4441,7 @@ async function handleIntent(intentResult, session, products, from) {
             // subcategory — "shirt" alone matches White Shirts, Plain Shirts, Branded Shirts, and
             // every other real Shirts subcategory all at once. Show the existing numbered
             // subcategory list for that parent group instead of silently guessing one.
-            if (genericWords.length > 0 && specificWords.length === 0 && colorTerms.length === 0) {
+            if (genericWords.length > 0 && specificWords.length === 0 && colorTerms.length === 0 && !hasJeansTerm) {
                 const parentName = GENERIC_TERM_TO_PARENT[genericWords[0]] || GENERIC_TERM_TO_PARENT[simpleStem(genericWords[0])];
                 if (parentName) return showSubcategoryListForParent(parentName, products, session);
             }
