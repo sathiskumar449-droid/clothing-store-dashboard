@@ -36,6 +36,7 @@ export default function DashboardPage() {
       const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
       const pending = orders.filter(o => o.status === 'pending').length;
       const confirmed = orders.filter(o => o.status === 'confirmed').length;
+      const completed = orders.filter(o => o.status === 'completed').length;
       const uniqueCustomers = new Set(
         orders.map(o => o.customerPhone || o.customer)
       ).size;
@@ -47,6 +48,7 @@ export default function DashboardPage() {
         totalRevenue,
         pending,
         confirmed,
+        completed,
         uniqueCustomers,
         activeChats,
         botPausedChats,
@@ -71,6 +73,7 @@ export default function DashboardPage() {
   const statusColor = {
     pending: 'bg-amber-100 text-amber-700',
     confirmed: 'bg-blue-100 text-blue-700',
+    completed: 'bg-emerald-100 text-emerald-700',
     cancelled: 'bg-rose-100 text-rose-700',
   };
 
@@ -113,11 +116,11 @@ export default function DashboardPage() {
             color="emerald"
           />
           <StatCard
-            title="Active Chats"
-            value={stats.activeChats}
-            icon={MessageSquare}
-            color="violet"
-            subtitle={`${stats.botPausedChats} bot paused`}
+            title="Completed Orders"
+            value={stats.completed}
+            icon={TrendingUp}
+            color="emerald"
+            subtitle="Finished and delivered"
           />
           <StatCard
             title="Customers"
