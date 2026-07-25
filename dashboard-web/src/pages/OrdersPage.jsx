@@ -22,6 +22,16 @@ function formatDate(ts) {
   });
 }
 
+function formatTime(ts) {
+  if (!ts) return '-';
+  return new Date(ts).toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
 function formatExportDate(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString('en-IN', {
@@ -329,7 +339,7 @@ export default function OrdersPage() {
                         />
                       )}
                     </div>
-                    <p className="mt-0.5 text-xs text-gray-400">{id} | {formatDate(order.date || order.createdAt)}</p>
+                    <p className="mt-0.5 text-xs text-gray-400">{id} | {formatDate(order.date || order.createdAt)} {formatTime(order.date || order.createdAt)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <span className="text-sm font-bold text-gray-800">
