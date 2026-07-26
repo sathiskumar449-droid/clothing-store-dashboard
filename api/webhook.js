@@ -6227,6 +6227,54 @@ async function handleMessage(msg) {
         const orders = await getOrders();
         console.log(`[handleMessage] Loaded ${products.length} products, ${orders.length} orders from Supabase.`);
 
+            // ===============================
+            // QUICK KEYWORD: OFFER JEAN
+            // If user asks for offer jean(s), send a few jeans/pants and the category link
+            // ===============================
+            const textLower = (text || '').toLowerCase();
+            if (textLower.includes('offer jean') || textLower.includes('offer jeans') || /\boffer\s+jean/i.test(text)) {
+                try {
+                    const getName = p => p.name || p.Name || p.product_name || '';
+                    const getImage = p => p.imageUri || p.image_uri || p.Image || p.image || p.imageUrl || '';
+                    const getPrice = p => p.price || p.Price || '';
+
+                    const pants = (products || []).filter(p => {
+                        const name = (getName(p) || '').toLowerCase();
+                        const category = ((p.category || p.Type || '') || '').toString().toLowerCase();
+                        return name.includes('jean') || name.includes('jeans') || category.includes('pant');
+                    });
+
+                    if (!pants || pants.length === 0) {
+                        const fallback = 'Here are our offer jeans: https://www.supercollections.in/product-category/pants/offer-jeans-pant/';
+                        await sendText(from, fallback);
+                        await logChatMessage(from, 'bot', fallback, 'text');
+                        return;
+                    }
+
+                    const optionsToSend = pants.slice(0, 3);
+                    for (let i = 0; i < optionsToSend.length; i++) {
+                        const p = optionsToSend[i];
+                        const name = getName(p) || 'Jeans';
+                        const image = getImage(p);
+                        const price = getPrice(p) ? `\n₹${getPrice(p)}` : '';
+
+                        const caption = `${name}${price}\n\nBuy: https://www.supercollections.in/product-category/pants/offer-jeans-pant/`;
+
+                        if (image) {
+                            await sendImage(from, image, caption);
+                            await logChatMessage(from, 'bot', caption, 'image', null, null);
+                        } else {
+                            await sendText(from, caption);
+                            await logChatMessage(from, 'bot', caption, 'text');
+                        }
+                    }
+
+                    return;
+                } catch (ie) {
+                    console.error('[offer-jean] Error handling offer jean:', ie.message);
+                }
+            }
+
         // Admin Commands
         if (text.toUpperCase().startsWith('ADMIN')) {
             const parts = text.toUpperCase().split(' ');
