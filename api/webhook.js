@@ -6236,8 +6236,6 @@ async function handleMessage(msg) {
             if (textLower.includes('offer jean') || textLower.includes('offer jeans') || /\boffer\s+jean/i.test(text)) {
                 try {
                     const getName = p => p.name || p.Name || p.product_name || '';
-                    const getImage = p => p.imageUri || p.image_uri || p.Image || p.image || p.imageUrl || '';
-                    const getPrice = p => p.price || p.Price || '';
 
                     const offerJeans = (products || []).filter(p => {
                         const name = (getName(p) || '').toLowerCase();
@@ -6255,29 +6253,27 @@ async function handleMessage(msg) {
                         return;
                     }
 
-                    // The website's category is shown newest first. Match that order so the
-                    // products sent in WhatsApp are the same ones the customer sees there.
-                    const optionsToSend = [...offerJeans]
-                        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))
-                        .slice(0, 3);
-                    for (let i = 0; i < optionsToSend.length; i++) {
-                        const p = optionsToSend[i];
-                        const name = getName(p) || 'Jeans';
-                        const image = getImage(p);
-                        const price = getPrice(p) ? `\n₹${getPrice(p)}` : '';
+                    // A WhatsApp chat stacks ordinary image messages vertically. Generate one
+                    // collage instead, so the offer-jean photos are displayed as a clean grid.
+                    const optionsToShow = [...offerJeans]
+                        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+                    const categoryUrl = addWhatsAppUTM('https://www.supercollections.in/product-category/pants/offer-jeans-pant/');
+                    const collageUrl = await createProductCollage(optionsToShow, 1, products);
 
-                        const productUrl = p.permalink
-                            ? addWhatsAppUTM(p.permalink)
-                            : addWhatsAppUTM('https://www.supercollections.in/product-category/pants/offer-jeans-pant/');
-                        const caption = `${name}${price}\n\nBuy: ${productUrl}`;
+                    if (collageUrl) {
+                        const caption = 'Offer Jeans Pant\nStarting at ₹329';
+                        await sendImage(from, collageUrl, caption);
+                        await logChatMessage(from, 'bot', caption, 'image', null, null);
 
-                        if (image) {
-                            await sendImage(from, image, caption);
-                            await logChatMessage(from, 'bot', caption, 'image', null, null);
-                        } else {
-                            await sendText(from, caption);
-                            await logChatMessage(from, 'bot', caption, 'text');
-                        }
+                        const bodyText = 'Our latest Offer Jeans collection is above. Tap below to view colours, select size and order.';
+                        await sendCtaUrlMessage(from, bodyText, 'View Offer Jeans', categoryUrl);
+                        await logChatMessage(from, 'bot', `${bodyText}\n${categoryUrl}`, 'text');
+                    } else {
+                        // Keep a useful route to the exact category if a temporary image or
+                        // storage problem prevents the grid from being generated.
+                        const fallback = `Here are our Offer Jeans: ${categoryUrl}`;
+                        await sendText(from, fallback);
+                        await logChatMessage(from, 'bot', fallback, 'text');
                     }
 
                     return;
