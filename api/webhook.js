@@ -6229,7 +6229,8 @@ async function handleMessage(msg) {
 
             // ===============================
             // QUICK KEYWORD: OFFER JEAN
-            // If user asks for offer jean(s), send a few jeans/pants and the category link
+            // If user asks for offer jean(s), return only products in the Offer Jeans Pant
+            // category. A broad "pants" match returned unrelated items such as Polo Fit pants.
             // ===============================
             const textLower = (text || '').toLowerCase();
             if (textLower.includes('offer jean') || textLower.includes('offer jeans') || /\boffer\s+jean/i.test(text)) {
@@ -6238,27 +6239,37 @@ async function handleMessage(msg) {
                     const getImage = p => p.imageUri || p.image_uri || p.Image || p.image || p.imageUrl || '';
                     const getPrice = p => p.price || p.Price || '';
 
-                    const pants = (products || []).filter(p => {
+                    const offerJeans = (products || []).filter(p => {
                         const name = (getName(p) || '').toLowerCase();
-                        const category = ((p.category || p.Type || '') || '').toString().toLowerCase();
-                        return name.includes('jean') || name.includes('jeans') || category.includes('pant');
+                        const categories = [p.category, p.Type, ...(Array.isArray(p.categories) ? p.categories : [])]
+                            .filter(Boolean)
+                            .join(' ')
+                            .toLowerCase();
+                        return /offer\s*jeans?/.test(`${name} ${categories}`);
                     });
 
-                    if (!pants || pants.length === 0) {
+                    if (!offerJeans || offerJeans.length === 0) {
                         const fallback = 'Here are our offer jeans: https://www.supercollections.in/product-category/pants/offer-jeans-pant/';
                         await sendText(from, fallback);
                         await logChatMessage(from, 'bot', fallback, 'text');
                         return;
                     }
 
-                    const optionsToSend = pants.slice(0, 3);
+                    // The website's category is shown newest first. Match that order so the
+                    // products sent in WhatsApp are the same ones the customer sees there.
+                    const optionsToSend = [...offerJeans]
+                        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))
+                        .slice(0, 3);
                     for (let i = 0; i < optionsToSend.length; i++) {
                         const p = optionsToSend[i];
                         const name = getName(p) || 'Jeans';
                         const image = getImage(p);
                         const price = getPrice(p) ? `\n₹${getPrice(p)}` : '';
 
-                        const caption = `${name}${price}\n\nBuy: https://www.supercollections.in/product-category/pants/offer-jeans-pant/`;
+                        const productUrl = p.permalink
+                            ? addWhatsAppUTM(p.permalink)
+                            : addWhatsAppUTM('https://www.supercollections.in/product-category/pants/offer-jeans-pant/');
+                        const caption = `${name}${price}\n\nBuy: ${productUrl}`;
 
                         if (image) {
                             await sendImage(from, image, caption);
