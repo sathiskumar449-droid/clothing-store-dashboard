@@ -89,6 +89,48 @@ export const handleIncomingMessage = async (req, res) => {
     console.log("User:", text);
 
     const products = await getProducts();
+    
+    // ===============================
+    // 🔹 QUICK KEYWORD: OFFER JEAN
+    // When user types "offer jean" (or similar), show pants from products
+    // ===============================
+    const textLower = (text || "").toLowerCase();
+    if (textLower.includes("offer jean") || textLower.includes("offer jeans") || /\boffer\s+jean/i.test(text || "")) {
+      // helper getters (supports both sheet and local DB shapes)
+      const getName = p => p.Name || p.name || "";
+      const getImage = p => p.Image || p.imageUri || p.image || p.ImageUrl || p.ImageURL || p.Image_Link || "";
+      const getPrice = p => p.Price || p.price || "";
+
+      const pants = (products || []).filter(p => {
+        const name = (getName(p) || "").toLowerCase();
+        const category = (p.Type || p.category || "").toLowerCase();
+        return name.includes("jean") || name.includes("jeans") || category.includes("pant");
+      });
+
+      if (!pants || pants.length === 0) {
+        await sendText(from, `Here are our offer jeans: https://www.supercollections.in/product-category/pants/offer-jeans-pant/`);
+        return res.sendStatus(200);
+      }
+
+      // send up to 3 options
+      const optionsToSend = pants.slice(0, 3);
+      for (let i = 0; i < optionsToSend.length; i++) {
+        const p = optionsToSend[i];
+        const name = getName(p);
+        const image = getImage(p);
+        const price = getPrice(p);
+
+        const caption = `${name}${price ? `\n₹${price}` : ""}\n\nBuy: https://www.supercollections.in/product-category/pants/offer-jeans-pant/`;
+
+        if (image) {
+          await sendImage(from, image, caption);
+        } else {
+          await sendText(from, caption);
+        }
+      }
+
+      return res.sendStatus(200);
+    }
 
     // ===============================
     // 🔥 STEP 1: USER SENDS SHIRT CODE
