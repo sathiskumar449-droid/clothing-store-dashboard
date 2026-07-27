@@ -118,7 +118,8 @@ export const syncWooOrders = async (req, res) => {
 
         const perPage = 100;
         let page = 1;
-        const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+        // Sync orders modified in the last 10 days to capture updates & status changes
+        const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
         const rowsToUpsert = [];
 
         // Loop through pages until fewer than perPage returned
@@ -127,7 +128,7 @@ export const syncWooOrders = async (req, res) => {
             const params = {
                 consumer_key: consumerKey,
                 consumer_secret: consumerSecret,
-                after: twoDaysAgo,
+                modified_after: tenDaysAgo,
                 per_page: perPage,
                 page
             };
@@ -146,7 +147,7 @@ export const syncWooOrders = async (req, res) => {
         }
 
         if (rowsToUpsert.length === 0) {
-            return res.json({ success: true, message: 'No orders in the last 2 days', synced: 0 });
+            return res.json({ success: true, message: 'No orders modified in the last 10 days', synced: 0 });
         }
 
         const { error: upsertError } = await supabase
