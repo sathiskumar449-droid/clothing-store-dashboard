@@ -6,6 +6,7 @@ import { getOutfitMatches } from './api/matchOutfit.js';
 import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook, handleRazorpayWebhook, handleImageProxy } from './api/webhook.js';
 import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook } from './api/products.js';
 import { handleWooOrderWebhook } from './api/woocommerce-order-webhook.js';
+import { syncWooOrders } from './api/sync-woocommerce-orders.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
 import { getOrderStats } from './api/order-stats.js';
 import { getAllChats, getChatHistory, sendChatMessage, toggleBot, deleteChat, renameChat, editChatMessage, deleteChatMessage } from './api/chats.js';
@@ -82,6 +83,9 @@ app.post('/api/webhook/woocommerce', handleWooWebhook);
 app.get('/api/orders', requireApiKey, getOrders);
 app.put('/api/orders/:id/status', requireApiKey, updateOrderStatus);
 app.get('/api/order-stats', requireApiKey, getOrderStats);
+
+// One-off sync: fetch last 2 days orders from WooCommerce and upsert into dashboard
+app.post('/api/sync-woocommerce-orders', requireApiKey, syncWooOrders);
 
 
 // =============================
