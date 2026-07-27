@@ -6258,7 +6258,7 @@ async function handleMessage(msg) {
                     const optionsToShow = [...offerJeans]
                         .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
                     const categoryUrl = addWhatsAppUTM('https://www.supercollections.in/product-category/pants/offer-jeans-pant/');
-                    const collageUrl = await createProductCollage(optionsToShow, 1, products);
+                    const collageUrl = await createProductCollage(optionsToShow, 1, products, true);
 
                     if (collageUrl) {
                         const caption = 'Offer Jeans Pant\nStarting at ₹329';
