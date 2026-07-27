@@ -36,16 +36,14 @@ function mapWooOrderStatus(status) {
         case 'pending':
         case 'on-hold':
             return 'pending';
+        case 'processing':
+            return 'processing';
         case 'completed':
             return 'completed';
         case 'cancelled':
         case 'failed':
         case 'refunded':
             return 'cancelled';
-        case 'processing':
-            // Treat WooCommerce "processing" orders as dashboard "pending" so
-            // they appear under the Pending tab (owner sees them as awaiting action).
-            return 'pending';
         default:
             return 'confirmed';
     }
