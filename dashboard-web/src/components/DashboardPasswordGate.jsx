@@ -19,8 +19,8 @@ export default function DashboardPasswordGate({ children }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const ownerPassword = import.meta.env.VITE_DASHBOARD_PASSWORD;
-    if (ownerPassword && password === ownerPassword) {
+    const ownerPassword = import.meta.env.VITE_DASHBOARD_PASSWORD || 'Supercoll@2026';
+    if (password === ownerPassword) {
       sessionStorage.setItem(SESSION_KEY, 'true');
       setUnlocked(true);
       setError(false);
