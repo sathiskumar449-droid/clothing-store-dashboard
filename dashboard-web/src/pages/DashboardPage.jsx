@@ -122,26 +122,19 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       {stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <StatCard
             title="Total Orders"
             value={stats.totalOrders}
             icon={ShoppingBag}
             color="indigo"
-            subtitle={`${stats.completed} completed · ${stats.totalOrders - stats.completed} processing`}
+            subtitle="Processing + Completed"
           />
           <StatCard
             title="Revenue"
             value={`₹${stats.totalRevenue.toLocaleString('en-IN')}`}
             icon={IndianRupee}
             color="emerald"
-          />
-          <StatCard
-            title="Completed Orders"
-            value={stats.completed}
-            icon={TrendingUp}
-            color="emerald"
-            subtitle="Finished and delivered"
           />
           <StatCard
             title="Customers"
