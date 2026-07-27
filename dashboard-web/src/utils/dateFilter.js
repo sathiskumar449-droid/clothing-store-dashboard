@@ -1,51 +1,55 @@
 // Shared date-filter shape used by DashboardPage and OrdersPage:
-//   { mode: 'all' | 'today' | 'last2days' | 'week' | 'month' | 'custom', date?: 'YYYY-MM-DD' }
+//   { mode: 'all' | 'today' | 'yesterday' | 'last2days' | 'week' | 'month' | 'custom', date?: 'YYYY-MM-DD' }
 // 'all' is the default and matches the original unfiltered behavior.
 export const DEFAULT_DATE_FILTER = { mode: 'all' };
 
-// Converts a filter into { startDate, endDate } ISO strings for the orders API, or {}
-// for 'all' (no query params -> backend returns everything, unchanged from before).
-// Boundaries are computed from the browser's local time so "Today" / the date picker
-// line up with the owner's own calendar day rather than UTC.
+// Returns a 'YYYY-MM-DD' string in the browser's LOCAL timezone (IST for this store).
+// We avoid toISOString() because that converts to UTC and shifts the day boundary
+// by -5:30, causing yesterday's filter to include/exclude wrong orders in Supabase.
+function toLocalDateStr(d) {
+  const yyyy = d.getFullYear();
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Converts a filter into { startDate, endDate } local date strings (YYYY-MM-DD) for the
+// orders API, or {} for 'all' (no query params → backend returns everything).
 export function getDateRangeParams(filter) {
   if (!filter || filter.mode === 'all') return {};
 
   const now = new Date();
-  let start;
-  let end = new Date(now);
-  end.setHours(23, 59, 59, 999);
 
   if (filter.mode === 'today') {
-    start = new Date(now);
-    start.setHours(0, 0, 0, 0);
+    const d = toLocalDateStr(now);
+    return { startDate: d, endDate: d };
+
   } else if (filter.mode === 'yesterday') {
-    // Yesterday only: midnight → 23:59:59 of yesterday
-    start = new Date(now);
-    start.setDate(now.getDate() - 1);
-    start.setHours(0, 0, 0, 0);
-    end = new Date(now);
-    end.setDate(now.getDate() - 1);
-    end.setHours(23, 59, 59, 999);
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    const d = toLocalDateStr(yest);
+    return { startDate: d, endDate: d };
+
   } else if (filter.mode === 'last2days') {
-    // Yesterday midnight → now (covers today + yesterday fully)
-    start = new Date(now);
-    start.setDate(now.getDate() - 1);
-    start.setHours(0, 0, 0, 0);
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    return { startDate: toLocalDateStr(yest), endDate: toLocalDateStr(now) };
+
   } else if (filter.mode === 'week') {
-    // Week starts Monday.
     const day = now.getDay();
     const diffToMonday = day === 0 ? 6 : day - 1;
-    start = new Date(now);
-    start.setDate(now.getDate() - diffToMonday);
-    start.setHours(0, 0, 0, 0);
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - diffToMonday);
+    return { startDate: toLocalDateStr(monday), endDate: toLocalDateStr(now) };
+
   } else if (filter.mode === 'month') {
-    start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { startDate: toLocalDateStr(first), endDate: toLocalDateStr(now) };
+
   } else if (filter.mode === 'custom' && filter.date) {
-    start = new Date(`${filter.date}T00:00:00`);
-    end = new Date(`${filter.date}T23:59:59.999`);
+    return { startDate: filter.date, endDate: filter.date };
+
   } else {
     return {};
   }
-
-  return { startDate: start.toISOString(), endDate: end.toISOString() };
 }

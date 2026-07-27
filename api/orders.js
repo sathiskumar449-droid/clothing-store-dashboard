@@ -2,12 +2,18 @@
 import { supabase } from '../lib/supabase.js';
 
 // ✅ Get all orders — optionally filtered to a date range via ?startDate=&endDate=
-// (ISO timestamps, inclusive on both ends). Filtering happens in the Supabase query itself
-// rather than in-memory so the "Today"/date-picker views on the dashboard stay fast as the
-// orders table grows, instead of always pulling every row.
+// Accepts either plain YYYY-MM-DD strings (from the date-filter bar) or ISO timestamps.
+// endDate is normalised to cover the full day so orders late in the evening aren't missed.
 export const getOrders = async (req, res) => {
     try {
         const { startDate, endDate } = req.query;
+
+        // If caller passes plain YYYY-MM-DD strings (local-date filter), make sure
+        // endDate covers the full day (append T23:59:59) so Supabase timestamp
+        // comparison doesn't cut off orders that happened later in the evening.
+        const effectiveEnd = endDate && !endDate.includes('T')
+            ? `${endDate}T23:59:59`
+            : endDate;
 
         let query = supabase
             .from('orders')
@@ -15,7 +21,7 @@ export const getOrders = async (req, res) => {
             .order('date', { ascending: false, nullsFirst: false });
 
         if (startDate) query = query.gte('date', startDate);
-        if (endDate) query = query.lte('date', endDate);
+        if (effectiveEnd) query = query.lte('date', effectiveEnd);
 
         const { data, error } = await query;
 
