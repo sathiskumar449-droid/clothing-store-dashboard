@@ -298,7 +298,7 @@ export default function OrdersPage() {
         />
       ) : (
         <div className="space-y-3">
-          {sortedFilteredOrders.map(order => {
+          {sortedFilteredOrders.map((order, index) => {
             const id = order.id || order.orderId;
             const name = getCustomerName(order);
             const phone = getCustomerPhone(order);
@@ -325,6 +325,12 @@ export default function OrdersPage() {
                       aria-label={`Select ${name}`}
                     />
                   </label>
+                  <span
+                    className="w-5 shrink-0 text-center text-xs font-semibold text-gray-400"
+                    aria-label={`Serial number ${index + 1}`}
+                  >
+                    {index + 1}
+                  </span>
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
                     <ShoppingBag size={16} className="text-indigo-500" />
                   </div>

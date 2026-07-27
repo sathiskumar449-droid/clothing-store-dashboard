@@ -53,6 +53,26 @@ function getOrderSource(order) {
     return (utmSource || '').toLowerCase().trim() === 'whatsapp' ? 'whatsapp' : 'website';
 }
 
+// WooCommerce uses "pending" for the "Pending payment" state visible in
+// wp-admin. Convert WooCommerce's full lifecycle into the dashboard's four
+// owner-facing status tabs.
+function mapWooOrderStatus(status) {
+    switch (String(status || '').toLowerCase()) {
+        case 'pending':
+        case 'on-hold':
+            return 'pending';
+        case 'completed':
+            return 'completed';
+        case 'cancelled':
+        case 'failed':
+        case 'refunded':
+            return 'cancelled';
+        case 'processing':
+        default:
+            return 'confirmed';
+    }
+}
+
 // Shapes a WooCommerce order into the exact same row shape the WhatsApp-bot checkout flow
 // writes (see the `newOrder` object in api/webhook.js) so the dashboard renders it identically.
 function buildOrderRow(order, phone) {
@@ -60,7 +80,7 @@ function buildOrderRow(order, phone) {
     const lastName = order.billing?.last_name || '';
     const lineItems = Array.isArray(order.line_items) ? order.line_items : [];
 
-    const mappedStatus = order.status === 'completed' ? 'completed' : 'confirmed';
+    const mappedStatus = mapWooOrderStatus(order.status);
     return {
         id: `WOO-${order.id}`,
         customer_phone: phone || '',
@@ -143,11 +163,6 @@ export async function handleWooOrderWebhook(req, res) {
 
         console.log(`[Woo Order Webhook] Order #${order.number || order.id} status="${order.status}"`);
 
-        if (order.status !== 'processing' && order.status !== 'completed') {
-            console.log(`[Woo Order Webhook] Skipping — status "${order.status}" is not processing/completed`);
-            return res.sendStatus(200);
-        }
-
         const phone = normalizeIndianPhone(order.billing?.phone);
         const row = buildOrderRow(order, phone);
         // Logged unconditionally (not just on mismatch) while this is newly rolled out, so the
@@ -205,7 +220,11 @@ export async function handleWooOrderWebhook(req, res) {
             console.error(`[Woo Order Webhook] ❌ Unexpected error saving order #${order.id}:`, dbErr.message);
         }
 
-        if (!notifyKind) {
+        // Save pending/cancelled states without sending an order-confirmation
+        // message. The existing WhatsApp notification remains for paid or
+        // fulfilled orders only.
+        const shouldNotifyCustomer = order.status === 'processing' || order.status === 'completed';
+        if (!notifyKind || !shouldNotifyCustomer) {
             return res.sendStatus(200);
         }
 
