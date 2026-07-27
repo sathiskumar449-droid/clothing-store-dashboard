@@ -1,5 +1,5 @@
 // Shared date-filter shape used by DashboardPage and OrdersPage:
-//   { mode: 'all' | 'today' | 'week' | 'month' | 'custom', date?: 'YYYY-MM-DD' }
+//   { mode: 'all' | 'today' | 'last2days' | 'week' | 'month' | 'custom', date?: 'YYYY-MM-DD' }
 // 'all' is the default and matches the original unfiltered behavior.
 export const DEFAULT_DATE_FILTER = { mode: 'all' };
 
@@ -17,6 +17,11 @@ export function getDateRangeParams(filter) {
 
   if (filter.mode === 'today') {
     start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+  } else if (filter.mode === 'last2days') {
+    // Yesterday midnight → now (covers today + yesterday fully)
+    start = new Date(now);
+    start.setDate(now.getDate() - 1);
     start.setHours(0, 0, 0, 0);
   } else if (filter.mode === 'week') {
     // Week starts Monday.

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ShoppingBag, MessageSquare, IndianRupee, Clock, Users, TrendingUp, Smartphone, Globe, Lock
+  ShoppingBag, IndianRupee, Clock, Users, TrendingUp, Smartphone, Globe, Lock
 } from 'lucide-react';
 import { getOrders, getOrderStats } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
@@ -19,8 +19,8 @@ export default function DashboardPage() {
   const [channelStats, setChannelStats] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  // Dashboard is the daily operational view; show today's activity first.
-  const [dateFilter, setDateFilter] = useState({ mode: 'today' });
+  // Dashboard defaults to last 2 days so the owner sees yesterday + today at a glance.
+  const [dateFilter, setDateFilter] = useState({ mode: 'last2days' });
 
   const fetchStats = useCallback(async () => {
     try {
@@ -55,10 +55,10 @@ export default function DashboardPage() {
         botPausedChats,
       });
 
+      // Show ALL orders for the selected date range (no artificial slice limit)
       setRecentOrders(
         [...orders]
           .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
-          .slice(0, 6)
       );
     } catch (err) {
       console.error('Dashboard fetch error:', err);
@@ -84,7 +84,7 @@ export default function DashboardPage() {
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">Welcome back! Here's what's happening today.</p>
+          <p className="text-sm text-gray-500 mt-1">Welcome back! Here's the last 2 days of activity.</p>
         </div>
         {dashboardLock && (
           <button
@@ -181,10 +181,15 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Recent Orders */}
+      {/* All Orders for selected date range */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-800">Recent Orders</h2>
+          <h2 className="text-sm font-semibold text-gray-800">
+            Orders
+            {recentOrders.length > 0 && (
+              <span className="ml-2 text-xs font-normal text-gray-400">({recentOrders.length})</span>
+            )}
+          </h2>
           <button
             onClick={() => navigate('/orders')}
             className="text-xs text-indigo-600 font-medium hover:underline"
@@ -200,6 +205,7 @@ export default function DashboardPage() {
               const id = order.id || order.orderId;
               const name = order.customerName || order.customerDetails || order.customer || 'Customer';
               const date = new Date(order.date || order.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
+              const time = new Date(order.date || order.createdAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
               const total = `₹${(order.totalPrice || 0).toLocaleString('en-IN')}`;
               return (
                 <div
@@ -209,7 +215,7 @@ export default function DashboardPage() {
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{name}</p>
-                    <p className="text-xs text-gray-400">{id} · {date}</p>
+                    <p className="text-xs text-gray-400">{id} · {date} {time}</p>
                   </div>
                   <div className="flex items-center gap-3 ml-3 shrink-0">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor[order.status] || 'bg-gray-100 text-gray-600'}`}>
