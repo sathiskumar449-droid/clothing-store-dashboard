@@ -82,23 +82,40 @@ function buildOrderRow(order) {
 // POST /api/sync-woocommerce-orders
 export const syncWooOrders = async (req, res) => {
     try {
-        // Load Woo settings from DB
-        const { data: settingsRows, error: settingsError } = await supabase
-            .from('settings')
-            .select('*')
-            .in('key', ['woo_site_url', 'woo_consumer_key', 'woo_consumer_secret']);
+        let siteUrl, consumerKey, consumerSecret;
 
-        if (settingsError) throw settingsError;
+        // 1. Try to load credentials from Supabase settings table
+        try {
+            const { data: settingsRows, error: settingsError } = await supabase
+                .from('settings')
+                .select('*')
+                .in('key', ['woo_site_url', 'woo_consumer_key', 'woo_consumer_secret']);
 
-        const settings = {};
-        (settingsRows || []).forEach(r => {
-            if (r.key === 'woo_site_url') settings.siteUrl = r.value;
-            if (r.key === 'woo_consumer_key') settings.consumerKey = r.value;
-            if (r.key === 'woo_consumer_secret') settings.consumerSecret = r.value;
-        });
+            if (!settingsError) {
+                const settings = {};
+                (settingsRows || []).forEach(r => {
+                    if (r.key === 'woo_site_url') settings.siteUrl = r.value;
+                    if (r.key === 'woo_consumer_key') settings.consumerKey = r.value;
+                    if (r.key === 'woo_consumer_secret') settings.consumerSecret = r.value;
+                });
+                siteUrl = settings.siteUrl;
+                consumerKey = settings.consumerKey;
+                consumerSecret = settings.consumerSecret;
+            }
+        } catch (_) {
+            // Settings table error — will fall back to env vars below
+        }
 
-        if (!settings.siteUrl || !settings.consumerKey || !settings.consumerSecret) {
-            return res.status(400).json({ success: false, message: 'WooCommerce settings not configured' });
+        // 2. Fall back to environment variables if DB settings are missing
+        if (!siteUrl)        siteUrl        = process.env.WOO_SITE_URL;
+        if (!consumerKey)    consumerKey    = process.env.WOO_CONSUMER_KEY;
+        if (!consumerSecret) consumerSecret = process.env.WOO_CONSUMER_SECRET;
+
+        if (!siteUrl || !consumerKey || !consumerSecret) {
+            return res.status(400).json({
+                success: false,
+                message: 'WooCommerce settings not configured. Add WOO_SITE_URL, WOO_CONSUMER_KEY, WOO_CONSUMER_SECRET to Vercel environment variables.'
+            });
         }
 
         const perPage = 100;
@@ -108,10 +125,10 @@ export const syncWooOrders = async (req, res) => {
 
         // Loop through pages until fewer than perPage returned
         while (true) {
-            const url = `${settings.siteUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders`;
+            const url = `${siteUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders`;
             const params = {
-                consumer_key: settings.consumerKey,
-                consumer_secret: settings.consumerSecret,
+                consumer_key: consumerKey,
+                consumer_secret: consumerSecret,
                 after: twoDaysAgo,
                 per_page: perPage,
                 page
