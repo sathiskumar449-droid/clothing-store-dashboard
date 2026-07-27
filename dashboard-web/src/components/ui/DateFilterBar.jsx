@@ -2,6 +2,7 @@ import { Calendar } from 'lucide-react';
 
 const QUICK_FILTERS = [
   { mode: 'today', label: 'Today' },
+  { mode: 'yesterday', label: 'Yesterday' },
   { mode: 'week', label: 'This Week' },
   { mode: 'month', label: 'This Month' },
   { mode: 'all', label: 'All Time' },

@@ -19,8 +19,8 @@ export default function DashboardPage() {
   const [channelStats, setChannelStats] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  // Dashboard defaults to last 2 days so the owner sees yesterday + today at a glance.
-  const [dateFilter, setDateFilter] = useState({ mode: 'last2days' });
+  // Dashboard defaults to yesterday so the owner sees yesterday's orders at a glance.
+  const [dateFilter, setDateFilter] = useState({ mode: 'yesterday' });
 
   const fetchStats = useCallback(async () => {
     try {
@@ -85,7 +85,7 @@ export default function DashboardPage() {
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">Welcome back! Here's the last 2 days of activity.</p>
+          <p className="text-sm text-gray-500 mt-1">Welcome back! Here's yesterday's activity.</p>
         </div>
         {dashboardLock && (
           <button

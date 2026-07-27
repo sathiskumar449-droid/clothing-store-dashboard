@@ -18,6 +18,14 @@ export function getDateRangeParams(filter) {
   if (filter.mode === 'today') {
     start = new Date(now);
     start.setHours(0, 0, 0, 0);
+  } else if (filter.mode === 'yesterday') {
+    // Yesterday only: midnight → 23:59:59 of yesterday
+    start = new Date(now);
+    start.setDate(now.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
+    end = new Date(now);
+    end.setDate(now.getDate() - 1);
+    end.setHours(23, 59, 59, 999);
   } else if (filter.mode === 'last2days') {
     // Yesterday midnight → now (covers today + yesterday fully)
     start = new Date(now);
