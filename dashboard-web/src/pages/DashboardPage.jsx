@@ -32,20 +32,22 @@ export default function DashboardPage() {
       ]);
       const orders = ordersRes.data || [];
       const chats = chatsRes.data?.chats || [];
-      setChannelStats(orderStatsRes.data || null);
+
+      // Processing-only slice — used for Total Orders, WhatsApp/Website counts
+      const processingOrders = orders.filter(o => o.status === 'processing');
 
       const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
-      const pending = orders.filter(o => o.status === 'pending').length;
+      const pending  = orders.filter(o => o.status === 'pending').length;
       const confirmed = orders.filter(o => o.status === 'confirmed').length;
       const completed = orders.filter(o => o.status === 'completed').length;
       const uniqueCustomers = new Set(
         orders.map(o => o.customerPhone || o.customer)
       ).size;
-      const activeChats = chats.length;
+      const activeChats    = chats.length;
       const botPausedChats = chats.filter(c => c.botPaused).length;
 
       setStats({
-        totalOrders: orders.length,
+        totalOrders: processingOrders.length,   // only processing orders
         totalRevenue,
         pending,
         confirmed,
@@ -55,11 +57,25 @@ export default function DashboardPage() {
         botPausedChats,
       });
 
+      // WhatsApp / Website breakdown — computed from processing orders directly
+      // so both cards stay in sync with the Total Orders card.
+      const whatsappProcessing = processingOrders.filter(
+        o => (o.orderSource || o.source) === 'whatsapp'
+      );
+      const websiteProcessing = processingOrders.filter(
+        o => (o.orderSource || o.source) === 'website'
+      );
+      setChannelStats({
+        whatsapp_orders:  whatsappProcessing.length,
+        whatsapp_revenue: whatsappProcessing.reduce((s, o) => s + (o.totalPrice || 0), 0),
+        website_orders:   websiteProcessing.length,
+        website_revenue:  websiteProcessing.reduce((s, o) => s + (o.totalPrice || 0), 0),
+      });
+
       // Show only 'processing' orders on dashboard (payment received, needs dispatch).
       // Cancelled / pending / completed are visible in the full Orders page.
       setRecentOrders(
-        [...orders]
-          .filter(o => o.status === 'processing')
+        [...processingOrders]
           .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
       );
     } catch (err) {
@@ -107,11 +123,11 @@ export default function DashboardPage() {
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <StatCard
-            title="Total Orders"
+            title="Processing Orders"
             value={stats.totalOrders}
             icon={ShoppingBag}
             color="indigo"
-            subtitle={`${stats.pending} pending`}
+            subtitle="Payment received"
           />
           <StatCard
             title="Revenue"
