@@ -6,7 +6,7 @@ import {
 import { getOrders, getOrderStats } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
-import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
+import { getDateRangeParams } from '../utils/dateFilter';
 import StatCard from '../components/ui/StatCard';
 import Loader from '../components/ui/Loader';
 import DateFilterBar from '../components/ui/DateFilterBar';
@@ -19,7 +19,8 @@ export default function DashboardPage() {
   const [channelStats, setChannelStats] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [dateFilter, setDateFilter] = useState(DEFAULT_DATE_FILTER);
+  // Dashboard is the daily operational view; show today's activity first.
+  const [dateFilter, setDateFilter] = useState({ mode: 'today' });
 
   const fetchStats = useCallback(async () => {
     try {
