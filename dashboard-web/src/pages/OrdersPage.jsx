@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, Download, RefreshCw, ShoppingBag } from 'lucide-react';
-import { getOrders, updateOrderStatus } from '../api/ordersApi';
+import { getOrders, updateOrderStatus, syncWooOrders } from '../api/ordersApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
 import Loader from '../components/ui/Loader';
@@ -124,6 +124,7 @@ export default function OrdersPage() {
   const [expandedId, setExpandedId] = useState(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [dateFilter, setDateFilter] = useState(DEFAULT_DATE_FILTER);
+  const [syncing, setSyncing] = useState(false);
 
   const activeTab = searchParams.get('tab') || 'all';
 
@@ -139,6 +140,19 @@ export default function OrdersPage() {
       setRefreshing(false);
     }
   }, [dateFilter]);
+
+  // Sync from WooCommerce first (catches any missed webhooks), then re-fetch from Supabase.
+  const syncAndFetch = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await syncWooOrders();
+    } catch (err) {
+      console.warn('WooCommerce sync failed (continuing with local data):', err?.message);
+    } finally {
+      setSyncing(false);
+    }
+    fetchOrders();
+  }, [fetchOrders]);
 
   useAutoRefresh(fetchOrders, 15000, [dateFilter.mode, dateFilter.date]);
 
@@ -261,11 +275,12 @@ export default function OrdersPage() {
             {selectedOrders.length > 0 ? 'Export Selected' : 'Export CSV'}
           </button>
           <button
-            onClick={fetchOrders}
-            className="flex min-h-11 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 shadow-sm transition-all duration-200 hover:bg-gray-50 active:scale-95"
+            onClick={syncAndFetch}
+            disabled={syncing || refreshing}
+            className="flex min-h-11 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 shadow-sm transition-all duration-200 hover:bg-gray-50 active:scale-95 disabled:opacity-50"
           >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-            Refresh
+            <RefreshCw size={14} className={(syncing || refreshing) ? 'animate-spin' : ''} />
+            {syncing ? 'Syncing…' : 'Refresh'}
           </button>
         </div>
       </div>

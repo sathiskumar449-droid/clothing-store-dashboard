@@ -12,3 +12,7 @@ export const updateOrderStatus = (id, status) =>
 // GET /order-stats — same { startDate, endDate } shape as getOrders; omit for "today" (IST),
 // server-side default.
 export const getOrderStats = (params = {}) => api.get('/order-stats', { params });
+
+// POST /sync-woocommerce-orders — pulls last 2 days orders from WooCommerce and upserts
+// into Supabase so the dashboard stays in sync even if webhooks were missed.
+export const syncWooOrders = () => api.post('/sync-woocommerce-orders');
