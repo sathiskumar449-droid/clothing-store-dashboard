@@ -55,9 +55,11 @@ export default function DashboardPage() {
         botPausedChats,
       });
 
-      // Show ALL orders for the selected date range (no artificial slice limit)
+      // Show only 'processing' orders on dashboard (payment received, needs dispatch).
+      // Cancelled / pending / completed are visible in the full Orders page.
       setRecentOrders(
         [...orders]
+          .filter(o => o.status === 'processing')
           .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
       );
     } catch (err) {
@@ -186,7 +188,7 @@ export default function DashboardPage() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-800">
-            Orders
+            Processing Orders
             {recentOrders.length > 0 && (
               <span className="ml-2 text-xs font-normal text-gray-400">({recentOrders.length})</span>
             )}

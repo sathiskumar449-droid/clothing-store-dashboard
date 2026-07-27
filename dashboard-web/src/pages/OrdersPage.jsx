@@ -171,8 +171,9 @@ export default function OrdersPage() {
     }
   };
 
+  // 'all' tab shows everything except cancelled (cancelled has its own dedicated tab).
   const filtered = activeTab === 'all'
-    ? orders
+    ? orders.filter(order => order.status !== 'cancelled')
     : orders.filter(order => order.status === activeTab);
 
   const sortedFilteredOrders = [...filtered].sort(
@@ -180,7 +181,9 @@ export default function OrdersPage() {
   );
 
   const tabCount = tab =>
-    tab === 'all' ? orders.length : orders.filter(order => order.status === tab).length;
+    tab === 'all'
+      ? orders.filter(order => order.status !== 'cancelled').length
+      : orders.filter(order => order.status === tab).length;
 
   const selectedOrders = orders.filter(order =>
     selectedOrderIds.includes(order.id || order.orderId)
