@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, Download, RefreshCw, ShoppingBag } from 'lucide-react';
 import { getOrders, updateOrderStatus } from '../api/ordersApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
-import { getDateRangeParams } from '../utils/dateFilter';
+import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import Badge from '../components/ui/Badge';
@@ -123,9 +123,7 @@ export default function OrdersPage() {
   const [updating, setUpdating] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
-  // The order list is an operational view, so always start with today's
-  // orders. Historical orders remain available through the All Time filter.
-  const [dateFilter, setDateFilter] = useState({ mode: 'today' });
+  const [dateFilter, setDateFilter] = useState(DEFAULT_DATE_FILTER);
 
   const activeTab = searchParams.get('tab') || 'all';
 
