@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ShoppingBag, IndianRupee, Clock, Users, TrendingUp, Smartphone, Globe, Lock
+  ShoppingBag, IndianRupee, Clock, Users, Smartphone, Globe, Lock
 } from 'lucide-react';
 import { getOrders, getOrderStats } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
@@ -170,7 +170,7 @@ export default function DashboardPage() {
 
       {/* Secondary stats */}
       {stats && (
-        <div className="grid grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           <div
             onClick={() => navigate('/orders?tab=pending')}
             className="bg-white rounded-xl p-4 border border-amber-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
@@ -180,16 +180,6 @@ export default function DashboardPage() {
               <Clock size={14} className="text-amber-500" />
             </div>
             <p className="text-2xl font-bold text-amber-600 mt-1">{stats.pending}</p>
-          </div>
-          <div
-            onClick={() => navigate('/orders?tab=confirmed')}
-            className="bg-white rounded-xl p-4 border border-blue-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-gray-500">Confirmed</p>
-              <TrendingUp size={14} className="text-blue-500" />
-            </div>
-            <p className="text-2xl font-bold text-blue-600 mt-1">{stats.confirmed}</p>
           </div>
         </div>
       )}

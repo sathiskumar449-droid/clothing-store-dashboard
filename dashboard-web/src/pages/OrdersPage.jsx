@@ -9,8 +9,8 @@ import EmptyState from '../components/ui/EmptyState';
 import Badge from '../components/ui/Badge';
 import DateFilterBar from '../components/ui/DateFilterBar';
 
-const TABS = ['all', 'pending', 'processing', 'confirmed', 'completed', 'cancelled'];
-const STATUS_OPTIONS = ['pending', 'processing', 'confirmed', 'completed', 'cancelled'];
+const TABS = ['all', 'pending', 'processing', 'completed', 'cancelled'];
+const STATUS_OPTIONS = ['pending', 'processing', 'completed', 'cancelled'];
 
 function formatDate(ts) {
   if (!ts) return '-';
