@@ -38,7 +38,7 @@ export default function DashboardPage() {
         o => o.status === 'processing' || o.status === 'completed'
       );
 
-      const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
+      const totalRevenue = activeOrders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
       const pending   = orders.filter(o => o.status === 'pending').length;
       const confirmed = orders.filter(o => o.status === 'confirmed').length;
       const completed = orders.filter(o => o.status === 'completed').length;

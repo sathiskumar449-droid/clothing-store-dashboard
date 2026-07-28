@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS products (
     price       TEXT,                        -- stored as text to match existing JSON
     stock       TEXT,                        -- stored as text to match existing JSON (some rows have "4", some have 4)
     sizes       JSONB    DEFAULT '[]',       -- array of size strings e.g. ["S","M","L"]
+    categories  JSONB    DEFAULT '[]',       -- array of WooCommerce categories e.g. ["Shirts", "Printed Shirts"]
     image_uri   TEXT,
     permalink   TEXT,                        -- WooCommerce's direct product page URL (p.permalink)
     status      TEXT     DEFAULT 'publish',  -- WooCommerce post status (publish/draft/trash/pending/private).
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS products (
 -- Safe to re-run: adds the column if this script is applied to an existing database
 ALTER TABLE products ADD COLUMN IF NOT EXISTS permalink TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'publish';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '[]';
 
 -- ============================================================
 -- 2. ORDERS TABLE
@@ -66,6 +68,7 @@ CREATE TABLE IF NOT EXISTS orders (
 
     -- Where the order originated — "whatsapp" (bot checkout) or "website" (WooCommerce)
     source              TEXT     DEFAULT 'whatsapp',
+    order_source        TEXT,        -- WooCommerce order attribution: "whatsapp" or "website"
 
     -- Set when a customer taps "Not Delivered" on the delivery notification — surfaces the
     -- complaint to the shop owner (e.g. in the dashboard) without a separate alerting system
@@ -74,6 +77,7 @@ CREATE TABLE IF NOT EXISTS orders (
 
 -- Safe to re-run: adds the column if this script is applied to an existing database
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'whatsapp';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_source TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_complaint_at TIMESTAMPTZ DEFAULT NULL;
 
 -- ============================================================
@@ -107,16 +111,97 @@ CREATE INDEX IF NOT EXISTS idx_products_category     ON products(category);
 -- Using service role key in the backend bypasses RLS,
 -- but enable it for safety so anon key cannot access data.
 -- ============================================================
+-- ============================================================
+-- 5. SETTINGS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- 6. STORE SETTINGS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS store_settings (
+    id SERIAL PRIMARY KEY,
+    coupon_code TEXT,
+    coupon_enabled BOOLEAN DEFAULT FALSE,
+    free_shipping_with_coupon BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Initialize the single row for store_settings (id=1)
+INSERT INTO store_settings (id, coupon_code, coupon_enabled, free_shipping_with_coupon)
+VALUES (1, '', false, true)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- 7. COLLAGE CACHE TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS collage_cache (
+    cache_key TEXT PRIMARY KEY,
+    collage_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- 8. DEMO SHOPS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS demo_shops (
+    id SERIAL PRIMARY KEY,
+    shop_name TEXT NOT NULL,
+    demo_code TEXT UNIQUE NOT NULL,
+    owner_whatsapp TEXT,
+    welcome_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- 9. DEMO PRODUCTS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS demo_products (
+    id SERIAL PRIMARY KEY,
+    demo_shop_id BIGINT REFERENCES demo_shops(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    price NUMERIC NOT NULL,
+    image_url TEXT,
+    category TEXT,
+    sizes JSONB DEFAULT '[]',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- 10. Row Level Security (RLS)
+-- Using service role key in the backend bypasses RLS,
+-- but enable it for safety so anon key cannot access data.
+-- ============================================================
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chats    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE collage_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_shops ENABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_products ENABLE ROW LEVEL SECURITY;
 
 -- Allow full access with the service_role key (used by backend)
 -- DROP first so this script is safe to re-run multiple times
 DROP POLICY IF EXISTS "service_role_all_products" ON products;
 DROP POLICY IF EXISTS "service_role_all_orders"   ON orders;
 DROP POLICY IF EXISTS "service_role_all_chats"    ON chats;
+DROP POLICY IF EXISTS "service_role_all_settings" ON settings;
+DROP POLICY IF EXISTS "service_role_all_store_settings" ON store_settings;
+DROP POLICY IF EXISTS "service_role_all_collage_cache" ON collage_cache;
+DROP POLICY IF EXISTS "service_role_all_demo_shops" ON demo_shops;
+DROP POLICY IF EXISTS "service_role_all_demo_products" ON demo_products;
 
 CREATE POLICY "service_role_all_products" ON products FOR ALL USING (true);
 CREATE POLICY "service_role_all_orders"   ON orders   FOR ALL USING (true);
 CREATE POLICY "service_role_all_chats"    ON chats    FOR ALL USING (true);
+CREATE POLICY "service_role_all_settings" ON settings FOR ALL USING (true);
+CREATE POLICY "service_role_all_store_settings" ON store_settings FOR ALL USING (true);
+CREATE POLICY "service_role_all_collage_cache" ON collage_cache FOR ALL USING (true);
+CREATE POLICY "service_role_all_demo_shops" ON demo_shops FOR ALL USING (true);
+CREATE POLICY "service_role_all_demo_products" ON demo_products FOR ALL USING (true);
