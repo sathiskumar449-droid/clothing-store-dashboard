@@ -123,7 +123,7 @@ export default function OrdersPage() {
   const [updating, setUpdating] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
-  const [dateFilter, setDateFilter] = useState(DEFAULT_DATE_FILTER);
+  const [dateFilter, setDateFilter] = useState({ mode: 'today' });
   const [syncing, setSyncing] = useState(false);
 
   const activeTab = searchParams.get('tab') || 'all';
