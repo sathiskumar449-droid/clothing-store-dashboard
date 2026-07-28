@@ -465,7 +465,7 @@ export default function ChatsPage() {
                               <span className="text-[9px] text-[#667781] italic">edited</span>
                             )}
                             <span className="text-[10px] text-[#667781]">
-                              {formatTime(msg.timestamp)}
+                              {formatDate(msg.timestamp)}
                             </span>
                             {isSentByUs && (
                               <span 
