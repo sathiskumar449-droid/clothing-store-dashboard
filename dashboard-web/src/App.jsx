@@ -6,7 +6,6 @@ import ChatsPage from './pages/ChatsPage';
 import OrdersPage from './pages/OrdersPage';
 import BillingPage from './pages/BillingPage';
 import ProductsPage from './pages/ProductsPage';
-import CustomersPage from './pages/CustomersPage';
 import SettingsPage from './pages/SettingsPage';
 import DemoManager from './components/DemoManager';
 
@@ -29,7 +28,6 @@ export default function App() {
           <Route path="orders" element={<OrdersPage />} />
           <Route path="billing" element={<BillingPage />} />
           <Route path="products" element={<ProductsPage />} />
-          <Route path="customers" element={<CustomersPage />} />
           <Route path="demo-manager" element={<DemoManager />} />
           <Route
             path="settings"
