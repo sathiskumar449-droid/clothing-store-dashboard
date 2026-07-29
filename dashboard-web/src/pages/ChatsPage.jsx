@@ -325,28 +325,6 @@ export default function ChatsPage() {
 
       {/* Chat Window */}
       <div className={`flex-1 flex flex-col ${activeChat ? 'flex' : 'hidden md:flex'} bg-[#f8fafc]/50 relative`}>
-        {/* Top Action Header Bar */}
-        <div className="p-4 flex items-center justify-between border-b border-gray-100 bg-white/70 backdrop-blur-md z-20">
-          <div className="relative flex-1 max-w-md">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search chats, name or mobile..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 min-h-11 text-xs rounded-2xl bg-[#f0f3ff] text-gray-800 placeholder-gray-400 border border-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all"
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <button className="w-10 h-10 rounded-2xl bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-50 active:scale-95 transition-all relative">
-              <Bell size={18} />
-              <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white"></span>
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#5856d6] via-[#6366f1] to-[#8b5cf6] text-white font-bold text-xs shadow-md shadow-indigo-500/30 hover:opacity-95 active:scale-95 transition-all">
-              <Plus size={16} /> New Chat
-            </button>
-          </div>
-        </div>
 
         {!activeChat ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-gradient-to-br from-[#f8fafc] via-[#f1f5f9] to-[#eef2ff] z-10 relative overflow-hidden">
