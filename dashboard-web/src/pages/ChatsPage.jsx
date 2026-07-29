@@ -236,11 +236,11 @@ export default function ChatsPage() {
   );
 
   return (
-    <div className="fixed top-0 bottom-20 left-0 right-0 md:static md:w-full md:h-screen flex overflow-hidden bg-[#f0f2f5]">
+    <div className="w-full h-full flex overflow-hidden bg-transparent">
       {/* Chat List Panel */}
       <div className={`
         ${activeChat ? 'hidden md:flex' : 'flex'}
-        flex-col w-full md:w-88 bg-[#f8fafc]/90 border-r border-gray-100 shrink-0
+        flex-col w-full md:w-88 h-full bg-[#f8fafc]/90 border-r border-gray-100/80 shrink-0 overflow-hidden
       `}>
         {/* List Header */}
         <div className="p-4 flex items-center justify-between border-b border-gray-100 bg-white/50 backdrop-blur-md">
@@ -324,7 +324,7 @@ export default function ChatsPage() {
       </div>
 
       {/* Chat Window */}
-      <div className={`flex-1 flex flex-col ${activeChat ? 'flex' : 'hidden md:flex'} bg-[#f8fafc]/50 relative`}>
+      <div className={`flex-1 flex flex-col h-full ${activeChat ? 'flex' : 'hidden md:flex'} bg-[#f8fafc]/50 relative overflow-hidden`}>
 
         {!activeChat ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-gradient-to-br from-[#f8fafc] via-[#f1f5f9] to-[#eef2ff] z-10 relative overflow-hidden">
