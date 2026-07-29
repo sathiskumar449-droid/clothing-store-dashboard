@@ -15,25 +15,44 @@ import Badge from '../components/ui/Badge';
 
 function formatTime(ts) {
   if (!ts) return '';
-  return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  try {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
 }
+
 function formatDate(ts) {
   if (!ts) return '';
-  return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  try {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
 }
+
 function formatChatListTimestamp(ts) {
   if (!ts) return '';
-  const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return 'Today';
+  try {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return 'Today';
 
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
 
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}/${mm}/${d.getFullYear()}`;
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${d.getFullYear()}`;
+  } catch {
+    return '';
+  }
 }
 
 export default function ChatsPage() {
@@ -202,13 +221,13 @@ export default function ChatsPage() {
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  const filtered = chats.filter(c =>
-    (c.customerName || '').toLowerCase().includes(search.toLowerCase()) ||
-    (c.customerPhone || '').includes(search)
+  const filtered = (chats || []).filter(c =>
+    String(c?.customerName || '').toLowerCase().includes(search.toLowerCase()) ||
+    String(c?.customerPhone || '').includes(search)
   );
 
   return (
-    <div className="flex h-[calc(100vh-80px)] md:h-screen w-full overflow-hidden bg-[#f0f2f5]">
+    <div className="flex h-full w-full min-h-[calc(100vh-80px)] md:min-h-screen overflow-hidden bg-[#f0f2f5]">
       {/* Chat List Panel */}
       <div className={`
         ${activeChat ? 'hidden md:flex' : 'flex'}
@@ -254,6 +273,7 @@ export default function ChatsPage() {
           ) : (
             filtered.map(chat => {
               const isChatActive = activeChat?.customerPhone === chat.customerPhone;
+              const avatarInitial = String(chat.customerName || chat.customerPhone || 'C')[0].toUpperCase();
               return (
                 <div
                   key={chat.customerPhone}
@@ -269,7 +289,7 @@ export default function ChatsPage() {
                   )}
 
                   <div className="w-12 h-12 rounded-full bg-[#00a884]/10 text-[#00a884] flex items-center justify-center text-base font-bold shrink-0">
-                    {(chat.customerName || 'C')[0].toUpperCase()}
+                    {avatarInitial}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
@@ -325,7 +345,7 @@ export default function ChatsPage() {
                 <ArrowLeft size={18} />
               </button>
               <div className="w-10 h-10 rounded-full bg-[#00a884]/15 text-[#00a884] flex items-center justify-center text-base font-bold">
-                {(activeChat.customerName || 'C')[0].toUpperCase()}
+                {String(activeChat.customerName || activeChat.customerPhone || 'C')[0].toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-[#111b21] truncate">{activeChat.customerName || activeChat.customerPhone}</p>
@@ -484,7 +504,7 @@ export default function ChatsPage() {
                   <Send size={16} />
                 </button>
               </div>
-              {formatDate(activeChat?.lastUpdated) && (
+              {Boolean(formatDate(activeChat?.lastUpdated)) && (
                 <p className="text-[10px] text-[#667781] text-center mt-2 font-medium">
                   Last active: {formatDate(activeChat.lastUpdated)}
                 </p>
