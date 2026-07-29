@@ -4,12 +4,12 @@ import BottomNav from './BottomNav';
 
 export default function AppLayout() {
   return (
-    <div className="flex h-full min-h-screen bg-gradient-to-br from-[#0b0c24] via-[#14163c] to-[#241344] p-0 md:p-4 gap-4">
+    <div className="flex h-full min-h-screen bg-slate-50">
       {/* Desktop sidebar */}
       <Sidebar />
 
-      {/* Main content — pushed right on desktop, rounded glass container */}
-      <main className="flex-1 md:ml-64 h-screen md:h-[calc(100vh-2rem)] pb-24 md:pb-0 overflow-y-auto bg-white/95 backdrop-blur-xl md:rounded-3xl border border-white/60 shadow-2xl transition-all duration-300">
+      {/* Main content — pushed right on desktop, full width on mobile */}
+      <main className="flex-1 md:ml-64 min-h-screen pb-20 md:pb-0 overflow-y-auto">
         <Outlet />
       </main>
 
