@@ -19,26 +19,35 @@ const navItems = [
 
 export default function BottomNav() {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#121435]/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-4px_25px_rgba(0,0,0,0.4)]">
-      <div className="flex items-stretch overflow-x-auto">
+    <nav className="md:hidden fixed bottom-3 left-3 right-3 z-40 bg-[#121438]/90 backdrop-blur-2xl border border-white/20 rounded-full shadow-[0_10px_35px_rgba(0,0,0,0.5)] px-2 py-1.5">
+      <div className="flex items-center justify-around">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) =>
-              `flex-1 min-w-[52px] flex flex-col items-center justify-center py-2 px-1 text-[10px] font-medium transition-all duration-200
-              ${isActive
-                ? 'text-indigo-400 font-bold'
-                : 'text-gray-400 hover:text-white'
-              }`
+              `flex flex-col items-center justify-center transition-all duration-300 ease-out group
+              ${isActive ? 'scale-105' : 'opacity-80 hover:opacity-100'}`
             }
           >
             {({ isActive }) => (
               <>
-                <span className={`mb-0.5 p-1.5 rounded-xl transition-all ${isActive ? 'bg-indigo-600/30 text-indigo-300 ring-1 ring-indigo-400/40' : ''}`}>
-                  <Icon size={20} strokeWidth={isActive ? 2.5 : 1.8} />
+                <span
+                  className={`flex items-center justify-center transition-all duration-300 ${
+                    isActive
+                      ? 'w-10 h-10 rounded-full bg-gradient-to-tr from-[#5856d6] via-[#6366f1] to-[#8b5cf6] text-white shadow-lg shadow-indigo-500/40 ring-2 ring-white/30 -translate-y-1'
+                      : 'w-9 h-9 rounded-full text-gray-400 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Icon size={isActive ? 20 : 18} strokeWidth={isActive ? 2.5 : 1.8} />
                 </span>
-                {label}
+                <span
+                  className={`text-[9.5px] transition-colors mt-0.5 ${
+                    isActive ? 'font-bold text-white' : 'font-medium text-gray-400'
+                  }`}
+                >
+                  {label}
+                </span>
               </>
             )}
           </NavLink>

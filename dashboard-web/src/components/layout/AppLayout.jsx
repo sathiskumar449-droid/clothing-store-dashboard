@@ -9,7 +9,7 @@ export default function AppLayout() {
       <Sidebar />
 
       {/* Main content — pushed right on desktop, rounded glass container */}
-      <main className="flex-1 md:ml-64 h-screen md:h-[calc(100vh-2rem)] pb-20 md:pb-0 overflow-hidden bg-white/95 backdrop-blur-xl md:rounded-3xl border border-white/60 shadow-2xl transition-all duration-300">
+      <main className="flex-1 md:ml-64 h-screen md:h-[calc(100vh-2rem)] pb-24 md:pb-0 overflow-hidden bg-white/95 backdrop-blur-xl md:rounded-3xl border border-white/60 shadow-2xl transition-all duration-300">
         <Outlet />
       </main>
 
