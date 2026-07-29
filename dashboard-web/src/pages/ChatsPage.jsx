@@ -402,7 +402,8 @@ export default function ChatsPage() {
             </div>
           </div>
         ) : (
-                     {/* Chat header */}
+          <>
+            {/* Chat header */}
             <div className="flex items-center gap-3 px-5 py-3.5 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm shrink-0 z-10">
               <button
                 onClick={() => { setActiveChat(null); navigate('/chats', { replace: true }); }}
