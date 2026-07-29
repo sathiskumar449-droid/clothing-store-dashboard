@@ -121,7 +121,7 @@ export default function ChatsPage() {
     } catch {/* silent */}
   }, [activeChat?.customerPhone]);
 
-  useAutoRefresh(refreshActiveChat, 15000, { immediate: false });
+  useAutoRefresh(refreshActiveChat, 15000, [], { immediate: false });
 
   useEffect(() => {
     if (phoneParam) {
