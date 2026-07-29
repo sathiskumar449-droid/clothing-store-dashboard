@@ -71,5 +71,7 @@ body {
   .no-print { display: none !important; }
   .print-only { display: block !important; }
   body { background: white !important; }
+  aside, nav { display: none !important; }
+  main { margin-left: 0 !important; padding: 0 !important; }
 }
 .print-only { display: none; }

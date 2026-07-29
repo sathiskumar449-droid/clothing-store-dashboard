@@ -63,10 +63,99 @@ export default function BillingPage() {
   const storePhone = settings.phone || '';
   const storeAddress = settings.address || '';
 
+  const renderInvoice = (order, ref = null) => {
+    if (!order) return null;
+    return (
+      <div ref={ref} id="invoice-content" className="p-6 bg-white">
+        {/* Store header */}
+        <div className="text-center mb-5">
+          <h2 className="text-xl font-bold text-indigo-700">{storeName}</h2>
+          {storeAddress && <p className="text-xs text-gray-500">{storeAddress}</p>}
+          {storePhone && <p className="text-xs text-gray-500">📞 {storePhone}</p>}
+          <div className="mt-2 border-t-2 border-indigo-600 pt-2">
+            <p className="text-sm font-bold text-gray-700">TAX INVOICE</p>
+          </div>
+        </div>
+
+        {/* Order details */}
+        <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-4 bg-gray-50 rounded-xl p-3">
+          <div>
+            <p className="font-semibold text-gray-500 mb-0.5">Invoice No.</p>
+            <p className="font-mono">{order.id || order.orderId}</p>
+          </div>
+          <div>
+            <p className="font-semibold text-gray-500 mb-0.5">Date</p>
+            <p>{formatDate(order.date || order.createdAt)}</p>
+          </div>
+          <div>
+            <p className="font-semibold text-gray-500 mb-0.5">Customer</p>
+            <p className="font-medium">{order.customerName || order.customerDetails || order.customer}</p>
+          </div>
+          <div>
+            <p className="font-semibold text-gray-500 mb-0.5">Phone</p>
+            <p>{order.customerPhone || order.customer}</p>
+          </div>
+          {order.customerAddress && (
+            <div className="col-span-2">
+              <p className="font-semibold text-gray-500 mb-0.5">Address</p>
+              <p>{order.customerAddress}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Items table */}
+        <div className="overflow-x-auto mb-4">
+          <table className="w-full text-xs min-w-[420px]">
+            <thead>
+              <tr className="bg-indigo-600 text-white">
+                <th className="text-left py-2 px-3 rounded-tl-lg">#</th>
+                <th className="text-left py-2 px-3">Item</th>
+                <th className="text-center py-2 px-3">Size</th>
+                <th className="text-right py-2 px-3 rounded-tr-lg">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {getItems(order).filter(Boolean).map((item, i) => (
+                <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="py-2 px-3 text-gray-500">{i + 1}</td>
+                  <td className="py-2 px-3 font-medium">
+                    {item.product || item.name}
+                    {item.color ? ` (${item.color})` : ''}
+                  </td>
+                  <td className="py-2 px-3 text-center text-gray-500">{item.size || '—'}</td>
+                  <td className="py-2 px-3 text-right font-semibold">₹{item.price}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-indigo-200">
+                <td colSpan={3} className="py-2 px-3 font-bold text-right text-gray-700">Total</td>
+                <td className="py-2 px-3 font-bold text-right text-indigo-700 text-base">
+                  ₹{(order.totalPrice || 0).toLocaleString('en-IN')}
+                </td>
+              </tr>
+              {order.paymentMethod && (
+                <tr>
+                  <td colSpan={3} className="px-3 pb-2 text-right text-xs text-gray-500">Payment</td>
+                  <td className="px-3 pb-2 text-right text-xs font-semibold text-gray-700">{order.paymentMethod}</td>
+                </tr>
+              )}
+            </tfoot>
+          </table>
+        </div>
+
+        <div className="text-center text-xs text-gray-400 border-t border-gray-100 pt-3">
+          <p>Thank you for shopping with us! 🛍️</p>
+          <p className="mt-0.5">WhatsApp: {storePhone || 'Contact us'}</p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 no-print">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Billing</h1>
           <p className="text-sm text-gray-500 mt-0.5">Generate and print invoices</p>
@@ -76,6 +165,13 @@ export default function BillingPage() {
           Refresh
         </button>
       </div>
+
+      {/* Print-only Invoice container */}
+      {selectedOrder && (
+        <div className="print-only">
+          {renderInvoice(selectedOrder, invoiceRef)}
+        </div>
+      )}
 
       {/* Invoice preview modal — shown when order is selected */}
       {selectedOrder && (
@@ -104,89 +200,7 @@ export default function BillingPage() {
             </div>
 
             {/* Invoice body */}
-            <div ref={invoiceRef} id="invoice-content" className="p-6">
-              {/* Store header */}
-              <div className="text-center mb-5">
-                <h2 className="text-xl font-bold text-indigo-700">{storeName}</h2>
-                {storeAddress && <p className="text-xs text-gray-500">{storeAddress}</p>}
-                {storePhone && <p className="text-xs text-gray-500">📞 {storePhone}</p>}
-                <div className="mt-2 border-t-2 border-indigo-600 pt-2">
-                  <p className="text-sm font-bold text-gray-700">TAX INVOICE</p>
-                </div>
-              </div>
-
-              {/* Order details */}
-              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-4 bg-gray-50 rounded-xl p-3">
-                <div>
-                  <p className="font-semibold text-gray-500 mb-0.5">Invoice No.</p>
-                  <p className="font-mono">{selectedOrder.id || selectedOrder.orderId}</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-gray-500 mb-0.5">Date</p>
-                  <p>{formatDate(selectedOrder.date || selectedOrder.createdAt)}</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-gray-500 mb-0.5">Customer</p>
-                  <p className="font-medium">{selectedOrder.customerName || selectedOrder.customerDetails || selectedOrder.customer}</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-gray-500 mb-0.5">Phone</p>
-                  <p>{selectedOrder.customerPhone || selectedOrder.customer}</p>
-                </div>
-                {selectedOrder.customerAddress && (
-                  <div className="col-span-2">
-                    <p className="font-semibold text-gray-500 mb-0.5">Address</p>
-                    <p>{selectedOrder.customerAddress}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Items table */}
-              <div className="overflow-x-auto mb-4">
-                <table className="w-full text-xs min-w-[420px]">
-                  <thead>
-                    <tr className="bg-indigo-600 text-white">
-                      <th className="text-left py-2 px-3 rounded-tl-lg">#</th>
-                      <th className="text-left py-2 px-3">Item</th>
-                      <th className="text-center py-2 px-3">Size</th>
-                      <th className="text-right py-2 px-3 rounded-tr-lg">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {getItems(selectedOrder).filter(Boolean).map((item, i) => (
-                      <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="py-2 px-3 text-gray-500">{i + 1}</td>
-                        <td className="py-2 px-3 font-medium">
-                          {item.product || item.name}
-                          {item.color ? ` (${item.color})` : ''}
-                        </td>
-                        <td className="py-2 px-3 text-center text-gray-500">{item.size || '—'}</td>
-                        <td className="py-2 px-3 text-right font-semibold">₹{item.price}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-indigo-200">
-                      <td colSpan={3} className="py-2 px-3 font-bold text-right text-gray-700">Total</td>
-                      <td className="py-2 px-3 font-bold text-right text-indigo-700 text-base">
-                        ₹{(selectedOrder.totalPrice || 0).toLocaleString('en-IN')}
-                      </td>
-                    </tr>
-                    {selectedOrder.paymentMethod && (
-                      <tr>
-                        <td colSpan={3} className="px-3 pb-2 text-right text-xs text-gray-500">Payment</td>
-                        <td className="px-3 pb-2 text-right text-xs font-semibold text-gray-700">{selectedOrder.paymentMethod}</td>
-                      </tr>
-                    )}
-                  </tfoot>
-                </table>
-              </div>
-
-              <div className="text-center text-xs text-gray-400 border-t border-gray-100 pt-3">
-                <p>Thank you for shopping with us! 🛍️</p>
-                <p className="mt-0.5">WhatsApp: {storePhone || 'Contact us'}</p>
-              </div>
-            </div>
+            {renderInvoice(selectedOrder)}
           </div>
         </div>
       )}
