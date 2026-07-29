@@ -11,17 +11,17 @@ export default function NavList({ onItemClick }) {
   };
 
   return (
-    <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto bg-[#111b21]">
+    <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
       {navItems.map(({ to, icon: Icon, label }) => (
         <NavLink
           key={to}
           to={to}
           onClick={() => handleClick(to)}
           className={({ isActive }) =>
-            `flex items-center gap-3 px-3 py-2.5 min-h-11 rounded-r-xl rounded-l-none text-sm font-medium transition-colors duration-300 ease-in-out border-l-4 group
+            `flex items-center gap-3.5 px-4 py-3 min-h-11 rounded-2xl text-sm font-semibold transition-all duration-300 ease-in-out group
               ${isActive
-                ? 'bg-[#2a3942] text-white border-[#00a884] shadow-md'
-                : 'text-[#aebac1] border-transparent hover:bg-[#202c33] hover:text-white'
+                ? 'bg-gradient-to-r from-[#5856d6] via-[#6366f1] to-[#8b5cf6] text-white shadow-lg shadow-indigo-500/35 scale-[1.02]'
+                : 'text-gray-300 hover:bg-white/10 hover:text-white hover:translate-x-1'
               }`
           }
         >
@@ -29,9 +29,9 @@ export default function NavList({ onItemClick }) {
             <>
               <Icon
                 key={bounceMap[to] || 0}
-                size={18}
-                className={`transition-all duration-300 ease-in-out group-hover:scale-110 group-hover:drop-shadow-[0_0_6px_rgba(0,168,132,0.7)]
-                  ${isActive ? 'text-[#00a884] animate-nav-pop' : 'text-[#8696a0] group-hover:text-white'}`}
+                size={19}
+                className={`transition-all duration-300 ease-in-out group-hover:scale-110
+                  ${isActive ? 'text-white animate-nav-pop' : 'text-gray-400 group-hover:text-white'}`}
               />
               {label}
             </>

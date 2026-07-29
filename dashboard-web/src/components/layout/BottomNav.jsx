@@ -19,7 +19,7 @@ const navItems = [
 
 export default function BottomNav() {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#202c33] border-t border-[#222e35] shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#121435]/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-4px_25px_rgba(0,0,0,0.4)]">
       <div className="flex items-stretch overflow-x-auto">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
@@ -28,14 +28,14 @@ export default function BottomNav() {
             className={({ isActive }) =>
               `flex-1 min-w-[52px] flex flex-col items-center justify-center py-2 px-1 text-[10px] font-medium transition-all duration-200
               ${isActive
-                ? 'text-[#00a884]'
-                : 'text-[#aebac1] hover:text-white'
+                ? 'text-indigo-400 font-bold'
+                : 'text-gray-400 hover:text-white'
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <span className={`mb-0.5 p-1 rounded-lg transition-all ${isActive ? 'bg-[#2a3942]' : ''}`}>
+                <span className={`mb-0.5 p-1.5 rounded-xl transition-all ${isActive ? 'bg-indigo-600/30 text-indigo-300 ring-1 ring-indigo-400/40' : ''}`}>
                   <Icon size={20} strokeWidth={isActive ? 2.5 : 1.8} />
                 </span>
                 {label}
