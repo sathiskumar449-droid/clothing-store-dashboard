@@ -11,7 +11,7 @@ export default function Sidebar() {
         </div>
         <div>
           <p className="text-sm font-bold text-white leading-tight">Super Collections</p>
-          <p className="text-xs text-[#00a884] font-semibold">Owner Dashboard</p>
+          <p className="text-xs text-[#00a884] font-semibold">Chat Bot</p>
         </div>
       </div>
 
