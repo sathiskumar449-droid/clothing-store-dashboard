@@ -1673,12 +1673,16 @@ export const getParentCategory = (categoryName) => {
     const catLower = categoryName.toLowerCase().trim();
 
     // T-Shirts checked before Shirts to avoid 't-shirt'/'t shirt' matching the generic 'shirt' keyword.
-    // ' t shirt' (with a LEADING space) is used instead of bare 't shirt' so the 't' must be a
-    // standalone word — "chava print shirts" was wrongly matching because "print shirts" contains
-    // the substring "t shirt" (the trailing 't' of 'print' + space + 'shirts'). The leading space
-    // prevents that false match while still correctly catching "Five Sleeve T Shirt",
-    // "Football T Shirt", and "Stripe T Shirts" where the 'T' is always preceded by a space.
-    if (['t-shirt', 'tshirt', ' t shirt', 'round neck', 'polo t'].some(kw => catLower.includes(kw))) {
+    // \bt[-_ ]?shirts?\b matches word-boundary 't shirt', 't shirts', 't-shirt', 't-shirts', 'tshirt', 'tshirts',
+    // plus catLower.startsWith('t shirt') / catLower.startsWith('t-shirt') / catLower.startsWith('tshirt')
+    // ensuring standalone "T Shirts" or "T Shirt" category names match 'T-Shirts' without false matching "chava print shirts".
+    if (
+        /\bt[-_ ]?shirts?\b/i.test(catLower) ||
+        catLower.startsWith('t shirt') ||
+        catLower.startsWith('t-shirt') ||
+        catLower.startsWith('tshirt') ||
+        ['t-shirt', 'tshirt', ' t shirt', 'round neck', 'polo t'].some(kw => catLower.includes(kw))
+    ) {
         return 'T-Shirts';
     }
     // 'casual' and 'plain' were removed: both are generic adjectives, not shirt-specific, and were

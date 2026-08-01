@@ -11,7 +11,11 @@ function runTests() {
     const testCases = [
         { input: "printed shirts", expected: "Shirts" },
         { input: "linen shirts", expected: "Shirts" },
+        { input: "chava print shirts", expected: "Shirts" },
         { input: "T-SHIRTS", expected: "T-Shirts" },
+        { input: "T Shirts", expected: "T-Shirts" },
+        { input: "T Shirt", expected: "T-Shirts" },
+        { input: "t shirts", expected: "T-Shirts" },
         { input: "polo fit pant", expected: "Pants" },
         { input: "jeans", expected: "Jeans" },
         { input: "cargo track pant", expected: "Pants" },
