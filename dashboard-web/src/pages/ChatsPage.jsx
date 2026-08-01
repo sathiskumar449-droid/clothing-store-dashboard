@@ -147,10 +147,12 @@ export default function ChatsPage() {
     setTimeout(scrollToBottom, 50);
 
     try {
-      await sendMessage(activeChat.customerPhone, msgText);
+      await sendMessage(activeChat.customerPhone, { text: msgText });
       await refreshActiveChat();
-    } catch {
+    } catch (err) {
+      console.error('❌ Failed to send chat message:', err);
       setMessages(prev => prev.filter(m => m !== tempMsg));
+      alert(err?.response?.data?.message || err?.message || 'Failed to send message to customer');
     } finally {
       setSending(false);
     }

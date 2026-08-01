@@ -742,10 +742,11 @@ async function sendList(to, bodyText, buttonText, sections, headerText = null, f
 }
 
 export async function sendText(to, text) {
+    const formattedTo = String(to || '').replace(/\D/g, '');
     const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
     const payload = {
         messaging_product: 'whatsapp',
-        to,
+        to: formattedTo,
         type: 'text',
         text: { body: text }
     };

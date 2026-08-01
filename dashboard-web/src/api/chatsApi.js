@@ -9,8 +9,10 @@ export const getAllChats = (params = {}) => api.get('/chats', { params });
 export const getChatHistory = (phone) => api.get(`/chats/${phone}`);
 
 // POST /chats/:phone/message — send a message
-export const sendMessage = (phone, payload) =>
-  api.post(`/chats/${phone}/message`, payload);
+export const sendMessage = (phone, payload) => {
+  const data = typeof payload === 'string' ? { text: payload } : payload;
+  return api.post(`/chats/${phone}/message`, data);
+};
 
 // POST /chats/:phone/toggle-bot
 export const toggleBot = (phone, botPaused) =>

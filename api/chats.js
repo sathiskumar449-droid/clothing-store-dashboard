@@ -100,16 +100,22 @@ export const getChatHistory = async (req, res) => {
 // POST /chats/:phone/message
 export const sendChatMessage = async (req, res) => {
     try {
-        const { phone }              = req.params;
-        const { text, type, imageUrl } = req.body;
+        const { phone } = req.params;
+        let text = req.body?.text;
+        let type = req.body?.type;
+        let imageUrl = req.body?.imageUrl;
+
+        if (typeof req.body === 'string') {
+            text = req.body;
+        }
 
         if (type === 'image' && imageUrl) {
             await sendImage(phone, imageUrl, text || '');
         } else {
-            if (!text) {
+            if (!text || (typeof text === 'string' && !text.trim())) {
                 return res.status(400).json({ success: false, message: 'Message text is required' });
             }
-            await sendText(phone, text);
+            await sendText(phone, String(text));
         }
 
         // Fetch existing chat row from Supabase
