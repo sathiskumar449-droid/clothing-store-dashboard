@@ -198,49 +198,84 @@ function isSizeQtyAvailabilityQuery(t) {
     return false;
 }
 
+// Short-lived in-memory cache for getProducts() to reduce Supabase Postgres egress
+let productsCache = null;
+let productsCacheTime = 0;
+let productsFetchPromise = null;
+const PRODUCTS_CACHE_TTL = 30000; // 30-second TTL
+
+export function clearProductsCache() {
+    productsCache = null;
+    productsCacheTime = 0;
+    productsFetchPromise = null;
+}
+
 export async function getProducts() {
-    try {
-        // 'id' is a tiebreaker: rows sharing the same created_at (common with bulk imports)
-        // otherwise have no guaranteed order between queries, which let the product array
-        // order drift between requests and desync collage images (see prepareProductsPageResponse).
-        // status='publish' — defense in depth on top of handleWooWebhook and syncProducts
-        // (api/products.js) only ever writing/keeping published rows: guarantees the bot can
-        // never surface a draft/trashed/pending product even in the window before the owner's
-        // next dashboard Refresh reconciles one away.
-        const { data, error } = await supabase
-            .from('products')
-            .select('*')
-            .eq('status', 'publish')
-            .order('created_at', { ascending: true })
-            .order('id', { ascending: true });
-
-        if (error) throw error;
-
-        return (data || []).map(row => {
-            const cat = row.category || 'General';
-            const allCats = Array.isArray(row.categories) && row.categories.length > 0
-                ? row.categories
-                : [cat];
-
-            return {
-                id: row.id,
-                name: row.name,
-                code: row.code,
-                category: cat,
-                categories: allCats,
-                pattern: row.pattern,
-                color: row.color,
-                price: row.price,
-                stock: row.stock,
-                sizes: row.sizes || [],
-                imageUri: row.image_uri,
-                permalink: row.permalink || null
-            };
-        });
-    } catch (error) {
-        console.error('❌ Error reading products:', error.message);
-        return [];
+    const now = Date.now();
+    if (productsCache && (now - productsCacheTime < PRODUCTS_CACHE_TTL)) {
+        return productsCache;
     }
+
+    if (productsFetchPromise) {
+        return await productsFetchPromise;
+    }
+
+    productsFetchPromise = (async () => {
+        try {
+            // 'id' is a tiebreaker: rows sharing the same created_at (common with bulk imports)
+            // otherwise have no guaranteed order between queries, which let the product array
+            // order drift between requests and desync collage images (see prepareProductsPageResponse).
+            // status='publish' — defense in depth on top of handleWooWebhook and syncProducts
+            // (api/products.js) only ever writing/keeping published rows: guarantees the bot can
+            // never surface a draft/trashed/pending product even in the window before the owner's
+            // next dashboard Refresh reconciles one away.
+            const { data, error } = await supabase
+                .from('products')
+                .select('id, name, code, category, categories, pattern, color, price, stock, sizes, image_uri, permalink')
+                .eq('status', 'publish')
+                .order('created_at', { ascending: true })
+                .order('id', { ascending: true });
+
+            if (error) throw error;
+
+            const mapped = (data || []).map(row => {
+                const cat = row.category || 'General';
+                const allCats = Array.isArray(row.categories) && row.categories.length > 0
+                    ? row.categories
+                    : [cat];
+
+                return {
+                    id: row.id,
+                    name: row.name,
+                    code: row.code,
+                    category: cat,
+                    categories: allCats,
+                    pattern: row.pattern,
+                    color: row.color,
+                    price: row.price,
+                    stock: row.stock,
+                    sizes: row.sizes || [],
+                    imageUri: row.image_uri,
+                    permalink: row.permalink || null
+                };
+            });
+
+            productsCache = mapped;
+            productsCacheTime = Date.now();
+            return mapped;
+        } catch (error) {
+            console.error('❌ Error reading products:', error.message);
+            if (productsCache !== null) {
+                console.warn('⚠️ Supabase product fetch failed. Falling back to previous cached products.');
+                return productsCache;
+            }
+            return [];
+        } finally {
+            productsFetchPromise = null;
+        }
+    })();
+
+    return await productsFetchPromise;
 }
 
 export async function saveProducts(products) {
@@ -255,6 +290,7 @@ export async function saveProducts(products) {
                 console.error(`❌ Error updating stock for product ${p.id}:`, error.message);
             }
         }
+        clearProductsCache();
     } catch (error) {
         console.error('❌ Error saving products:', error.message);
     }
