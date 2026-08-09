@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ShoppingBag, IndianRupee, Clock, Users, Smartphone, Globe, Lock
+  ShoppingBag, IndianRupee, Clock, Users, Smartphone, Globe, Lock, MessageSquare
 } from 'lucide-react';
 import { getOrders, getOrderStats } from '../api/ordersApi';
 import { getAllChats } from '../api/chatsApi';
@@ -98,6 +98,15 @@ export default function DashboardPage() {
     cancelled: 'bg-rose-100 text-rose-700',
   };
 
+  const activeChatsPeriod = {
+    today: 'Active today',
+    yesterday: 'Active yesterday',
+    week: 'Active this week',
+    month: 'Active this month',
+    custom: dateFilter.date ? `Active on ${new Date(`${dateFilter.date}T00:00:00`).toLocaleDateString('en-IN')}` : 'Active on selected day',
+    all: 'All conversations',
+  }[dateFilter.mode] || 'Active chats';
+
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
       {/* Header */}
@@ -122,7 +131,7 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       {stats && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <StatCard
             title="Total Orders"
             value={stats.totalOrders}
@@ -142,6 +151,19 @@ export default function DashboardPage() {
             icon={Users}
             color="amber"
           />
+          <div
+            onClick={() => navigate('/chats')}
+            className="cursor-pointer"
+            title="Open chats"
+          >
+            <StatCard
+              title="Active Chats"
+              value={stats.activeChats}
+              icon={MessageSquare}
+              color="violet"
+              subtitle={activeChatsPeriod}
+            />
+          </div>
         </div>
       )}
 
