@@ -4493,10 +4493,12 @@ async function handleIntent(intentResult, session, products, from) {
             // no color and no specific brand/style word) can't confidently resolve to ONE
             // subcategory — "shirt" alone matches White Shirts, Plain Shirts, Branded Shirts, and
             // every other real Shirts subcategory all at once. Show the existing numbered
-            // subcategory list for that parent group instead of silently guessing one.
+            // subcategory list for that parent group instead of silently guessing one, UNLESS the
+            // parent group itself has a direct subcategory match (e.g. "Shorts" has an exact "Shorts"
+            // subcategory with products, which should render directly as an image grid).
             if (genericWords.length > 0 && specificWords.length === 0 && colorTerms.length === 0 && !hasJeansTerm) {
                 const parentName = GENERIC_TERM_TO_PARENT[genericWords[0]] || GENERIC_TERM_TO_PARENT[simpleStem(genericWords[0])];
-                if (parentName) return showSubcategoryListForParent(parentName, products, session);
+                if (parentName && parentName !== 'Shorts') return showSubcategoryListForParent(parentName, products, session);
             }
 
             if (queryWords.length === 0) {
@@ -4594,17 +4596,32 @@ async function handleIntent(intentResult, session, products, from) {
             const categoryNameHasColorWord = (cat) =>
                 !!colorPriorityTerm && !!cat &&
                 normalizeSearchSpelling(stripSearchPunctuation(cat.toLowerCase())).includes(colorPriorityTerm);
+            const isExactCategoryMatch = (cat) => {
+                if (!cat) return false;
+                const catNorm = simpleStem(normalizeSearchSpelling(stripSearchPunctuation(cat.toLowerCase())).trim());
+                const qNorm = simpleStem(cleanedQ.trim());
+                return catNorm === qNorm;
+            };
+
             let bestCategory = null, bestScore = 0;
             for (const [cat, score] of allScores) {
                 if (score > bestScore) {
                     bestScore = score; bestCategory = cat;
                 } else if (score === bestScore) {
-                    const candidateHasColor = categoryNameHasColorWord(cat);
-                    const currentHasColor = categoryNameHasColorWord(bestCategory);
-                    if (candidateHasColor && !currentHasColor) {
+                    const candidateExact = isExactCategoryMatch(cat);
+                    const currentExact = isExactCategoryMatch(bestCategory);
+                    if (candidateExact && !currentExact) {
                         bestCategory = cat;
-                    } else if (candidateHasColor === currentHasColor && cat.length > (bestCategory || '').length) {
-                        bestCategory = cat;
+                    } else if (!candidateExact && currentExact) {
+                        // Keep current exact match
+                    } else {
+                        const candidateHasColor = categoryNameHasColorWord(cat);
+                        const currentHasColor = categoryNameHasColorWord(bestCategory);
+                        if (candidateHasColor && !currentHasColor) {
+                            bestCategory = cat;
+                        } else if (candidateHasColor === currentHasColor && cat.length > (bestCategory || '').length) {
+                            bestCategory = cat;
+                        }
                     }
                 }
             }
