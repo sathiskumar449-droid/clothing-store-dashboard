@@ -1,6 +1,7 @@
 // api/products.js  — Supabase version (replaces fs-based implementation)
 import { supabase } from '../lib/supabase.js';
 import { verifyWooWebhookSignature } from '../lib/wooWebhookAuth.js';
+import { clearProductsCache } from './webhook.js';
 
 const WOOCOMMERCE_WEBHOOK_SECRET = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
 
@@ -64,6 +65,7 @@ export const addProduct = async (req, res) => {
         if (error) throw error;
 
         console.log('✅ Product Saved');
+        clearProductsCache();
 
         // Shape the response to match the original JSON format
         res.json({
@@ -110,6 +112,8 @@ export const updateProduct = async (req, res) => {
             throw error;
         }
 
+        clearProductsCache();
+
         res.json({
             success: true,
             message: 'Product updated successfully',
@@ -145,6 +149,7 @@ export const deleteProduct = async (req, res) => {
             .eq('id', productId);
 
         if (error) throw error;
+        clearProductsCache();
 
         res.json({ success: true, message: 'Product deleted successfully' });
     } catch (error) {
@@ -379,6 +384,7 @@ export const syncProducts = async (req, res) => {
         }
 
         console.log(`✅ Successfully synced ${dbProducts.length} products to database! (${deletedCount} removed)`);
+        clearProductsCache();
 
         res.json({
             success: true,
@@ -441,6 +447,7 @@ export const handleWooWebhook = async (req, res) => {
                 const { error } = await supabase.from('products').delete().eq('id', payload.id);
                 if (error) throw error;
                 console.log(`🗑️ [WooCommerce Webhook] Product ${payload.id} (${payload.name}) status="${payload.status}" — removed from Supabase.`);
+                clearProductsCache();
                 return res.json({ success: true });
             }
 
@@ -480,6 +487,7 @@ export const handleWooWebhook = async (req, res) => {
             console.log(`🗑️ [WooCommerce Webhook] Product ${payload.id} deleted successfully.`);
         }
 
+        clearProductsCache();
         res.json({ success: true });
     } catch (error) {
         console.error('❌ WooCommerce Webhook Error:', error.message);

@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronDown, Download, RefreshCw, ShoppingBag } from 'lucide-react';
+import { ChevronDown, Download, RefreshCw, ShoppingBag, Send, CheckCircle } from 'lucide-react';
 import { getOrders, updateOrderStatus, syncWooOrders } from '../api/ordersApi';
+import { sendMessage } from '../api/chatsApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { DEFAULT_DATE_FILTER, getDateRangeParams } from '../utils/dateFilter';
 import Loader from '../components/ui/Loader';
@@ -82,6 +83,15 @@ function getCustomerPhone(order) {
   return order.customerPhone || detailParts[1] || order.customer || '-';
 }
 
+function getCleanPhone(phone) {
+  if (!phone) return '';
+  let cleaned = String(phone).replace(/\D/g, '');
+  if (cleaned.length === 10) {
+    cleaned = '91' + cleaned;
+  }
+  return cleaned;
+}
+
 function getCustomerAddress(order) {
   const detailParts = getCustomerDetailParts(order);
   return order.customerAddress || detailParts.slice(2).join(', ') || '-';
@@ -125,6 +135,8 @@ export default function OrdersPage() {
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [dateFilter, setDateFilter] = useState({ mode: 'today' });
   const [syncing, setSyncing] = useState(false);
+  const [sendingInvoiceId, setSendingInvoiceId] = useState(null);
+  const [invoiceSentId, setInvoiceSentId] = useState(null);
 
   const activeTab = searchParams.get('tab') || 'all';
 
@@ -168,6 +180,76 @@ export default function OrdersPage() {
       // silent
     } finally {
       setUpdating(null);
+    }
+  };
+
+  const handleSendInvoice = async (order) => {
+    const id = order.id || order.orderId;
+    const rawPhone = getCustomerPhone(order);
+    const cleanPhone = getCleanPhone(rawPhone);
+
+    if (!cleanPhone || cleanPhone.length < 10) {
+      alert('Customer phone number is missing or invalid.');
+      return;
+    }
+
+    setSendingInvoiceId(id);
+    const settings = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('store_settings') || '{}');
+      } catch { return {}; }
+    })();
+
+    const storeName = settings.storeName || 'Super Collection';
+    const items = getOrderItems(order);
+    const divider = '──────────────────────────';
+
+    let msg = `🏪 *${storeName.toUpperCase()}*\n`;
+    msg += `${divider}\n`;
+    msg += `🧾 *TAX INVOICE*\n\n`;
+    msg += `📋 *Invoice No:* ${id}\n`;
+    msg += `📅 *Date:* ${formatDate(order.date || order.createdAt)}\n`;
+    msg += `${divider}\n`;
+    msg += `👤 *Customer Details:*\n`;
+    msg += `• Name: ${getCustomerName(order)}\n`;
+    msg += `• Phone: ${rawPhone}\n`;
+    msg += `• Address: ${getCustomerAddress(order)}\n`;
+    msg += `${divider}\n`;
+    msg += `🛒 *Items Purchased:*\n\n`;
+
+    let subtotal = 0;
+    items.forEach((item, idx) => {
+      const qty = Number(item.qty || 1);
+      const price = Number(item.price || 0);
+      const lineTotal = price * qty;
+      subtotal += lineTotal;
+
+      msg += `${idx + 1}. *${item.product || item.name}*\n`;
+      const meta = [];
+      if (item.color) meta.push(`Color: ${item.color}`);
+      if (item.size && item.size !== '—' && item.size !== 'N/A') meta.push(`Size: ${item.size}`);
+      meta.push(`Qty: ${qty}`);
+      meta.push(`₹${price}`);
+      msg += `   ${meta.join(' | ')}\n`;
+      msg += `   *Amount: ₹${lineTotal.toLocaleString('en-IN')}*\n\n`;
+    });
+
+    const total = Number(order.totalPrice || subtotal);
+
+    msg += `${divider}\n`;
+    msg += `💰 *Grand Total: ₹${total.toLocaleString('en-IN')}*\n`;
+    msg += `💳 *Payment:* ${getPaymentLabel(order)}\n`;
+    msg += `${divider}\n`;
+    msg += `Thank you for shopping with ${storeName}! 🛍️`;
+
+    try {
+      await sendMessage(cleanPhone, { text: msg });
+      setInvoiceSentId(id);
+      setTimeout(() => setInvoiceSentId(null), 4000);
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || 'Failed to send invoice via WhatsApp Cloud API.');
+    } finally {
+      setSendingInvoiceId(null);
     }
   };
 
@@ -414,18 +496,35 @@ export default function OrdersPage() {
                       </div>
                     )}
 
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <p className="text-xs font-semibold text-gray-500">Update status:</p>
-                      {STATUS_OPTIONS.filter(status => status !== order.status).map(status => (
-                        <button
-                          key={status}
-                          disabled={updating === id}
-                          onClick={() => handleStatusUpdate(order, status)}
-                          className="min-h-11 rounded-lg border border-gray-200 px-3 py-1 text-xs font-medium capitalize transition-all duration-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95 disabled:opacity-50"
-                        >
-                          {updating === id ? '...' : status}
-                        </button>
-                      ))}
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-semibold text-gray-500">Update status:</p>
+                        {STATUS_OPTIONS.filter(status => status !== order.status).map(status => (
+                          <button
+                            key={status}
+                            disabled={updating === id}
+                            onClick={() => handleStatusUpdate(order, status)}
+                            className="min-h-10 rounded-lg border border-gray-200 px-3 py-1 text-xs font-medium capitalize transition-all duration-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95 disabled:opacity-50"
+                          >
+                            {updating === id ? '...' : status}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => handleSendInvoice(order)}
+                        disabled={sendingInvoiceId === id}
+                        className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95 disabled:opacity-50"
+                      >
+                        {sendingInvoiceId === id ? (
+                          <RefreshCw size={13} className="animate-spin" />
+                        ) : invoiceSentId === id ? (
+                          <CheckCircle size={13} />
+                        ) : (
+                          <Send size={13} />
+                        )}
+                        {sendingInvoiceId === id ? 'Sending...' : invoiceSentId === id ? 'Invoice Sent! ✅' : 'Send Invoice (WhatsApp)'}
+                      </button>
                     </div>
                   </div>
                 )}
@@ -437,3 +536,4 @@ export default function OrdersPage() {
     </div>
   );
 }
+
