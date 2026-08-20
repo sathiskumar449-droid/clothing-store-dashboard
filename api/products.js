@@ -298,7 +298,12 @@ const mapWooProductToDb = (p) => {
         price:       p.price !== undefined ? String(p.price) : '0',
         stock:       mapWooStockToSupabase(p),
         sizes:       sizes,
-        image_uri:   p.images?.[0]?.src || null,
+        image_uri:   (() => {
+            const src = p.images?.[0]?.src || null;
+            if (!src) return null;
+            // Remove www. prefix so images load via the canonical non-www domain
+            return src.replace(/^(https?:\/\/)www\./i, '$1');
+        })(),
         permalink:   p.permalink || null,
         status:      p.status || 'publish'
     };
