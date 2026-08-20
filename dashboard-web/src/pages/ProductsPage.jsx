@@ -7,6 +7,14 @@ import EmptyState from '../components/ui/EmptyState';
 
 const PAGE_SIZE = 24;
 
+// Route product images through the backend proxy so the browser never needs to
+// reach supercollections.in directly (blocked by Cloudflare/hosting firewall).
+const API_BASE = (import.meta.env.VITE_API_URL || 'https://clothing-store-api-two.vercel.app').replace(/\/api$/, '');
+const getProxiedImageUrl = (url) => {
+  if (!url) return null;
+  return `${API_BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
+};
+
 // A product is considered visible in the dashboard only if it's in stock on the store.
 // Out-of-stock products stay in the DB (so they come back automatically on restock) but
 // are hidden everywhere in this page: grid, counts, categories.
@@ -411,7 +419,7 @@ export default function ProductsPage() {
                           <div className="aspect-square bg-gray-50 overflow-hidden relative">
                             {product.imageUri ? (
                               <img
-                                src={product.imageUri}
+                                src={getProxiedImageUrl(product.imageUri)}
                                 alt={product.name}
                                 loading="lazy"
                                 decoding="async"
