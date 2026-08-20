@@ -72,7 +72,8 @@ export default function ProductsPage() {
     setSyncMessage(null);
     try {
       // Call the backend to fetch from WooCommerce server-side (avoids CORS/firewall blocks)
-      const result = await api.post('/products/sync-from-woo');
+      // 3-minute timeout — a 200+ product catalog with variation stock can take ~90s server-side
+      const result = await api.post('/products/sync-from-woo', {}, { timeout: 180000 });
       if (result.data?.success) {
         setSyncMessage(result.data.message || 'Successfully synced products!');
         await fetchProducts();

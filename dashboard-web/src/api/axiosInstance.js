@@ -5,7 +5,7 @@ const BASE_URL = rawBaseUrl.endsWith('/api') ? rawBaseUrl : `${rawBaseUrl.replac
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 15000,
+  timeout: 60000, // 60 seconds default (sync-from-woo gets 3 mins via per-request override)
   headers: {
     'Content-Type': 'application/json',
     'x-api-key': (import.meta.env.VITE_DASHBOARD_API_KEY || '').trim(),
