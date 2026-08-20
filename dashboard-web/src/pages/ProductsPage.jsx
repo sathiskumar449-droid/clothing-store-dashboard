@@ -71,20 +71,17 @@ export default function ProductsPage() {
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const hasSettings = await ensureWooSettingsLoaded();
-      if (!hasSettings) {
-        throw new Error('WooCommerce settings not configured. Please go to Settings.');
-      }
-      const wooProducts = await getWooProducts();
-      const result = await syncWooProductsToDb(wooProducts);
-      if (result.success) {
-        setSyncMessage(result.message || `Successfully synced ${wooProducts.length} products to database!`);
+      // Call the backend to fetch from WooCommerce server-side (avoids CORS/firewall blocks)
+      const result = await api.post('/products/sync-from-woo');
+      if (result.data?.success) {
+        setSyncMessage(result.data.message || 'Successfully synced products!');
         await fetchProducts();
       } else {
-        throw new Error(result.message || 'Sync failed');
+        throw new Error(result.data?.message || 'Sync failed');
       }
     } catch (err) {
-      setSyncError(err.message || 'Failed to sync products to database');
+      const msg = err.response?.data?.message || err.message || 'Failed to sync products';
+      setSyncError(msg);
     } finally {
       setSyncing(false);
     }

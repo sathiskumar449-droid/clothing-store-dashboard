@@ -398,6 +398,102 @@ export const syncProducts = async (req, res) => {
     }
 };
 
+// ✅ Server-side WooCommerce Sync — fetches products FROM WooCommerce on the server
+// (avoids browser CORS/firewall blocks when Dashboard calls WooCommerce directly)
+export const syncFromWoo = async (req, res) => {
+    try {
+        const { siteUrl, consumerKey, consumerSecret } = await getWooCredentials();
+
+        if (!siteUrl || !consumerKey || !consumerSecret) {
+            return res.status(400).json({
+                success: false,
+                message: 'WooCommerce credentials not configured. Please save them in Settings first.'
+            });
+        }
+
+        const base64 = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+        const headers = { Authorization: `Basic ${base64}` };
+        const baseUrl = `${siteUrl.replace(/\/$/, '')}/wp-json/wc/v3/products`;
+
+        // Fetch all published products with pagination
+        let allProducts = [];
+        let page = 1;
+        let hasMore = true;
+
+        while (hasMore) {
+            const url = `${baseUrl}?status=publish&per_page=100&page=${page}`;
+            console.log(`[SyncFromWoo] Fetching page ${page}...`);
+            const resp = await fetch(url, { headers });
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(`WooCommerce API error ${resp.status}: ${text.substring(0, 200)}`);
+            }
+            const products = await resp.json();
+            if (Array.isArray(products) && products.length > 0) {
+                allProducts = [...allProducts, ...products];
+                if (products.length < 100) hasMore = false;
+                else page++;
+            } else {
+                hasMore = false;
+            }
+        }
+
+        console.log(`[SyncFromWoo] Fetched ${allProducts.length} products from WooCommerce`);
+
+        if (allProducts.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'WooCommerce returned 0 products. Check your store URL and credentials.'
+            });
+        }
+
+        // Attach variation stock for variable products
+        const variableProducts = allProducts.filter(p => p.type === 'variable');
+        if (variableProducts.length > 0) {
+            const creds = { siteUrl, consumerKey, consumerSecret };
+            await Promise.all(variableProducts.map(p => attachVariationStock(p, creds)));
+        }
+
+        const dbProducts = allProducts.map(p => mapWooProductToDb(p));
+
+        // Upsert all to Supabase
+        const { data, error } = await supabase
+            .from('products')
+            .upsert(dbProducts, { onConflict: 'id' })
+            .select();
+
+        if (error) throw error;
+
+        // Reconciliation: remove stale products
+        const { data: existingRows, error: existingError } = await supabase.from('products').select('id');
+        if (existingError) throw existingError;
+
+        const liveIds = new Set(dbProducts.map(p => p.id));
+        const staleIds = (existingRows || []).map(r => r.id).filter(id => !liveIds.has(id));
+        const staleRatio = existingRows?.length > 0 ? staleIds.length / existingRows.length : 0;
+
+        let deletedCount = 0;
+        if (staleIds.length > 0 && staleRatio <= 0.5) {
+            const { error: deleteError } = await supabase.from('products').delete().in('id', staleIds);
+            if (deleteError) throw deleteError;
+            deletedCount = staleIds.length;
+        }
+
+        clearProductsCache();
+        console.log(`✅ [SyncFromWoo] Synced ${dbProducts.length} products, removed ${deletedCount}`);
+
+        res.json({
+            success: true,
+            message: `Successfully synced ${dbProducts.length} products from WooCommerce! Removed ${deletedCount} outdated product(s).`,
+            count: dbProducts.length,
+            deleted: deletedCount
+        });
+    } catch (error) {
+        console.error('❌ SyncFromWoo Error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // ✅ WooCommerce Webhook Handler (Automatic Live Sync)
 export const handleWooWebhook = async (req, res) => {
     const topic = req.headers['x-wc-webhook-topic'] || '';
