@@ -29,6 +29,7 @@ export default function ProductsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState(null);
   const [syncError, setSyncError] = useState(null);
+  const [syncStatus, setSyncStatus] = useState(''); // live progress label shown during sync
 
   // Search and Category filters state
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,9 +54,9 @@ export default function ProductsPage() {
     fetchProducts();
   }, [fetchProducts]);
 
-  // Reading the WooCommerce store's live products is only needed for the explicit "Sync"
-  // action below, not for every page load — pulls saved settings from localStorage, falling
-  // back to the backend (and caching the result) the same way the old auto-fetch-on-mount did.
+  // Ensure WooCommerce credentials are in localStorage before attempting a sync.
+  // First checks localStorage; if missing or incomplete, fetches from the backend
+  // settings API and caches the result so subsequent syncs are instant.
   const ensureWooSettingsLoaded = async () => {
     const raw = localStorage.getItem('woo_settings');
     if (raw) {
@@ -74,25 +75,56 @@ export default function ProductsPage() {
     return false;
   };
 
+  // "Sync from WooCommerce" handler.
+  //
+  // WHY browser-side fetch instead of server-side:
+  // Vercel Hobby functions have a hard 10-second execution limit. Fetching 200+
+  // WooCommerce products page-by-page, then hitting each variable product's
+  // /variations endpoint for accurate stock, routinely takes 60-120 seconds.
+  // That means the /api/products/sync-from-woo endpoint is guaranteed to be
+  // killed by Vercel with a 502 before it finishes — exactly the "fetch failed"
+  // error that was appearing in the console.
+  //
+  // The solution is the two-step approach:
+  //   1. Browser fetches all products from WooCommerce (no server timeout applies)
+  //   2. Browser POSTs the complete array to /api/products/sync (just a fast DB
+  //      upsert — stays well under 10 seconds regardless of catalog size)
   const handleSync = async () => {
     setSyncing(true);
     setSyncError(null);
     setSyncMessage(null);
+    setSyncStatus('Connecting to WooCommerce…');
     try {
-      // Call the backend to fetch from WooCommerce server-side (avoids CORS/firewall blocks)
-      // 3-minute timeout — a 200+ product catalog with variation stock can take ~90s server-side
-      const result = await api.post('/products/sync-from-woo', {}, { timeout: 180000 });
-      if (result.data?.success) {
-        setSyncMessage(result.data.message || 'Successfully synced products!');
+      // Step 0: make sure credentials are available
+      const hasSettings = await ensureWooSettingsLoaded();
+      if (!hasSettings) {
+        throw new Error('WooCommerce credentials not configured. Please go to Settings and save your store URL, consumer key and secret.');
+      }
+
+      // Step 1: fetch all published products (+ variation stock) in the browser
+      setSyncStatus('Fetching products from WooCommerce…');
+      const wooProducts = await getWooProducts();
+
+      if (!wooProducts || wooProducts.length === 0) {
+        throw new Error('WooCommerce returned 0 products. Check your store URL and credentials in Settings.');
+      }
+
+      // Step 2: POST the collected array to the backend for a fast bulk upsert
+      setSyncStatus(`Saving ${wooProducts.length} products to database…`);
+      const result = await syncWooProductsToDb(wooProducts);
+
+      if (result?.success) {
+        setSyncMessage(result.message || `Successfully synced ${wooProducts.length} products!`);
         await fetchProducts();
       } else {
-        throw new Error(result.data?.message || 'Sync failed');
+        throw new Error(result?.message || 'Sync failed');
       }
     } catch (err) {
       const msg = err.response?.data?.message || err.message || 'Failed to sync products';
       setSyncError(msg);
     } finally {
       setSyncing(false);
+      setSyncStatus('');
     }
   };
 
@@ -206,7 +238,7 @@ export default function ProductsPage() {
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 shadow-sm transition-colors cursor-pointer"
           >
             <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Syncing...' : 'Sync from WooCommerce'}
+            {syncing ? (syncStatus || 'Syncing…') : 'Sync from WooCommerce'}
           </button>
           <button
             onClick={fetchProducts}
@@ -232,10 +264,13 @@ export default function ProductsPage() {
       {syncError && (
         <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-xl p-4 mb-6">
           <AlertCircle size={18} className="text-rose-500 shrink-0 mt-0.5" />
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-rose-700">Sync Error</p>
-            <p className="text-xs text-rose-600 mt-0.5">{syncError}</p>
+            <p className="text-xs text-rose-600 mt-0.5 break-words">{syncError}</p>
           </div>
+          <button onClick={() => setSyncError(null)} className="text-rose-400 hover:text-rose-600 shrink-0" aria-label="Dismiss">
+            <X size={14} />
+          </button>
         </div>
       )}
 
