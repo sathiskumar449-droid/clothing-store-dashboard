@@ -12,5 +12,6 @@
       "src": "/(.*)",
       "dest": "/server.js"
     }
-  ]
+  ],
+  "_comment": "deploy: 2026-08-29"
 }
