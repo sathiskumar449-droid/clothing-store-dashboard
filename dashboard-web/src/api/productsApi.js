@@ -32,7 +32,27 @@ export const getWooProducts = async () => {
   // product feed works. Do not make hundreds of optional variation requests
   // during a manual sync: the parent product's stock_status still preserves the
   // important in-stock/out-of-stock state and the catalogue saves immediately.
-  return allProducts;
+  // WooCommerce includes descriptions, HTML and plugin metadata in every row.
+  // Sending all of that back to Vercel easily exceeds its request-body limit;
+  // only the fields used by mapWooProductToDb() belong in the sync payload.
+  return allProducts.map(product => ({
+    id: product.id,
+    name: product.name,
+    sku: product.sku,
+    type: product.type,
+    status: product.status,
+    price: product.price,
+    stock_status: product.stock_status,
+    stock_quantity: product.stock_quantity,
+    manage_stock: product.manage_stock,
+    permalink: product.permalink,
+    categories: (product.categories || []).map(category => ({ name: category.name })),
+    attributes: (product.attributes || []).map(attribute => ({
+      name: attribute.name,
+      options: attribute.options
+    })),
+    images: product.images?.[0]?.src ? [{ src: product.images[0].src }] : []
+  }));
 };
 
 /** Sync WooCommerce products to Supabase through the backend API. */
