@@ -1,4 +1,5 @@
 // api/products.js  — Supabase version (replaces fs-based implementation)
+// deploy: 2026-08-29 — bump to trigger clothing-store-api Vercel redeploy
 import { supabase } from '../lib/supabase.js';
 import { verifyWooWebhookSignature } from '../lib/wooWebhookAuth.js';
 import { clearProductsCache } from './webhook.js';
