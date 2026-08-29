@@ -28,36 +28,10 @@ export const getWooProducts = async () => {
     }
   }
 
-  // Variable products keep their actual stock on variation rows. A small worker
-  // pool avoids flooding the WooCommerce host with requests.
-  const queue = allProducts.filter(product => product.type === 'variable');
-  const worker = async () => {
-    while (queue.length > 0) {
-      const product = queue.shift();
-      try {
-        const { data } = await api.get(`/products/woo/${product.id}/variations`);
-        const variations = data.variations || [];
-        let effectiveQty = 0;
-
-        for (const variation of variations) {
-          if (variation.stock_status === 'outofstock' || variation.stock_status === 'onbackorder') continue;
-          if (variation.manage_stock && variation.stock_quantity !== null && variation.stock_quantity !== undefined) {
-            effectiveQty += Math.max(0, Number(variation.stock_quantity));
-          } else if (variation.stock_status === 'instock' && !variation.manage_stock) {
-            effectiveQty += 1;
-          }
-        }
-
-        product._effective_stock_quantity = effectiveQty;
-        product._effective_stock_status = effectiveQty > 0 ? 'instock' : 'outofstock';
-      } catch (error) {
-        // Keep the full catalogue sync usable if only one optional stock lookup fails.
-        console.warn(`[getWooProducts] Could not fetch variations for product ${product.id}:`, error.message);
-      }
-    }
-  };
-
-  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+  // Some WooCommerce hosts time out every /variations request even though the
+  // product feed works. Do not make hundreds of optional variation requests
+  // during a manual sync: the parent product's stock_status still preserves the
+  // important in-stock/out-of-stock state and the catalogue saves immediately.
   return allProducts;
 };
 
