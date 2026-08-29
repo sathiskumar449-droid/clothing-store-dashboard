@@ -1,8 +1,13 @@
 import api from './axiosInstance';
 
 /**
- * Fetch WooCommerce products through the backend, one short request at a time.
- * Direct browser calls to the store are blocked or timed out by its firewall.
+ * Fetch WooCommerce products via the backend proxy.
+ *
+ * WHY proxy instead of browser-direct:
+ * Browser → WooCommerce direct calls trigger CORS preflight OPTIONS requests
+ * that Cloudflare / most WooCommerce hosts block (ERR_CONNECTION_TIMED_OUT or 404).
+ * The backend uses server-to-server Basic Auth with no preflight. Each proxy call
+ * fetches one page of 100 products (< 5 s) — well within Vercel's 10 s limit.
  */
 export const getWooProducts = async () => {
   let allProducts = [];
