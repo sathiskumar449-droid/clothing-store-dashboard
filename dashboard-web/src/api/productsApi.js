@@ -15,14 +15,21 @@ export const getWooProducts = async () => {
     throw new Error('Incomplete WooCommerce settings. Please fill in Settings.');
   }
 
-  const url = `${siteUrl.replace(/\/$/, '')}/wp-json/wc/v3/products`;
-  
+  const baseUrl = siteUrl.replace(/\/$/, '');
+  const url = `${baseUrl}/wp-json/wc/v3/products`;
+
+  // WooCommerce supports two auth methods: Basic Auth (Authorization header) and
+  // query-string auth (consumer_key + consumer_secret params). Basic Auth triggers a
+  // CORS preflight OPTIONS request that Cloudflare / most WooCommerce hosts block
+  // with ERR_CONNECTION_TIMED_OUT. Passing credentials as query params sidesteps the
+  // preflight entirely — the browser treats it as a simple GET — so the request goes
+  // through without needing any server-side CORS headers.
+  const authParams = { consumer_key: consumerKey, consumer_secret: consumerSecret };
+
   let allProducts = [];
   let page = 1;
   let hasMore = true;
   const perPage = 100; // WooCommerce API limit per request is 100
-
-  const auth = { username: consumerKey, password: consumerSecret };
 
   while (hasMore) {
     // status: 'publish' — WooCommerce's REST API returns EVERY status (draft/trash/pending/
@@ -30,8 +37,7 @@ export const getWooProducts = async () => {
     // a manual sync re-upserts drafts/trashed products right back into Supabase, which is how
     // several dead "white shirt" listings ended up being recommended by the bot with 404 links.
     const response = await axios.get(url, {
-      params: { status: 'publish', per_page: perPage, page },
-      auth,
+      params: { ...authParams, status: 'publish', per_page: perPage, page },
     });
 
     const products = response.data;
@@ -54,13 +60,12 @@ export const getWooProducts = async () => {
   // mapWooStockToSupabase() helper gets accurate inputs.
   const variableProducts = allProducts.filter(p => p.type === 'variable');
   if (variableProducts.length > 0) {
-    const varBase = siteUrl.replace(/\/$/, '') + '/wp-json/wc/v3/products';
+    const varBase = baseUrl + '/wp-json/wc/v3/products';
     await Promise.all(
       variableProducts.map(async (p) => {
         try {
           const { data: variations } = await axios.get(`${varBase}/${p.id}/variations`, {
-            params: { per_page: 100 },
-            auth,
+            params: { ...authParams, per_page: 100 },
           });
 
           let effectiveQty = 0;
