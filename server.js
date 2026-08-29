@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 import { getOutfitMatches } from './api/matchOutfit.js';
 import { handleWhatsAppWebhook, verifyWebhook, receiveWebhook, handleRazorpayWebhook, handleImageProxy } from './api/webhook.js';
-import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook, syncFromWoo } from './api/products.js';
+import { addProduct, getProducts, updateProduct, deleteProduct, syncProducts, handleWooWebhook, syncFromWoo, getWooProductsPage, getWooProductVariations } from './api/products.js';
 import { handleWooOrderWebhook } from './api/woocommerce-order-webhook.js';
 import { syncWooOrders } from './api/sync-woocommerce-orders.js';
 import { getOrders, updateOrderStatus } from './api/orders.js';
@@ -76,6 +76,8 @@ app.put('/api/products/:id', requireApiKey, updateProduct);
 app.delete('/api/products/:id', requireApiKey, deleteProduct);
 app.post('/api/products/sync', requireApiKey, syncProducts);
 app.post('/api/products/sync-from-woo', requireApiKey, syncFromWoo);
+app.get('/api/products/woo/page', requireApiKey, getWooProductsPage);
+app.get('/api/products/woo/:id/variations', requireApiKey, getWooProductVariations);
 app.post('/api/webhook/woocommerce', handleWooWebhook);
 
 // =============================

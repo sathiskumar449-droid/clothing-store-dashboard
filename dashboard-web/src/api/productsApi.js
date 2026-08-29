@@ -1,101 +1,63 @@
-import axios from 'axios';
 import api from './axiosInstance';
 
 /**
- * Fetch WooCommerce products using credentials stored in localStorage.
- * Settings are saved by SettingsPage.jsx under the key 'woo_settings'.
- * Automatically loops through pages to fetch all products.
+ * Fetch WooCommerce products through the backend, one short request at a time.
+ * Direct browser calls to the store are blocked or timed out by its firewall.
  */
 export const getWooProducts = async () => {
-  const raw = localStorage.getItem('woo_settings');
-  if (!raw) throw new Error('WooCommerce settings not configured. Please go to Settings.');
-  const { siteUrl, consumerKey, consumerSecret } = JSON.parse(raw);
-
-  if (!siteUrl || !consumerKey || !consumerSecret) {
-    throw new Error('Incomplete WooCommerce settings. Please fill in Settings.');
-  }
-
-  const baseUrl = siteUrl.replace(/\/$/, '');
-  const url = `${baseUrl}/wp-json/wc/v3/products`;
-
-  // WooCommerce supports two auth methods: Basic Auth (Authorization header) and
-  // query-string auth (consumer_key + consumer_secret params). Basic Auth triggers a
-  // CORS preflight OPTIONS request that Cloudflare / most WooCommerce hosts block
-  // with ERR_CONNECTION_TIMED_OUT. Passing credentials as query params sidesteps the
-  // preflight entirely — the browser treats it as a simple GET — so the request goes
-  // through without needing any server-side CORS headers.
-  const authParams = { consumer_key: consumerKey, consumer_secret: consumerSecret };
-
   let allProducts = [];
   let page = 1;
   let hasMore = true;
-  const perPage = 100; // WooCommerce API limit per request is 100
+  const perPage = 100;
 
   while (hasMore) {
-    // status: 'publish' — WooCommerce's REST API returns EVERY status (draft/trash/pending/
-    // private) to an authenticated request unless status is explicitly filtered. Without this,
-    // a manual sync re-upserts drafts/trashed products right back into Supabase, which is how
-    // several dead "white shirt" listings ended up being recommended by the bot with 404 links.
-    const response = await axios.get(url, {
-      params: { ...authParams, status: 'publish', per_page: perPage, page },
-    });
+    const { data } = await api.get('/products/woo/page', { params: { page } });
+    const products = data.products;
 
-    const products = response.data;
     if (Array.isArray(products) && products.length > 0) {
       allProducts = [...allProducts, ...products];
-      if (products.length < perPage) {
-        hasMore = false;
-      } else {
-        page++;
-      }
+      if (products.length < perPage) hasMore = false;
+      else page++;
     } else {
       hasMore = false;
     }
   }
 
-  // Variable products manage stock at the variation level — the parent product always
-  // has manage_stock=false and stock_quantity=null. We must check each variation to
-  // know how many units are actually available (and whether it's truly out of stock).
-  // Attach _effective_stock_quantity and _effective_stock_status so the backend's
-  // mapWooStockToSupabase() helper gets accurate inputs.
-  const variableProducts = allProducts.filter(p => p.type === 'variable');
-  if (variableProducts.length > 0) {
-    const varBase = baseUrl + '/wp-json/wc/v3/products';
-    await Promise.all(
-      variableProducts.map(async (p) => {
-        try {
-          const { data: variations } = await axios.get(`${varBase}/${p.id}/variations`, {
-            params: { ...authParams, per_page: 100 },
-          });
+  // Variable products keep their actual stock on variation rows. A small worker
+  // pool avoids flooding the WooCommerce host with requests.
+  const queue = allProducts.filter(product => product.type === 'variable');
+  const worker = async () => {
+    while (queue.length > 0) {
+      const product = queue.shift();
+      try {
+        const { data } = await api.get(`/products/woo/${product.id}/variations`);
+        const variations = data.variations || [];
+        let effectiveQty = 0;
 
-          let effectiveQty = 0;
-          for (const v of variations) {
-            if (v.stock_status === 'outofstock' || v.stock_status === 'onbackorder') continue;
-            if (v.manage_stock && v.stock_quantity !== null && v.stock_quantity !== undefined) {
-              effectiveQty += Math.max(0, Number(v.stock_quantity));
-            } else if (v.stock_status === 'instock' && !v.manage_stock) {
-              // Untracked variation that WooCommerce calls instock → count as 1
-              effectiveQty += 1;
-            }
+        for (const variation of variations) {
+          if (variation.stock_status === 'outofstock' || variation.stock_status === 'onbackorder') continue;
+          if (variation.manage_stock && variation.stock_quantity !== null && variation.stock_quantity !== undefined) {
+            effectiveQty += Math.max(0, Number(variation.stock_quantity));
+          } else if (variation.stock_status === 'instock' && !variation.manage_stock) {
+            effectiveQty += 1;
           }
-
-          p._effective_stock_quantity = effectiveQty;
-          p._effective_stock_status   = effectiveQty > 0 ? 'instock' : 'outofstock';
-        } catch (e) {
-          console.warn(`[getWooProducts] Could not fetch variations for product ${p.id}:`, e.message);
         }
-      })
-    );
-  }
 
+        product._effective_stock_quantity = effectiveQty;
+        product._effective_stock_status = effectiveQty > 0 ? 'instock' : 'outofstock';
+      } catch (error) {
+        // Keep the full catalogue sync usable if only one optional stock lookup fails.
+        console.warn(`[getWooProducts] Could not fetch variations for product ${product.id}:`, error.message);
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
   return allProducts;
 };
 
-/**
- * Sync WooCommerce products to Supabase database via the backend API.
- */
+/** Sync WooCommerce products to Supabase through the backend API. */
 export const syncWooProductsToDb = async (products) => {
   const response = await api.post('/products/sync', { products });
   return response.data;
 };
-

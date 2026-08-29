@@ -278,6 +278,69 @@ async function attachVariationStock(product, { siteUrl, consumerKey, consumerSec
     }
 }
 
+// Each dashboard request proxies just one WooCommerce page or variation set. This
+// keeps it below the serverless execution limit and avoids browser-originated
+// WooCommerce requests being blocked or timing out at the store firewall.
+async function fetchWooJson(path) {
+    const { siteUrl, consumerKey, consumerSecret } = await getWooCredentials();
+    if (!siteUrl || !consumerKey || !consumerSecret) {
+        const error = new Error('WooCommerce credentials not configured. Please save them in Settings first.');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+        const baseUrl = siteUrl.replace(/\/$/, '');
+        const basicAuth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+        const response = await fetch(`${baseUrl}/wp-json/wc/v3/${path}`, {
+            headers: { Authorization: `Basic ${basicAuth}` },
+            signal: controller.signal
+        });
+        if (!response.ok) {
+            const details = (await response.text()).substring(0, 200);
+            throw new Error(`WooCommerce API error ${response.status}${details ? `: ${details}` : ''}`);
+        }
+        return await response.json();
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            throw new Error('WooCommerce did not respond within 8 seconds. Please try the sync again.');
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+export const getWooProductsPage = async (req, res) => {
+    const page = Number.parseInt(req.query.page, 10);
+    if (!Number.isInteger(page) || page < 1 || page > 1000) {
+        return res.status(400).json({ success: false, message: 'A valid product page is required.' });
+    }
+    try {
+        const products = await fetchWooJson(`products?status=publish&per_page=100&page=${page}`);
+        res.json({ success: true, products: Array.isArray(products) ? products : [] });
+    } catch (error) {
+        console.error('[Woo proxy] Product page failed:', error.message);
+        res.status(error.statusCode || 502).json({ success: false, message: error.message });
+    }
+};
+
+export const getWooProductVariations = async (req, res) => {
+    const productId = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(productId) || productId < 1) {
+        return res.status(400).json({ success: false, message: 'A valid product id is required.' });
+    }
+    try {
+        const variations = await fetchWooJson(`products/${productId}/variations?per_page=100`);
+        res.json({ success: true, variations: Array.isArray(variations) ? variations : [] });
+    } catch (error) {
+        console.error(`[Woo proxy] Variations for ${productId} failed:`, error.message);
+        res.status(error.statusCode || 502).json({ success: false, message: error.message });
+    }
+};
+
 // Helper: map a single WooCommerce product payload → database row schema.
 // Stock is computed by mapWooStockToSupabase (shared with syncProducts).
 const mapWooProductToDb = (p) => {
