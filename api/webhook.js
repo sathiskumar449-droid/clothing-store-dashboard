@@ -1718,7 +1718,7 @@ export const getParentCategory = (categoryName) => {
         catLower.startsWith('t shirt') ||
         catLower.startsWith('t-shirt') ||
         catLower.startsWith('tshirt') ||
-        ['t-shirt', 'tshirt', ' t shirt', 'round neck', 'polo t'].some(kw => catLower.includes(kw))
+        ['t-shirt', 'tshirt', ' t shirt', 'round neck', 'polo t', 'high neck'].some(kw => catLower.includes(kw))
     ) {
         return 'T-Shirts';
     }
@@ -3268,11 +3268,17 @@ function detectIntent(text, products = [], session = null) {
     // button's flat category list + numeric browsing (SHOP_MORE / AWAITING_SUBCATEGORY_SELECTION)
     // is untouched — it's a different intent type, not reachable through this branch.
     const parentCategories = ['New Arrivals', 'T-Shirts', 'Shirts', 'Shorts', 'Pants'];
-    let foundCategory = parentCategories.find(cat => {
-        const catSingular = cat.endsWith('s') ? cat.slice(0, -1) : cat;
-        const regex = new RegExp(`\\b${catSingular}(s)?\\b`, 'i');
-        return regex.test(t);
-    });
+    let foundCategory = null;
+    if (/\bt[-_\s]*shirts?\b/i.test(t) || /\btshirt(s)?\b/i.test(t) || t.includes('high neck')) {
+        foundCategory = 'T-Shirts';
+    } else {
+        foundCategory = parentCategories.find(cat => {
+            if (cat === 'T-Shirts') return false;
+            const catSingular = cat.endsWith('s') ? cat.slice(0, -1) : cat;
+            const regex = new RegExp(`\\b${catSingular}(s)?\\b`, 'i');
+            return regex.test(t);
+        });
+    }
     // Jeans are grouped under Pants; Shorts has its own parent (see parentCategories above)
     if (!foundCategory && /\bjean(s)?\b/i.test(t)) {
         foundCategory = 'Pants';
