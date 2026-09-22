@@ -1642,14 +1642,18 @@ const getRecommendationMessage = (addedProduct, recommendedProduct, currentParen
         `3️⃣ Skip`;
 };
 
+const hasTShirtIndicator = (str) => {
+    if (!str) return false;
+    return /\bt[-_ ]?shirts?\b/i.test(str) || str.startsWith('t shirt') || str.startsWith('t-shirt') || str.startsWith('tshirt') || str.includes('t-shirt') || str.includes('tshirt') || str.includes(' t shirt');
+};
+
 const isShirtCategory = (cat, name = '') => {
     const parent = getParentCategory(cat);
     if (parent === 'Shirts') return true;
     const catLower = (cat || '').toLowerCase();
     const nameLower = (name || '').toLowerCase();
     return (catLower.includes('shirt') || nameLower.includes('shirt')) &&
-        !catLower.includes('t-shirt') && !catLower.includes('t shirt') && !catLower.includes('tshirt') &&
-        !nameLower.includes('t-shirt') && !nameLower.includes('t shirt') && !nameLower.includes('tshirt');
+        !hasTShirtIndicator(catLower) && !hasTShirtIndicator(nameLower);
 };
 
 const isTShirtCategory = (cat, name = '') => {
@@ -1657,8 +1661,7 @@ const isTShirtCategory = (cat, name = '') => {
     if (parent === 'T-Shirts') return true;
     const catLower = (cat || '').toLowerCase();
     const nameLower = (name || '').toLowerCase();
-    return catLower.includes('t-shirt') || catLower.includes('t shirt') || catLower.includes('tshirt') ||
-        nameLower.includes('t-shirt') || nameLower.includes('t shirt') || nameLower.includes('tshirt');
+    return hasTShirtIndicator(catLower) || hasTShirtIndicator(nameLower);
 };
 
 const isPantOrJeansCategory = (cat, name = '') => {
