@@ -3871,7 +3871,7 @@ function buildProductCardsResponse(productsPool, products, queryLabel) {
 // list as individual product cards (see buildProductCardsResponse): no pagination, since
 // WhatsApp's interactive list message (the old UI this replaced for category-browsing) caps out
 // at 10 rows and cards have no such limit.
-async function prepareProductsPageResponse(session, productsPool, queryLabel, ctaOptions = null) {
+export async function prepareProductsPageResponse(session, productsPool, queryLabel, ctaOptions = null) {
     const allProducts = session.searchProducts || [];
 
     if (allProducts.length === 0) {
@@ -4478,7 +4478,7 @@ async function handleIntent(intentResult, session, products, from) {
             const compoundColorMatch = COMPOUND_COLOR_KEYWORDS.find(c => cleanedQ.includes(c)) || null;
             const queryWords = cleanedQ.split(/\s+/).filter(w =>
                 w.length > 0 && !SEARCH_EN_STOP.has(w) && !SEARCH_TA_STOP.has(w) &&
-                !SIZE_KEYWORDS.has(w) && !/^\d+$/.test(w)
+                (!SIZE_KEYWORDS.has(w) || w === '2xl' || w === 'xxl') && !/^\d+$/.test(w)
             );
             const colorTerms = queryWords.filter(w => COLOR_KEYWORDS.includes(w));
             const genericWords = queryWords.filter(w =>
