@@ -120,7 +120,11 @@ export default function ProductsPage() {
         throw new Error(result?.message || 'Sync failed');
       }
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Failed to sync products';
+      let msg = err.response?.data?.message || err.message || 'Failed to sync products';
+      // Strip any HTML tags that may have leaked from a Cloudflare/firewall challenge page
+      if (msg.includes('<') && msg.includes('>')) {
+        msg = 'WooCommerce sync failed — your store may be behind Cloudflare protection. Please check your Cloudflare settings or try again in a few minutes.';
+      }
       setSyncError(msg);
     } finally {
       setSyncing(false);
