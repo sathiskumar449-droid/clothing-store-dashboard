@@ -280,11 +280,14 @@ async function attachVariationStock(product, { siteUrl, consumerKey, consumerSec
     }
 }
 
-// Headers that mimic a real browser session so Cloudflare's bot-detection layer
-// lets the request through instead of serving a "Just a moment…" challenge page.
-// IMPORTANT: Do NOT include the Authorization header — Cloudflare's WAF rules
-// specifically flag Authorization headers from datacenter IPs (like Vercel).
-// WooCommerce HTTPS sites officially support query-string auth instead.
+// Headers sent with every WooCommerce API request.
+// - Browser-like UA so Cloudflare's basic bot-detection doesn't block us.
+// - X-WC-Bypass: a secret token that a Cloudflare WAF "Skip" rule checks —
+//   only requests carrying this header+value bypass Cloudflare's security.
+//   Set the CF_BYPASS_KEY env var on Vercel and match it in the Cloudflare rule.
+// - No Authorization header — Cloudflare WAF specifically flags it from
+//   datacenter IPs; WooCommerce HTTPS sites use query-string auth instead.
+const CF_BYPASS_KEY = process.env.CF_BYPASS_KEY || '';
 const WOO_FETCH_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
@@ -293,6 +296,7 @@ const WOO_FETCH_HEADERS = {
     'Sec-Fetch-Dest': 'empty',
     'Sec-Fetch-Mode': 'cors',
     'Sec-Fetch-Site': 'cross-site',
+    ...(CF_BYPASS_KEY ? { 'X-WC-Bypass': CF_BYPASS_KEY } : {}),
 };
 
 // Detect whether a response body is a Cloudflare challenge page rather than real
