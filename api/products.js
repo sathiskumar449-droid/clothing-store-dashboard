@@ -251,9 +251,8 @@ async function getWooCredentials() {
 // _effective_stock_status so that mapWooStockToSupabase() can use them.
 async function attachVariationStock(product, { siteUrl, consumerKey, consumerSecret }) {
     try {
-        const base64 = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
         const url = `${siteUrl.replace(/\/$/, '')}/wp-json/wc/v3/products/${product.id}/variations?per_page=100&consumer_key=${encodeURIComponent(consumerKey)}&consumer_secret=${encodeURIComponent(consumerSecret)}`;
-        const resp = await fetch(url, { headers: { ...WOO_FETCH_HEADERS, Authorization: `Basic ${base64}` } });
+        const resp = await fetch(url, { headers: WOO_FETCH_HEADERS });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const text = await resp.text();
         if (isCloudflareChallenge(text)) throw new Error('Cloudflare blocked the variations request');
@@ -283,23 +282,32 @@ async function attachVariationStock(product, { siteUrl, consumerKey, consumerSec
 
 // Headers that mimic a real browser session so Cloudflare's bot-detection layer
 // lets the request through instead of serving a "Just a moment…" challenge page.
+// IMPORTANT: Do NOT include the Authorization header — Cloudflare's WAF rules
+// specifically flag Authorization headers from datacenter IPs (like Vercel).
+// WooCommerce HTTPS sites officially support query-string auth instead.
 const WOO_FETCH_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'cross-site',
 };
 
 // Detect whether a response body is a Cloudflare challenge page rather than real
 // API JSON — the tell-tale is the HTML title "Just a moment" that Cloudflare injects.
 function isCloudflareChallenge(text) {
-    return text && (text.includes('Just a moment') || text.includes('cf-browser-verification') || text.includes('cloudflare'));
+    if (!text) return false;
+    // Only check the first 2000 chars to avoid scanning huge JSON payloads
+    const head = text.substring(0, 2000);
+    return head.includes('Just a moment') || head.includes('cf-browser-verification') || head.includes('cf-challenge-running');
 }
 
 // Each dashboard request proxies just one WooCommerce page or variation set. This
 // keeps it below the serverless execution limit and avoids browser-originated
 // WooCommerce requests being blocked or timing out at the store firewall.
-async function fetchWooJson(path, retries = 2) {
+async function fetchWooJson(path, retries = 3) {
     const { siteUrl, consumerKey, consumerSecret } = await getWooCredentials();
     if (!siteUrl || !consumerKey || !consumerSecret) {
         const error = new Error('WooCommerce credentials not configured. Please save them in Settings first.');
@@ -308,28 +316,25 @@ async function fetchWooJson(path, retries = 2) {
     }
 
     const baseUrl = siteUrl.replace(/\/$/, '');
-    const basicAuth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+    // WooCommerce HTTPS sites support query-string auth — this avoids the
+    // Authorization header which Cloudflare's WAF blocks from datacenter IPs.
     const url = `${baseUrl}/wp-json/wc/v3/${path}`;
+    const separator = url.includes('?') ? '&' : '?';
+    const authUrl = `${url}${separator}consumer_key=${encodeURIComponent(consumerKey)}&consumer_secret=${encodeURIComponent(consumerSecret)}`;
 
     let lastError;
     for (let attempt = 0; attempt <= retries; attempt++) {
-        // Back off briefly between retries (0 ms → 1 s → 2 s)
+        // Back off between retries (0 ms → 2 s → 4 s → 6 s)
         if (attempt > 0) {
-            await new Promise(r => setTimeout(r, attempt * 1000));
+            await new Promise(r => setTimeout(r, attempt * 2000));
             console.log(`[Woo proxy] Retry ${attempt}/${retries} for ${path}`);
         }
 
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 9000);
         try {
-            // Use query-string auth as a fallback: some Cloudflare rules strip the
-            // Authorization header on non-browser requests, but WooCommerce also
-            // supports consumer_key/consumer_secret as query parameters.
-            const separator = url.includes('?') ? '&' : '?';
-            const authUrl = `${url}${separator}consumer_key=${encodeURIComponent(consumerKey)}&consumer_secret=${encodeURIComponent(consumerSecret)}`;
-
             const response = await fetch(authUrl, {
-                headers: { ...WOO_FETCH_HEADERS, Authorization: `Basic ${basicAuth}` },
+                headers: WOO_FETCH_HEADERS,
                 signal: controller.signal
             });
 
@@ -339,10 +344,10 @@ async function fetchWooJson(path, retries = 2) {
             if (isCloudflareChallenge(text)) {
                 lastError = new Error(
                     'Your WooCommerce site is behind Cloudflare protection and is blocking API requests. ' +
-                    'Please whitelist your Vercel server IP or disable "Under Attack" mode in Cloudflare for the /wp-json/* path.'
+                    'Please disable "Bot Fight Mode" in Cloudflare (Security → Bots) or add a WAF exception for /wp-json/* path.'
                 );
                 lastError.statusCode = 403;
-                console.warn(`[Woo proxy] Cloudflare challenge on attempt ${attempt + 1} for ${path}`);
+                console.warn(`[Woo proxy] Cloudflare challenge on attempt ${attempt + 1} for ${path} (status=${response.status})`);
                 continue;
             }
 
@@ -350,7 +355,7 @@ async function fetchWooJson(path, retries = 2) {
                 const snippet = text.substring(0, 200);
                 lastError = new Error(`WooCommerce API error ${response.status}: ${snippet}`);
                 lastError.statusCode = response.status;
-                // 5xx errors are worth retrying; 4xx errors are not (except 403 which is handled above)
+                // 5xx errors are worth retrying; 4xx errors are not
                 if (response.status >= 500) continue;
                 throw lastError;
             }
@@ -547,8 +552,7 @@ export const syncFromWoo = async (req, res) => {
             });
         }
 
-        const base64 = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
-        const headers = { ...WOO_FETCH_HEADERS, Authorization: `Basic ${base64}` };
+        const headers = WOO_FETCH_HEADERS;
         const baseUrl = `${siteUrl.replace(/\/$/, '')}/wp-json/wc/v3/products`;
 
         // Fetch all published products with pagination
