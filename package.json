@@ -3,7 +3,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "sync": "node scripts/sync-woo.js"
+    "sync": "node scripts/sync-woo.js",
+    "sync:recent": "node scripts/sync-woo.js --recent"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.2",

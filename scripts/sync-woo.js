@@ -124,6 +124,11 @@ async function runSync() {
 
     console.log(`🔗 Store URL: ${siteUrl}`);
 
+    const isRecent = process.argv.includes('--recent') || process.argv.includes('-r');
+    if (isRecent) {
+        console.log('⚡ Quick Mode: Syncing only latest modified / newly added products (~5-10 seconds)...');
+    }
+
     // 2. Fetch products page by page
     const baseUrl = `${siteUrl.replace(/\/$/, '')}/wp-json/wc/v3/products`;
     let allProducts = [];
@@ -131,7 +136,8 @@ async function runSync() {
     let hasMore = true;
 
     while (hasMore) {
-        const url = `${baseUrl}?status=publish&per_page=100&page=${page}&consumer_key=${encodeURIComponent(consumerKey)}&consumer_secret=${encodeURIComponent(consumerSecret)}`;
+        const perPage = isRecent ? 50 : 100;
+        const url = `${baseUrl}?status=publish&per_page=${perPage}&page=${page}&orderby=date&order=desc&consumer_key=${encodeURIComponent(consumerKey)}&consumer_secret=${encodeURIComponent(consumerSecret)}`;
         console.log(`📥 Fetching page ${page} from WooCommerce...`);
 
         const resp = await fetch(url, {
@@ -150,7 +156,7 @@ async function runSync() {
         if (Array.isArray(products) && products.length > 0) {
             allProducts = allProducts.concat(products);
             console.log(`   Page ${page}: got ${products.length} products (total so far: ${allProducts.length})`);
-            if (products.length < 100) {
+            if (isRecent || products.length < perPage) {
                 hasMore = false;
             } else {
                 page++;
@@ -199,23 +205,27 @@ async function runSync() {
     }
     console.log('✅ Upsert completed successfully!');
 
-    // 6. Reconciliation: remove products that are no longer published in WooCommerce
-    console.log('🔍 Checking for stale / unpublished products...');
-    const { data: existingRows, error: existingError } = await supabase.from('products').select('id');
-    if (existingError) throw existingError;
-
-    const liveIds = new Set(dbProducts.map(p => p.id));
-    const staleIds = (existingRows || []).map(r => r.id).filter(id => !liveIds.has(id));
-    const staleRatio = existingRows?.length > 0 ? staleIds.length / existingRows.length : 0;
-
+    // 6. Reconciliation: remove products that are no longer published in WooCommerce (only on full sync)
     let deletedCount = 0;
-    if (staleIds.length > 0 && staleRatio <= 0.5) {
-        const { error: deleteError } = await supabase.from('products').delete().in('id', staleIds);
-        if (deleteError) throw deleteError;
-        deletedCount = staleIds.length;
-        console.log(`🗑️ Removed ${deletedCount} stale product(s) no longer in WooCommerce: ${staleIds.join(', ')}`);
-    } else if (staleIds.length > 0) {
-        console.warn(`⚠️ Skipped deleting ${staleIds.length} missing products as a safety guard (stale ratio: ${Math.round(staleRatio * 100)}%).`);
+    if (!isRecent) {
+        console.log('🔍 Checking for stale / unpublished products...');
+        const { data: existingRows, error: existingError } = await supabase.from('products').select('id');
+        if (existingError) throw existingError;
+
+        const liveIds = new Set(dbProducts.map(p => p.id));
+        const staleIds = (existingRows || []).map(r => r.id).filter(id => !liveIds.has(id));
+        const staleRatio = existingRows?.length > 0 ? staleIds.length / existingRows.length : 0;
+
+        if (staleIds.length > 0 && staleRatio <= 0.5) {
+            const { error: deleteError } = await supabase.from('products').delete().in('id', staleIds);
+            if (deleteError) throw deleteError;
+            deletedCount = staleIds.length;
+            console.log(`🗑️ Removed ${deletedCount} stale product(s) no longer in WooCommerce: ${staleIds.join(', ')}`);
+        } else if (staleIds.length > 0) {
+            console.warn(`⚠️ Skipped deleting ${staleIds.length} missing products as a safety guard (stale ratio: ${Math.round(staleRatio * 100)}%).`);
+        }
+    } else {
+        console.log('⚡ Quick mode: Skipping stale product deletion check.');
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
