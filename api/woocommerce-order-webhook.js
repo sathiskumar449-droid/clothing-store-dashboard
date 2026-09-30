@@ -132,17 +132,32 @@ function buildOrderConfirmationMessage(order) {
 
 export async function handleWooOrderWebhook(req, res) {
     const topic = req.headers['x-wc-webhook-topic'] || '';
-    console.log(`[Woo Order Webhook] Received — topic="${topic}"`);
+    const signature = req.headers['x-wc-webhook-signature'] || '';
+    const rawBody = req.rawBody || '';
+    const order = req.body || {};
 
-    // 1. Signature verification
+    console.log(`[Woo Order Webhook] Received — topic="${topic}", HasSignature: ${!!signature}`);
+
+    // 1. Initial WooCommerce verification test / ping
+    const isPing = !topic || 
+                   topic.includes('webhook.test') || 
+                   topic.includes('should_deliver') || 
+                   topic.includes('ping') || 
+                   order.webhook_id !== undefined || 
+                   !order.id;
+
+    if (isPing) {
+        console.log('[Woo Order Webhook] Test/empty ping payload — acknowledging with 200 OK');
+        return res.status(200).send('OK');
+    }
+
+    // 2. Signature verification on real order events
     if (WOOCOMMERCE_WEBHOOK_SECRET) {
-        const signature = req.headers['x-wc-webhook-signature'];
         if (!signature) {
-            console.error('[Woo Order Webhook] ❌ Missing x-wc-webhook-signature header — rejecting');
+            console.error('[Woo Order Webhook] ❌ Missing x-wc-webhook-signature header on event — rejecting');
             return res.status(400).send('Missing signature');
         }
 
-        const rawBody = req.rawBody || '';
         if (!verifyWooWebhookSignature(rawBody, signature, WOOCOMMERCE_WEBHOOK_SECRET)) {
             console.error('[Woo Order Webhook] ❌ Signature mismatch — rejecting (possible spoofed request)');
             return res.status(400).send('Invalid signature');
@@ -152,16 +167,8 @@ export async function handleWooOrderWebhook(req, res) {
         console.warn('[Woo Order Webhook] ⚠️ WOOCOMMERCE_WEBHOOK_SECRET not configured — signature verification bypassed');
     }
 
-    // 2. Process order
+    // 3. Process order
     try {
-        const order = req.body;
-
-        // WooCommerce sends a near-empty payload when the webhook is first created/saved in admin
-        if (topic.includes('webhook.test') || !order || !order.id) {
-            console.log('[Woo Order Webhook] Test/empty payload — acknowledging without action');
-            return res.sendStatus(200);
-        }
-
         console.log(`[Woo Order Webhook] Order #${order.number || order.id} status="${order.status}"`);
 
         const phone = normalizeIndianPhone(order.billing?.phone);

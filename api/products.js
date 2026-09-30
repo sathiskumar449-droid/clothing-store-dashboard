@@ -644,21 +644,37 @@ export const syncFromWoo = async (req, res) => {
 // ✅ WooCommerce Webhook Handler (Automatic Live Sync)
 export const handleWooWebhook = async (req, res) => {
     const topic = req.headers['x-wc-webhook-topic'] || '';
-    console.log(`🔌 [WooCommerce Webhook] Topic: "${topic}"`);
+    const signature = req.headers['x-wc-webhook-signature'] || '';
+    const rawBody = req.rawBody || '';
+    const payload = req.body || {};
 
-    // Signature verification — same HMAC-SHA256 check as api/woocommerce-order-webhook.js,
-    // against the WooCommerce-configured secret for THIS webhook (Settings > Advanced >
-    // Webhooks > the product.* webhook's own Secret field). If that secret doesn't match
-    // WOOCOMMERCE_WEBHOOK_SECRET, every real WooCommerce call will start failing this check —
-    // update the webhook's Secret in WooCommerce admin to match before relying on this.
+    console.log(`🔌 [WooCommerce Webhook] Topic: "${topic}", HasSignature: ${!!signature}, PayloadKeys: ${Object.keys(payload).join(',')}`);
+
+    // 1. Initial WooCommerce verification test / ping
+    // Sent when creating or saving a webhook in WooCommerce admin (WooCommerce > Settings > Advanced > Webhooks).
+    // WooCommerce sends a test request to verify the delivery URL (topic is often empty or 'action.woocommerce_webhook_should_deliver'
+    // or contains 'ping'/'webhook.test', and payload contains { webhook_id: <id> } or lacks product fields).
+    // Acknowledge with 200 immediately so WooCommerce successfully saves and activates the webhook!
+    const isPing = !topic ||
+                   topic.includes('webhook.test') ||
+                   topic.includes('should_deliver') ||
+                   topic.includes('ping') ||
+                   payload.webhook_id !== undefined ||
+                   (!payload.id && !payload.name);
+
+    if (isPing) {
+        console.log('✅ [WooCommerce Webhook] Verification ping detected — acknowledging 200 OK');
+        return res.status(200).json({ success: true, message: 'Webhook registered successfully!' });
+    }
+
+    // 2. Real product events (product.created, product.updated, product.deleted):
+    // Perform HMAC signature check against WOOCOMMERCE_WEBHOOK_SECRET
     if (WOOCOMMERCE_WEBHOOK_SECRET) {
-        const signature = req.headers['x-wc-webhook-signature'];
         if (!signature) {
-            console.error('[WooCommerce Webhook] ❌ Missing x-wc-webhook-signature header — rejecting');
+            console.error('[WooCommerce Webhook] ❌ Missing x-wc-webhook-signature header on event — rejecting');
             return res.status(400).send('Missing signature');
         }
 
-        const rawBody = req.rawBody || '';
         if (!verifyWooWebhookSignature(rawBody, signature, WOOCOMMERCE_WEBHOOK_SECRET)) {
             console.error('[WooCommerce Webhook] ❌ Signature mismatch — rejecting (possible spoofed request)');
             return res.status(400).send('Invalid signature');
@@ -669,13 +685,6 @@ export const handleWooWebhook = async (req, res) => {
     }
 
     try {
-        const payload = req.body;
-
-        // WooCommerce verification test
-        if (topic.includes('webhook.test') || topic.includes('should_deliver')) {
-            return res.json({ success: true, message: 'Webhook registered successfully!' });
-        }
-
         if (topic === 'product.created' || topic === 'product.updated') {
             if (!payload || !payload.id) {
                 return res.status(400).json({ success: false, message: 'Invalid payload' });
