@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase.js';
 import { verifyWooWebhookSignature } from '../lib/wooWebhookAuth.js';
 import { clearProductsCache } from './webhook.js';
 
-const WOOCOMMERCE_WEBHOOK_SECRET = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
+const WOOCOMMERCE_WEBHOOK_SECRET = (process.env.WOOCOMMERCE_WEBHOOK_SECRET || '').trim();
 
 console.log('[WooCommerce Product Webhook] WOOCOMMERCE_WEBHOOK_SECRET configured:', !!WOOCOMMERCE_WEBHOOK_SECRET);
 

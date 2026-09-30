@@ -5,7 +5,7 @@ import { sendText, logChatMessage, deleteSession } from './webhook.js';
 import { supabase } from '../lib/supabase.js';
 import { verifyWooWebhookSignature } from '../lib/wooWebhookAuth.js';
 
-const WOOCOMMERCE_WEBHOOK_SECRET = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
+const WOOCOMMERCE_WEBHOOK_SECRET = (process.env.WOOCOMMERCE_WEBHOOK_SECRET || '').trim();
 
 console.log('[Woo Order Webhook] WOOCOMMERCE_WEBHOOK_SECRET configured:', !!WOOCOMMERCE_WEBHOOK_SECRET);
 
