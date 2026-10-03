@@ -229,16 +229,26 @@ export async function getProducts() {
             // (api/products.js) only ever writing/keeping published rows: guarantees the bot can
             // never surface a draft/trashed/pending product even in the window before the owner's
             // next dashboard Refresh reconciles one away.
-            const { data, error } = await supabase
-                .from('products')
-                .select('id, name, code, category, categories, pattern, color, price, stock, sizes, image_uri, permalink')
-                .eq('status', 'publish')
-                .order('created_at', { ascending: true })
-                .order('id', { ascending: true });
+            let allRows = [];
+            let from = 0;
+            const batchSize = 1000;
+            while (true) {
+                const { data: page, error } = await supabase
+                    .from('products')
+                    .select('id, name, code, category, categories, pattern, color, price, stock, sizes, image_uri, permalink')
+                    .eq('status', 'publish')
+                    .order('created_at', { ascending: true })
+                    .order('id', { ascending: true })
+                    .range(from, from + batchSize - 1);
 
-            if (error) throw error;
+                if (error) throw error;
+                if (!page || page.length === 0) break;
+                allRows = allRows.concat(page);
+                if (page.length < batchSize) break;
+                from += batchSize;
+            }
 
-            const mapped = (data || []).map(row => {
+            const mapped = allRows.map(row => {
                 const cat = row.category || 'General';
                 const allCats = Array.isArray(row.categories) && row.categories.length > 0
                     ? row.categories
@@ -4089,21 +4099,22 @@ function buildCrossGroupConflictReply(specificTerms, actualCategory, requestedPa
 // the same cta_url path every other product card already goes through. Exported for
 // lib/intents.js's colour-context matcher (matchColorQuery) so a category-scoped colour match gets
 // the exact same reply formatting as every other specific-product reply, with no duplication.
-export function buildSpecificProductReply(product, productsPool) {
+export function buildSpecificProductReply(product, productsPool, options = {}) {
     const colorPrefix = product.color ? `${product.color} ` : '';
-    let url = product.permalink ? addWhatsAppUTM(product.permalink) : null;
+    let url = options.url || (product.permalink ? addWhatsAppUTM(product.permalink) : null);
     if (!url) {
         console.warn(`[ProductAvailability] Product ${product.id} ("${product.name}") has no permalink — falling back to category URL`);
         url = getCategoryUrl(product.category);
     }
-    const body = `*${colorPrefix}${product.name}*\n💰 ₹${product.price}\n\n${ORDER_STEPS_TEXT}\n\n${ORDER_VIDEO_PROMPT}`;
+    const title = options.title || `*${colorPrefix}${product.name}*`;
+    const body = `${title}\n💰 ₹${product.price}\n\n${ORDER_STEPS_TEXT}\n\n${ORDER_VIDEO_PROMPT}`;
     return {
         replyText: null,
         sendImages: [],
         sendProductCards: [{
             imageUrl: getProductImageUri(product, productsPool),
             body,
-            buttonText: 'View & Buy 🛒',
+            buttonText: options.buttonText || 'View & Buy 🛒',
             url
         }]
     };
@@ -4662,6 +4673,38 @@ async function handleIntent(intentResult, session, products, from) {
             // still falls through to the category page instead of a dead-end "not found".
             const colorTerm = compoundColorMatch || colorTerms[0] || null;
             if (colorTerm) {
+                // If the matched category itself is "White T Shirts" and the customer didn't specify
+                // "with pocket" vs "without pocket", send the sample product card with the common category
+                // link (supercollections.in/product-category/t-shirts-2/white-t-shirts/) so they can choose
+                const normCat = (bestCategory || '').toLowerCase().replace(/[-_\s]+/g, ' ').trim();
+                const hasWhiteTShirtProducts = categoryProducts.some(p => {
+                    const pCat = (p.category || '').toLowerCase();
+                    const pCats = (Array.isArray(p.categories) ? p.categories : []).map(c => (c || '').toLowerCase());
+                    return pCat.includes('white t') || pCats.some(c => c.includes('white t'));
+                });
+                const isWhiteTShirtCategory = normCat === 'white t shirts' || normCat === 'white t shirt' ||
+                    (hasWhiteTShirtProducts && (cleanedQ.includes('white') && (cleanedQ.includes('tshirt') || cleanedQ.includes('t shirt'))));
+
+                if (isWhiteTShirtCategory && categoryProducts.length > 0) {
+                    const isWithoutPocket = /\b(without|with\s*out|no)\s*pocket\b/i.test(query);
+                    const isWithPocket = !isWithoutPocket && /\b(with\s*pocket|pocket)\b/i.test(query);
+
+                    if (isWithoutPocket) {
+                        const withoutProduct = categoryProducts.find(p => /without\s*pocket/i.test(p.name)) || categoryProducts[0];
+                        return buildSpecificProductReply(withoutProduct, products);
+                    } else if (isWithPocket) {
+                        const withProduct = categoryProducts.find(p => /with\s*pocket/i.test(p.name) && !/without/i.test(p.name)) || categoryProducts[0];
+                        return buildSpecificProductReply(withProduct, products);
+                    } else {
+                        // Customer asked for "white t shirt" generally -> send sample product card with common category link
+                        const sampleProduct = categoryProducts.find(p => /without\s*pocket/i.test(p.name)) || categoryProducts[0];
+                        return buildSpecificProductReply(sampleProduct, products, {
+                            title: '*White T Shirts*',
+                            url: getCategoryUrl('white t-shirts')
+                        });
+                    }
+                }
+
                 // The parenthesised colour in a product's title is authoritative (see
                 // extractParenColor above) — only fall back to the looser full-name/category/
                 // pattern substring search (searchTermMatches) when NO product in this category

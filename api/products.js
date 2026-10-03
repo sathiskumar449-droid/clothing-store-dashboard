@@ -11,18 +11,28 @@ console.log('[WooCommerce Product Webhook] WOOCOMMERCE_WEBHOOK_SECRET configured
 // ✅ Get all products
 export const getProducts = async (req, res) => {
     try {
-        const { data, error } = await supabase
-            .from('products')
-            .select('*')
-            .order('created_at', { ascending: true });
+        let allData = [];
+        let from = 0;
+        const batchSize = 1000;
+        while (true) {
+            const { data, error } = await supabase
+                .from('products')
+                .select('*')
+                .order('created_at', { ascending: true })
+                .range(from, from + batchSize - 1);
 
-        if (error) throw error;
+            if (error) throw error;
+            if (!data || data.length === 0) break;
+            allData = allData.concat(data);
+            if (data.length < batchSize) break;
+            from += batchSize;
+        }
 
         // Map snake_case DB columns to the camelCase shape every other consumer of a
         // product object expects (dbRowToProduct is also used by addProduct/updateProduct
         // below, and webhook.js's own getProducts() does the same image_uri -> imageUri
         // mapping for the bot) — this endpoint was the one place still leaking raw rows.
-        res.json((data || []).map(dbRowToProduct));
+        res.json((allData || []).map(dbRowToProduct));
     } catch (error) {
         console.error('❌ Get Products Error:', error);
         res.status(500).json({ success: false, message: error.message });
@@ -510,8 +520,19 @@ export const syncProducts = async (req, res) => {
         // more than half of today's known catalog would vanish — that smells like a bad/partial
         // fetch rather than the catalog actually shrinking that much. The upsert above still ran,
         // so nothing is lost by waiting for the owner's next Refresh click to retry the delete.
-        const { data: existingRows, error: existingError } = await supabase.from('products').select('id');
-        if (existingError) throw existingError;
+        let existingRows = [];
+        let from = 0;
+        while (true) {
+            const { data, error: existingError } = await supabase
+                .from('products')
+                .select('id')
+                .range(from, from + 999);
+            if (existingError) throw existingError;
+            if (!data || data.length === 0) break;
+            existingRows = existingRows.concat(data);
+            if (data.length < 1000) break;
+            from += 1000;
+        }
 
         const knownIds = existingRows || [];
         const liveIds = new Set(dbProducts.map(p => p.id));
@@ -520,8 +541,11 @@ export const syncProducts = async (req, res) => {
 
         let deletedCount = 0;
         if (staleIds.length > 0 && staleRatio <= 0.5) {
-            const { error: deleteError } = await supabase.from('products').delete().in('id', staleIds);
-            if (deleteError) throw deleteError;
+            for (let i = 0; i < staleIds.length; i += 50) {
+                const batch = staleIds.slice(i, i + 50);
+                const { error: deleteError } = await supabase.from('products').delete().in('id', batch);
+                if (deleteError) throw deleteError;
+            }
             deletedCount = staleIds.length;
             console.log(`🗑️ [SyncProducts] Removed ${deletedCount} product(s) no longer published in WooCommerce: ${staleIds.join(', ')}`);
         } else if (staleIds.length > 0) {
@@ -612,8 +636,19 @@ export const syncFromWoo = async (req, res) => {
         if (error) throw error;
 
         // Reconciliation: remove stale products
-        const { data: existingRows, error: existingError } = await supabase.from('products').select('id');
-        if (existingError) throw existingError;
+        let existingRows = [];
+        let from = 0;
+        while (true) {
+            const { data, error: existingError } = await supabase
+                .from('products')
+                .select('id')
+                .range(from, from + 999);
+            if (existingError) throw existingError;
+            if (!data || data.length === 0) break;
+            existingRows = existingRows.concat(data);
+            if (data.length < 1000) break;
+            from += 1000;
+        }
 
         const liveIds = new Set(dbProducts.map(p => p.id));
         const staleIds = (existingRows || []).map(r => r.id).filter(id => !liveIds.has(id));
@@ -621,8 +656,11 @@ export const syncFromWoo = async (req, res) => {
 
         let deletedCount = 0;
         if (staleIds.length > 0 && staleRatio <= 0.5) {
-            const { error: deleteError } = await supabase.from('products').delete().in('id', staleIds);
-            if (deleteError) throw deleteError;
+            for (let i = 0; i < staleIds.length; i += 50) {
+                const batch = staleIds.slice(i, i + 50);
+                const { error: deleteError } = await supabase.from('products').delete().in('id', batch);
+                if (deleteError) throw deleteError;
+            }
             deletedCount = staleIds.length;
         }
 
@@ -700,6 +738,29 @@ export const handleWooWebhook = async (req, res) => {
                 if (error) throw error;
                 console.log(`🗑️ [WooCommerce Webhook] Product ${payload.id} (${payload.name}) status="${payload.status}" — removed from Supabase.`);
                 clearProductsCache();
+                return res.json({ success: true });
+            }
+
+            // If a single variation changed, update its parent product's stock rather than
+            // inserting the variation as a top-level product in the catalog.
+            if (payload.type === 'variation') {
+                console.log(`[WooCommerce Webhook] Variation ${payload.id} received (parent ${payload.parent_id}) — refreshing parent variation stock.`);
+                if (payload.parent_id) {
+                    try {
+                        const creds = await getWooCredentials();
+                        const parentUrl = `${creds.siteUrl.replace(/\/$/, '')}/wp-json/wc/v3/products/${payload.parent_id}?consumer_key=${encodeURIComponent(creds.consumerKey)}&consumer_secret=${encodeURIComponent(creds.consumerSecret)}`;
+                        const resp = await fetch(parentUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                        if (resp.ok) {
+                            const parent = await resp.json();
+                            await attachVariationStock(parent, creds);
+                            const dbProduct = mapWooProductToDb(parent);
+                            await supabase.from('products').upsert([dbProduct], { onConflict: 'id' });
+                            clearProductsCache();
+                        }
+                    } catch (e) {
+                        console.warn(`[WooWebhook] Failed to refresh parent ${payload.parent_id} on variation update:`, e.message);
+                    }
+                }
                 return res.json({ success: true });
             }
 

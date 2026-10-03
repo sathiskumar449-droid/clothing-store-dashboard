@@ -208,17 +208,30 @@ async function runSync() {
     // 6. Reconciliation: remove products that are no longer published in WooCommerce (only on full sync)
     let deletedCount = 0;
     if (!isRecent) {
-        console.log('🔍 Checking for stale / unpublished products...');
-        const { data: existingRows, error: existingError } = await supabase.from('products').select('id');
-        if (existingError) throw existingError;
+        let existingRows = [];
+        let from = 0;
+        while (true) {
+            const { data, error: existingError } = await supabase
+                .from('products')
+                .select('id')
+                .range(from, from + 999);
+            if (existingError) throw existingError;
+            if (!data || data.length === 0) break;
+            existingRows = existingRows.concat(data);
+            if (data.length < 1000) break;
+            from += 1000;
+        }
 
         const liveIds = new Set(dbProducts.map(p => p.id));
-        const staleIds = (existingRows || []).map(r => r.id).filter(id => !liveIds.has(id));
-        const staleRatio = existingRows?.length > 0 ? staleIds.length / existingRows.length : 0;
+        const staleIds = existingRows.map(r => r.id).filter(id => !liveIds.has(id));
+        const staleRatio = existingRows.length > 0 ? staleIds.length / existingRows.length : 0;
 
         if (staleIds.length > 0 && staleRatio <= 0.5) {
-            const { error: deleteError } = await supabase.from('products').delete().in('id', staleIds);
-            if (deleteError) throw deleteError;
+            for (let i = 0; i < staleIds.length; i += 50) {
+                const batch = staleIds.slice(i, i + 50);
+                const { error: deleteError } = await supabase.from('products').delete().in('id', batch);
+                if (deleteError) throw deleteError;
+            }
             deletedCount = staleIds.length;
             console.log(`🗑️ Removed ${deletedCount} stale product(s) no longer in WooCommerce: ${staleIds.join(', ')}`);
         } else if (staleIds.length > 0) {
