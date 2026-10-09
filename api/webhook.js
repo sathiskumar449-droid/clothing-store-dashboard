@@ -4518,7 +4518,7 @@ async function handleIntent(intentResult, session, products, from) {
             // subcategory with products, which should render directly as an image grid).
             if (genericWords.length > 0 && specificWords.length === 0 && colorTerms.length === 0 && !hasJeansTerm) {
                 const parentName = GENERIC_TERM_TO_PARENT[genericWords[0]] || GENERIC_TERM_TO_PARENT[simpleStem(genericWords[0])];
-                if (parentName && parentName !== 'Shorts') return showSubcategoryListForParent(parentName, products, session);
+                if (parentName && parentName !== 'Shorts' && parentName !== 'T-Shirts') return showSubcategoryListForParent(parentName, products, session);
             }
 
             if (queryWords.length === 0) {
