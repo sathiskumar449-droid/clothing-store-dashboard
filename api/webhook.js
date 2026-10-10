@@ -1282,6 +1282,9 @@ const getProductTag = (product) => {
     if (name.includes('t-shirt') || name.includes('tshirt') || name.includes('polo') || category.includes('t-shirt') || category.includes('tshirt') || category.includes('t-shirts')) {
         return 'TSHIRT';
     }
+    if (name.includes('hood') || category.includes('hood')) {
+        return 'HOODY';
+    }
     if (name.includes('shirt') || category.includes('shirt') || category.includes('shirts')) {
         return 'SHIRT';
     }
@@ -1292,6 +1295,8 @@ const getProductTag = (product) => {
 // Target recommendation pairing tags
 const getTargetRecommendationTags = (tag) => {
     switch (tag) {
+        case 'HOODY':
+            return ['JEANS', 'TRACK_PANT', 'CARGO_PANT'];
         case 'FORMAL_SHIRT':
             return ['FORMAL_PANT', 'PANT'];
         case 'CASUAL_SHIRT':
@@ -1752,6 +1757,9 @@ export const getParentCategory = (categoryName) => {
     if (catLower.includes('new arrival')) {
         return 'New Arrivals';
     }
+    if (catLower.includes('hood')) {
+        return 'Hoody';
+    }
     return categoryName;
 };
 
@@ -1759,6 +1767,7 @@ export const getParentCategory = (categoryName) => {
 const getCategoryEmoji = (parentCategory) => {
     const name = parentCategory.toLowerCase();
     if (name.includes('new arrival')) return '🆕';
+    if (name.includes('hood')) return '🧥';
     if (name.includes('shirt')) return '👕';
     if (name.includes('pant') || name.includes('phant') || name.includes('jeans')) return '👖';
     if (name.includes('shorts')) return '🩳';
@@ -2513,6 +2522,7 @@ const normalizeSearchSpelling = (s) => s
     .replace(/\bjens\b/g, 'jeans')
     .replace(/\bshrt\b/g, 'shirt')
     .replace(/\bshir\b/g, 'shirt')
+    .replace(/\bhood(?:ies|ie|ys)?\b/g, 'hoody')
     .replace(/\btrousers?\b/g, 'trouser');
 
 // Parentheses are stripped alongside the rest of the punctuation so a colour typed the same way
@@ -3296,6 +3306,9 @@ function detectIntent(text, products = [], session = null) {
     if (!foundCategory && /\bjean(s)?\b/i.test(t)) {
         foundCategory = 'Pants';
     }
+    if (!foundCategory && (/\bhood(y|ies|ie)?\b/i.test(t) || t.includes('hood'))) {
+        foundCategory = 'Hoody';
+    }
 
     if (foundCategory) {
         return { type: 'SEARCH', query: t };
@@ -3347,7 +3360,7 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: STOCK_OUT_COMPLAINT_REPLY };
     }
 
-    const searchKeywords = ['printed', 'linen', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
+    const searchKeywords = ['hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
     if (searchKeywords.some(kw => t.includes(kw))) {
         return { type: 'SEARCH', query: t };
     }
@@ -3393,6 +3406,9 @@ function matchParentCategory(text, parentCategories) {
     // T-Shirts keys must come before the plain 'shirt'/'shirts' keys: t.includes('shirt') is true
     // for "t-shirts" too, so checking 'shirt' first would misclassify T-Shirts input as Shirts.
     const mappings = {
+        'hoody': 'Hoody',
+        'hoodie': 'Hoody',
+        'hoodies': 'Hoody',
         'new arrival': 'New Arrivals',
         'new arrivals': 'New Arrivals',
         'tshirt': 'T-Shirts',
@@ -4635,12 +4651,29 @@ async function handleIntent(intentResult, session, products, from) {
                     } else if (!candidateExact && currentExact) {
                         // Keep current exact match
                     } else {
-                        const candidateHasColor = categoryNameHasColorWord(cat);
-                        const currentHasColor = categoryNameHasColorWord(bestCategory);
-                        if (candidateHasColor && !currentHasColor) {
+                        // Prefer candidate that matches a specific non-color word (e.g. "hoody" over "Lenin White Shirts" on "white hoodie")
+                        const candidateHasSpecific = specificWords.some(w => normalizeSearchSpelling(cat.toLowerCase()).includes(w));
+                        const currentHasSpecific = specificWords.some(w => normalizeSearchSpelling((bestCategory || '').toLowerCase()).includes(w));
+                        if (candidateHasSpecific && !currentHasSpecific) {
                             bestCategory = cat;
-                        } else if (candidateHasColor === currentHasColor && cat.length > (bestCategory || '').length) {
-                            bestCategory = cat;
+                        } else if (!candidateHasSpecific && currentHasSpecific) {
+                            // Keep current
+                        } else {
+                            const candidateHasColor = categoryNameHasColorWord(cat);
+                            const currentHasColor = categoryNameHasColorWord(bestCategory);
+                            if (candidateHasColor && !currentHasColor) {
+                                bestCategory = cat;
+                            } else if (candidateHasColor === currentHasColor) {
+                                const candidatePrimaryCount = inStock.filter(p => p.category === cat).length;
+                                const currentPrimaryCount = inStock.filter(p => p.category === bestCategory).length;
+                                if (candidatePrimaryCount > 0 && currentPrimaryCount === 0) {
+                                    bestCategory = cat;
+                                } else if (currentPrimaryCount > 0 && candidatePrimaryCount === 0) {
+                                    // Keep current
+                                } else if (cat.length > (bestCategory || '').length) {
+                                    bestCategory = cat;
+                                }
+                            }
                         }
                     }
                 }
