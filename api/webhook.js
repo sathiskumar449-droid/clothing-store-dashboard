@@ -3360,7 +3360,7 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: STOCK_OUT_COMPLAINT_REPLY };
     }
 
-    const searchKeywords = ['hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
+    const searchKeywords = ['hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
     if (searchKeywords.some(kw => t.includes(kw))) {
         return { type: 'SEARCH', query: t };
     }
@@ -3929,18 +3929,23 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     // whenever the visual output of that function changes again. Old rows under the
     // previous prefix just become unreachable dead rows; no manual cache-clearing needed.
     const COLLAGE_CACHE_VERSION = 'v2';
-    const cacheKey = COLLAGE_CACHE_VERSION + '_' + (session.selectedSubCategory || '').toLowerCase().replace(/\s+/g, '_') + '_preview_' + orderSignature;
+    const subCatKey = (session.selectedSubCategory || ctaOptions?.subCategoryDisplayName || '').toLowerCase().replace(/\s+/g, '_');
+    const cacheKey = COLLAGE_CACHE_VERSION + '_' + subCatKey + '_preview_' + orderSignature;
     let collageUrl = null;
-    if (session.selectedSubCategory) {
+    if (subCatKey) {
         const { data: cachedCollage } = await supabase
             .from('collage_cache')
             .select('collage_url')
-            .eq('cache_key', cacheKey)
+            .or(`cache_key.eq.${cacheKey},cache_key.eq.${COLLAGE_CACHE_VERSION}_${subCatKey}_preview,cache_key.eq.${COLLAGE_CACHE_VERSION}_${subCatKey}`)
+            .limit(1)
             .maybeSingle();
         if (cachedCollage?.collage_url) {
-            console.log(`[Collage] Cache HIT: ${cacheKey}`);
+            console.log(`[Collage] Cache HIT: ${cachedCollage.collage_url}`);
             collageUrl = cachedCollage.collage_url;
         }
+    }
+    if (!collageUrl && subCatKey.includes('korean_linen')) {
+        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_korean_linen_shirts_1791769780047.jpg';
     }
     if (!collageUrl) {
         console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);
@@ -4676,6 +4681,20 @@ async function handleIntent(intentResult, session, products, from) {
                             }
                         }
                     }
+                }
+            }
+
+            // Specific routing for linen / Korean linen shirt queries:
+            // When customer types "lenin", "linen", "korean linen shirt", "linen shirt", etc.
+            // without specifying "half sleeve" or "cotton", route directly to "Korean Linen Shirts".
+            const isLinenSearch = (queryWords.includes('lenin') || queryWords.includes('linen') || queryWords.includes('korean')) &&
+                !queryWords.includes('half') && !cleanedQ.includes('half') &&
+                !queryWords.includes('cotton') && !cleanedQ.includes('cotton');
+
+            if (isLinenSearch) {
+                const koreanLinenCat = inStock.find(p => (p.category || '').toLowerCase() === 'korean linen shirts')?.category;
+                if (koreanLinenCat) {
+                    bestCategory = koreanLinenCat;
                 }
             }
 
