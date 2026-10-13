@@ -3360,7 +3360,7 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: STOCK_OUT_COMPLAINT_REPLY };
     }
 
-    const searchKeywords = ['hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
+    const searchKeywords = ['hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'acid', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
     if (searchKeywords.some(kw => t.includes(kw))) {
         return { type: 'SEARCH', query: t };
     }
@@ -3946,6 +3946,9 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     }
     if (!collageUrl && subCatKey.includes('korean_linen')) {
         collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_korean_linen_shirts_1791769780047.jpg';
+    }
+    if (!collageUrl && (subCatKey.includes('acid_wash') || subCatKey.includes('acid'))) {
+        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_acid_wash_t_shirts_1791852416470.jpg';
     }
     if (!collageUrl) {
         console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);
@@ -4698,11 +4701,26 @@ async function handleIntent(intentResult, session, products, from) {
                 }
             }
 
+            // Specific routing for acid wash queries:
+            // When customer types "acid wash", "acid wash t shirt", "acid wash tshirt", etc.
+            // route directly to "Acid Wash T Shirts".
+            const isAcidWashSearch = cleanedQ.includes('acid') || queryWords.includes('acid');
+            if (isAcidWashSearch) {
+                const acidWashCat = inStock.find(p => (p.category || '').toLowerCase() === 'acid wash t shirts')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('acid'))?.category
+                    || 'Acid Wash T Shirts';
+                bestCategory = acidWashCat;
+            }
+
             const categoryProducts = applyPriceFilter(
-                inStock.filter(p =>
-                    p.category === bestCategory ||
-                    (Array.isArray(p.categories) && p.categories.includes(bestCategory))
-                )
+                inStock.filter(p => {
+                    if (isAcidWashSearch) {
+                        return (p.category || '').toLowerCase().includes('acid') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('acid')));
+                    }
+                    return p.category === bestCategory ||
+                        (Array.isArray(p.categories) && p.categories.includes(bestCategory));
+                })
             );
             if (categoryProducts.length === 0) {
                 return buildGuidedFallbackReply(session);
