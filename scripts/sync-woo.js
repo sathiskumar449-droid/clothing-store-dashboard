@@ -62,7 +62,10 @@ function mapWooProductToDb(p) {
         image_uri: (() => {
             const src = p.images?.[0]?.src || null;
             if (!src) return null;
-            return src.replace(/^(https?:\/\/)www\./i, '$1');
+            if (src.includes('supercollections.in') && !src.includes('www.supercollections.in')) {
+                return src.replace('://supercollections.in', '://www.supercollections.in');
+            }
+            return src;
         })(),
         permalink: p.permalink || null,
         status: p.status || 'publish'

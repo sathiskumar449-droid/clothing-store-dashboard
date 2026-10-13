@@ -254,6 +254,11 @@ export async function getProducts() {
                     ? row.categories
                     : [cat];
 
+                let img = row.image_uri;
+                if (img && img.includes('supercollections.in') && !img.includes('www.supercollections.in')) {
+                    img = img.replace('://supercollections.in', '://www.supercollections.in');
+                }
+
                 return {
                     id: row.id,
                     name: row.name,
@@ -265,7 +270,7 @@ export async function getProducts() {
                     price: row.price,
                     stock: row.stock,
                     sizes: row.sizes || [],
-                    imageUri: row.image_uri,
+                    imageUri: img,
                     permalink: row.permalink || null
                 };
             });
@@ -953,7 +958,19 @@ export async function handleImageProxy(req, res) {
     }
 
     try {
-        const imageRes = await axios.get(target, { responseType: 'arraybuffer', timeout: 15000 });
+        let fetchTarget = target;
+        if (fetchTarget.includes('supercollections.in') && !fetchTarget.includes('www.supercollections.in')) {
+            fetchTarget = fetchTarget.replace('://supercollections.in', '://www.supercollections.in');
+        }
+        const imageRes = await axios.get(fetchTarget, {
+            responseType: 'arraybuffer',
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.supercollections.in/',
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+            }
+        });
         res.set('Content-Type', imageRes.headers['content-type'] || 'image/jpeg');
         res.set('Cache-Control', 'public, max-age=86400');
         res.send(Buffer.from(imageRes.data));
@@ -1097,7 +1114,19 @@ export async function sendLocationCard(to) {
 export async function uploadMedia(imageUrl) {
     try {
         console.log(`[uploadMedia] Downloading image from WooCommerce: ${imageUrl}`);
-        const imageRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+        let fetchUrl = imageUrl;
+        if (fetchUrl && fetchUrl.includes('supercollections.in') && !fetchUrl.includes('www.supercollections.in')) {
+            fetchUrl = fetchUrl.replace('://supercollections.in', '://www.supercollections.in');
+        }
+        const imageRes = await axios.get(fetchUrl, {
+            responseType: 'arraybuffer',
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.supercollections.in/',
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+            }
+        });
         const contentType = imageRes.headers['content-type'] || 'image/jpeg';
 
         console.log(`[uploadMedia] Creating native Blob and FormData for upload`);
@@ -1727,48 +1756,46 @@ export const getParentCategory = (categoryName) => {
     if (!categoryName) return 'General';
     const catLower = categoryName.toLowerCase().trim();
 
-    // T-Shirts checked before Shirts to avoid 't-shirt'/'t shirt' matching the generic 'shirt' keyword.
-    // \bt[-_ ]?shirts?\b matches word-boundary 't shirt', 't shirts', 't-shirt', 't-shirts', 'tshirt', 'tshirts',
-    // plus catLower.startsWith('t shirt') / catLower.startsWith('t-shirt') / catLower.startsWith('tshirt')
-    // ensuring standalone "T Shirts" or "T Shirt" category names match 'T-Shirts' without false matching "chava print shirts".
+    // T-Shirts & Hoodies checked first
     if (
+        /\bt\s*[-_ ]\s*shirts?\b/i.test(catLower) ||
         /\bt[-_ ]?shirts?\b/i.test(catLower) ||
         catLower.startsWith('t shirt') ||
         catLower.startsWith('t-shirt') ||
         catLower.startsWith('tshirt') ||
-        ['t-shirt', 'tshirt', ' t shirt', 'round neck', 'polo t', 'high neck'].some(kw => catLower.includes(kw))
+        catLower.includes('hood') ||
+        ['t-shirt', 'tshirt', ' t shirt', 'round neck', 'polo t', 'high neck', 'hoody', 'hoodie'].some(kw => catLower.includes(kw))
     ) {
         return 'T-Shirts';
     }
-    // 'casual' and 'plain' were removed: both are generic adjectives, not shirt-specific, and were
-    // matching pant categories like "Casual Pant" before the Pants check below ever ran. Real shirt
-    // categories ("Casual Shirts", "Plain Shirts", "Lenin Plain") still match via 'shirt'/'lenin'.
+    // Shorts checked before Pants
+    if (catLower.includes('shorts') || catLower.includes('short') || catLower.includes('bermuda') || catLower.includes('barmuda')) {
+        return 'Shorts';
+    }
+    // Track pants checked before general Pants
+    if (catLower.includes('track') || catLower.includes('jogger') || catLower.includes('popcorn track')) {
+        return 'Track Pants';
+    }
+    if (['pant', 'phant', 'jeans', 'trouser', 'cargo', 'lycra', 'laycra'].some(kw => catLower.includes(kw))) {
+        return 'Pants';
+    }
     if (['shirt', 'linen', 'lenin', 'chava', 'printed', 'stripes', 'cotton shirt'].some(kw => catLower.includes(kw))) {
         return 'Shirts';
     }
-    // Shorts checked before the generic Pants list so categories like "Imported Shorts" get
-    // their own parent instead of being lumped in with Pants.
-    if (catLower.includes('shorts')) {
-        return 'Shorts';
-    }
-    if (['pant', 'phant', 'jeans', 'trouser', 'track', 'cargo', 'lycra', 'laycra'].some(kw => catLower.includes(kw))) {
-        return 'Pants';
-    }
     if (catLower.includes('new arrival')) {
         return 'New Arrivals';
-    }
-    if (catLower.includes('hood')) {
-        return 'Hoody';
     }
     return categoryName;
 };
 
 // Dynamically get emoji based on parent category
 const getCategoryEmoji = (parentCategory) => {
-    const name = parentCategory.toLowerCase();
+    const name = (parentCategory || '').toLowerCase();
     if (name.includes('new arrival')) return '🆕';
     if (name.includes('hood')) return '🧥';
-    if (name.includes('shirt')) return '👕';
+    if (name.includes('t-shirt') || name.includes('tshirt')) return '👕';
+    if (name.includes('shirt')) return '👔';
+    if (name.includes('track')) return '🏃';
     if (name.includes('pant') || name.includes('phant') || name.includes('jeans')) return '👖';
     if (name.includes('shorts')) return '🩳';
     if (name.includes('saree') || name.includes('frock') || name.includes('suit') || name.includes('kurti')) return '👗';
@@ -1834,7 +1861,7 @@ export const getCategoryCounts = (products) => {
 export const getSortedParents = (categoryCounts) => {
     const parents = Object.keys(categoryCounts).filter(cat => categoryCounts[cat] > 0 && cat !== 'General');
     parents.sort((a, b) => {
-        const order = { 'New Arrivals': 1, 'Shirts': 2, 'T-Shirts': 3, 'Pants': 4 };
+        const order = { 'New Arrivals': 1, 'Shirts': 2, 'T-Shirts': 3, 'Pants': 4, 'Track Pants': 5, 'Shorts': 6 };
         const orderA = order[a] || 99;
         const orderB = order[b] || 99;
         if (orderA !== orderB) return orderA - orderB;
@@ -1846,7 +1873,7 @@ export const getSortedParents = (categoryCounts) => {
 // Fixed group sort order used by getAllSubCategoriesList below (and by the per-parent
 // subcategory browsing list) — anything whose getParentCategory() isn't one of these
 // (e.g. New Arrivals leftovers) sorts last.
-const SUBCATEGORY_GROUP_ORDER = ['Shirts', 'T-Shirts', 'Pants', 'Shorts'];
+const SUBCATEGORY_GROUP_ORDER = ['Shirts', 'T-Shirts', 'Pants', 'Track Pants', 'Shorts'];
 
 // Helper to compute the full flat list of WooCommerce subcategory names (in-stock only),
 // excluding "New Arrival(s)" entirely and pre-sorted into the fixed group display order
@@ -3360,7 +3387,7 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: STOCK_OUT_COMPLAINT_REPLY };
     }
 
-    const searchKeywords = ['hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'acid', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
+    const searchKeywords = ['hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'acid', 'zipper', 'stripe', 'stripes', 'sleeveless', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
     if (searchKeywords.some(kw => t.includes(kw))) {
         return { type: 'SEARCH', query: t };
     }
@@ -3482,7 +3509,8 @@ function withInlineCancelSection(sections) {
 }
 
 function makeSubcategoriesListResponse(subs, subcategoryCounts, selectedParent) {
-    const body = `*${selectedParent}*:\n\nPlease select a subcategory.`;
+    const parentUrl = CATEGORY_LINKS[Object.keys(CATEGORY_LINKS).find(k => CATEGORY_LINKS[k].name === selectedParent || CATEGORY_LINKS[k].label === (selectedParent || '').toLowerCase())]?.url || getCategoryUrl(selectedParent);
+    const body = `*${selectedParent}*:\n\nPlease select a subcategory below 👇\n(All ${selectedParent}: ${parentUrl})`;
     const buttonText = "Select Subcategory";
     const sections = withInlineCancelSection([
         {
@@ -4069,15 +4097,16 @@ const SIZE_KEYWORDS = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl', '2xl', 
 // "T-Shirts" the customer explicitly named). Neither is right: when the customer explicitly names
 // a group via one of these words, a pattern that doesn't exist in THAT group should never be
 // silently redirected into a different one.
-const GENERIC_PRODUCT_WORDS = new Set(['shirt', 'shirts', 'tshirt', 'pant', 'short', 'shorts', 'trouser']);
+const GENERIC_PRODUCT_WORDS = new Set(['shirt', 'shirts', 'tshirt', 'tshirts', 'pant', 'pants', 'short', 'shorts', 'trouser', 'track']);
 
 // Maps a generic product-type term to the parent category group the customer explicitly named by
 // using it — e.g. "tshirt" unambiguously means the T-Shirts group specifically, not generic
 // "Shirts". Used only by the cross-group conflict check below.
 const GENERIC_TERM_TO_PARENT = {
     shirt: 'Shirts', shirts: 'Shirts',
-    tshirt: 'T-Shirts',
-    pant: 'Pants', trouser: 'Pants',
+    tshirt: 'T-Shirts', tshirts: 'T-Shirts',
+    pant: 'Pants', pants: 'Pants', trouser: 'Pants',
+    track: 'Track Pants',
     short: 'Shorts', shorts: 'Shorts'
 };
 
@@ -4448,6 +4477,21 @@ async function handleIntent(intentResult, session, products, from) {
             // acted on the first (intentResult.choice), so just append a note instead of either
             // spamming every option back-to-back or rejecting the whole message as unparseable.
             const note = intentResult.multipleFound ? `\n\n${MULTIPLE_CATEGORY_NOTE}` : '';
+            const parentMap = {
+                '1': 'Shirts',
+                '2': 'T-Shirts',
+                '3': 'Pants',
+                '4': 'Track Pants',
+                '5': 'Shorts'
+            };
+            const parentName = parentMap[intentResult.choice];
+            if (parentName) {
+                const subResponse = showSubcategoryListForParent(parentName, products, session);
+                if (subResponse) {
+                    if (note && subResponse.replyText) subResponse.replyText += note;
+                    return subResponse;
+                }
+            }
             const link = CATEGORY_LINKS[intentResult.choice];
             if (link) {
                 return {
@@ -4542,7 +4586,7 @@ async function handleIntent(intentResult, session, products, from) {
             // subcategory with products, which should render directly as an image grid).
             if (genericWords.length > 0 && specificWords.length === 0 && colorTerms.length === 0 && !hasJeansTerm) {
                 const parentName = GENERIC_TERM_TO_PARENT[genericWords[0]] || GENERIC_TERM_TO_PARENT[simpleStem(genericWords[0])];
-                if (parentName && parentName !== 'Shorts' && parentName !== 'T-Shirts') return showSubcategoryListForParent(parentName, products, session);
+                if (parentName) return showSubcategoryListForParent(parentName, products, session);
             }
 
             if (queryWords.length === 0) {
