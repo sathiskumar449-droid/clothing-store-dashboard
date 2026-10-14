@@ -2550,7 +2550,11 @@ const normalizeSearchSpelling = (s) => s
     .replace(/\bshrt\b/g, 'shirt')
     .replace(/\bshir\b/g, 'shirt')
     .replace(/\bhood(?:ies|ie|ys)?\b/g, 'hoody')
-    .replace(/\btrousers?\b/g, 'trouser');
+    .replace(/\btrousers?\b/g, 'trouser')
+    .replace(/\btraks?\b/g, 'track')
+    .replace(/\btrach\b/g, 'track')
+    .replace(/\b3\s*pcs?\b/g, '3pcs')
+    .replace(/\b3\s*piece(?:s)?\b/g, '3pcs');
 
 // Parentheses are stripped alongside the rest of the punctuation so a colour typed the same way
 // the catalog itself names variants (e.g. "(Navy Blue)") still tokenizes to plain "navy"/"blue"
@@ -3978,6 +3982,9 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     if (!collageUrl && (subCatKey.includes('acid_wash') || subCatKey.includes('acid'))) {
         collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_acid_wash_t_shirts_1791852416470.jpg';
     }
+    if (!collageUrl && (subCatKey.includes('3pcs') || subCatKey.includes('track_pant'))) {
+        collageUrl = 'https://www.supercollections.in/wp-content/uploads/2026/10/track-pant-colours-1170x1566-2.jpg';
+    }
     if (!collageUrl) {
         console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);
         collageUrl = await createProductCollage(previewProducts, 1, productsPool);
@@ -4002,7 +4009,8 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     const displayName = ctaOptions.subCategoryDisplayName;
     const url = getCategoryUrl(session.selectedSubCategory || displayName);
     let buttonText = `Shop ${displayName}`;
-    if (buttonText.length > 20) buttonText = 'Shop Now';
+    if (displayName.toLowerCase().includes('3pcs track')) buttonText = 'Shop Track Pants';
+    else if (buttonText.length > 20) buttonText = 'Shop Now';
 
     return {
         sendImages: collageUrl ? [{ url: collageUrl, caption: displayName }] : [],
@@ -4585,6 +4593,20 @@ async function handleIntent(intentResult, session, products, from) {
             // parent group itself has a direct subcategory match (e.g. "Shorts" has an exact "Shorts"
             // subcategory with products, which should render directly as an image grid).
             if (genericWords.length > 0 && specificWords.length === 0 && colorTerms.length === 0 && !hasJeansTerm) {
+                if (genericWords.includes('track')) {
+                    const threePcsProducts = inStock.filter(p =>
+                        p.category === '3pcs Track Pants' ||
+                        (Array.isArray(p.categories) && p.categories.includes('3pcs Track Pants')) ||
+                        (p.name || '').toLowerCase().includes('3pcs track pant')
+                    );
+                    if (threePcsProducts.length > 0) {
+                        session.selectedParentCategory = 'Track Pants';
+                        session.selectedSubCategory = '3pcs Track Pants';
+                        session.searchProducts = threePcsProducts;
+                        session.state = "AWAITING_SUBCATEGORY_SELECTION";
+                        return await prepareProductsPageResponse(session, products, '🏃 3pcs Track Pants', { subCategoryDisplayName: '3pcs Track Pants' });
+                    }
+                }
                 const parentName = GENERIC_TERM_TO_PARENT[genericWords[0]] || GENERIC_TERM_TO_PARENT[simpleStem(genericWords[0])];
                 if (parentName) return showSubcategoryListForParent(parentName, products, session);
             }
@@ -4756,11 +4778,30 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = acidWashCat;
             }
 
+            // Specific routing for 3pcs track pants queries:
+            const is3pcsTrackSearch = cleanedQ.includes('3pcs') || queryWords.includes('3pcs') ||
+                ((queryWords.includes('track') || cleanedQ.includes('track')) &&
+                 !queryWords.includes('popcorn') && !cleanedQ.includes('popcorn') &&
+                 !queryWords.includes('adidas') && !cleanedQ.includes('adidas') &&
+                 !queryWords.includes('baggy') && !cleanedQ.includes('baggy') &&
+                 !queryWords.includes('cargo') && !cleanedQ.includes('cargo') &&
+                 !queryWords.includes('jogger') && !cleanedQ.includes('jogger'));
+            if (is3pcsTrackSearch) {
+                const threePcsCat = inStock.find(p => (p.category || '').toLowerCase() === '3pcs track pants')?.category
+                    || '3pcs Track Pants';
+                bestCategory = threePcsCat;
+            }
+
             const categoryProducts = applyPriceFilter(
                 inStock.filter(p => {
                     if (isAcidWashSearch) {
                         return (p.category || '').toLowerCase().includes('acid') ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('acid')));
+                    }
+                    if (is3pcsTrackSearch) {
+                        return p.category === '3pcs Track Pants' ||
+                            (Array.isArray(p.categories) && p.categories.includes('3pcs Track Pants')) ||
+                            (p.name || '').toLowerCase().includes('3pcs track pant');
                     }
                     return p.category === bestCategory ||
                         (Array.isArray(p.categories) && p.categories.includes(bestCategory));
