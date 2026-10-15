@@ -4830,7 +4830,7 @@ async function handleIntent(intentResult, session, products, from) {
             if (colorTerm) {
                 // If the matched category itself is "White T Shirts" and the customer didn't specify
                 // "with pocket" vs "without pocket", send the sample product card with the common category
-                // link (supercollections.in/product-category/t-shirts-2/white-t-shirts/) so they can choose
+                // link (supercollections.in/product-category/t-shirts-2/white-t-shirt/) so they can choose
                 const normCat = (bestCategory || '').toLowerCase().replace(/[-_\s]+/g, ' ').trim();
                 const hasWhiteTShirtProducts = categoryProducts.some(p => {
                     const pCat = (p.category || '').toLowerCase();
@@ -4855,7 +4855,7 @@ async function handleIntent(intentResult, session, products, from) {
                         const sampleProduct = categoryProducts.find(p => /without\s*pocket/i.test(p.name)) || categoryProducts[0];
                         return buildSpecificProductReply(sampleProduct, products, {
                             title: '*White T Shirts*',
-                            url: getCategoryUrl('white t-shirts')
+                            url: getCategoryUrl('white t-shirt')
                         });
                     }
                 }
