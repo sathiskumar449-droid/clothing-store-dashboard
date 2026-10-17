@@ -3985,6 +3985,9 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     if (!collageUrl && (subCatKey.includes('3pcs') || subCatKey.includes('track_pant'))) {
         collageUrl = 'https://www.supercollections.in/wp-content/uploads/2026/10/track-pant-colours-1170x1566-2.jpg';
     }
+    if (!collageUrl && (subCatKey.includes('chava') || subCatKey.includes('chava_shirt') || subCatKey.includes('chava_shirts'))) {
+        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_chava_shirts_1792200630233.jpg';
+    }
     if (!collageUrl) {
         console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);
         collageUrl = await createProductCollage(previewProducts, 1, productsPool);
@@ -4792,8 +4795,22 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = threePcsCat;
             }
 
+            // Specific routing for chava shirts queries:
+            const isChavaSearch = cleanedQ.includes('chava') || queryWords.includes('chava');
+            if (isChavaSearch) {
+                const chavaCat = inStock.find(p => (p.category || '').toLowerCase() === 'chava shirts')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('chava'))?.category
+                    || 'Chava Shirts';
+                bestCategory = chavaCat;
+            }
+
             const categoryProducts = applyPriceFilter(
                 inStock.filter(p => {
+                    if (isChavaSearch) {
+                        return (p.category || '').toLowerCase().includes('chava') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('chava'))) ||
+                            (p.name || '').toLowerCase().includes('chava');
+                    }
                     if (isAcidWashSearch) {
                         return (p.category || '').toLowerCase().includes('acid') ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('acid')));
