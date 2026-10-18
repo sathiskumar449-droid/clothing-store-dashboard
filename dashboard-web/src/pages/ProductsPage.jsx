@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { Package, RefreshCw, AlertCircle, ExternalLink, CheckCircle, Search, Filter, X, Grid, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Package, RefreshCw, AlertCircle, ExternalLink, CheckCircle, Search, Filter, X, Grid, ChevronLeft, ChevronRight, Plus, Image } from 'lucide-react';
 import { getWooProducts, syncWooProductsToDb } from '../api/productsApi';
 import api from '../api/axiosInstance';
 import Loader from '../components/ui/Loader';
@@ -37,6 +37,15 @@ export default function ProductsPage() {
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [page, setPage] = useState(1);
 
+  // Add Product modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState({
+    name: '', price: '', stock: '1', category: '', sizes: '', imageUri: '', permalink: ''
+  });
+  const [addLoading, setAddLoading] = useState(false);
+  const [addError, setAddError] = useState(null);
+  const [addSuccess, setAddSuccess] = useState(null);
+
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -49,6 +58,39 @@ export default function ProductsPage() {
       setLoading(false);
     }
   }, []);
+
+  // Handle manual "Add Product" form submission
+  const handleAddProduct = async (e) => {
+    e.preventDefault();
+    if (!addForm.name.trim()) return;
+    setAddLoading(true);
+    setAddError(null);
+    setAddSuccess(null);
+    try {
+      const payload = {
+        name:      addForm.name.trim(),
+        price:     addForm.price || '0',
+        stock:     addForm.stock || '1',
+        category:  addForm.category.trim() || null,
+        sizes:     addForm.sizes ? addForm.sizes.split(',').map(s => s.trim()).filter(Boolean) : [],
+        imageUri:  addForm.imageUri.trim() || null,
+        permalink: addForm.permalink.trim() || null,
+      };
+      const { data } = await api.post('/products', payload);
+      if (data.success) {
+        setAddSuccess('Product added successfully!');
+        setAddForm({ name: '', price: '', stock: '1', category: '', sizes: '', imageUri: '', permalink: '' });
+        await fetchProducts();
+        setTimeout(() => { setShowAddModal(false); setAddSuccess(null); }, 1500);
+      } else {
+        throw new Error(data.message || 'Failed to add product');
+      }
+    } catch (err) {
+      setAddError(err.response?.data?.message || err.message || 'Failed to add product');
+    } finally {
+      setAddLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchProducts();
@@ -237,6 +279,14 @@ export default function ProductsPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setShowAddModal(true)}
+            disabled={syncing || loading}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-60 shadow-sm transition-colors cursor-pointer"
+          >
+            <Plus size={14} />
+            Add Product
+          </button>
+          <button
             onClick={handleSync}
             disabled={syncing || loading}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 shadow-sm transition-colors cursor-pointer"
@@ -254,6 +304,91 @@ export default function ProductsPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Add Product Modal ── */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50" onClick={() => { setShowAddModal(false); setAddError(null); setAddSuccess(null); }} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-y-auto max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900">Add New Product</h2>
+              <button onClick={() => { setShowAddModal(false); setAddError(null); setAddSuccess(null); }} className="text-gray-400 hover:text-gray-600 cursor-pointer"><X size={18} /></button>
+            </div>
+            <form onSubmit={handleAddProduct} className="p-6 space-y-4">
+              {addError && (
+                <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 rounded-xl p-3">
+                  <AlertCircle size={14} className="text-rose-500 shrink-0" />
+                  <p className="text-xs text-rose-600">{addError}</p>
+                </div>
+              )}
+              {addSuccess && (
+                <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                  <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+                  <p className="text-xs text-emerald-600">{addSuccess}</p>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Product Name *</label>
+                  <input type="text" required placeholder="e.g. Dry Fit T-Shirt – Royal Blue" value={addForm.name}
+                    onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Price (₹)</label>
+                  <input type="number" step="0.01" placeholder="189" value={addForm.price}
+                    onChange={e => setAddForm(f => ({ ...f, price: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Stock Qty</label>
+                  <input type="number" placeholder="1" value={addForm.stock}
+                    onChange={e => setAddForm(f => ({ ...f, stock: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Category</label>
+                  <input type="text" placeholder="e.g. Dry Fit T Shirts" value={addForm.category}
+                    onChange={e => setAddForm(f => ({ ...f, category: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Sizes (comma-separated)</label>
+                  <input type="text" placeholder="S, M, L, XL" value={addForm.sizes}
+                    onChange={e => setAddForm(f => ({ ...f, sizes: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1"><Image size={12} /> Product Image URL</label>
+                  <input type="url" placeholder="https://supercollections.in/wp-content/uploads/..." value={addForm.imageUri}
+                    onChange={e => setAddForm(f => ({ ...f, imageUri: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                  <p className="text-[10px] text-gray-400 mt-1">Website-ல product image-ஐ right-click → Copy image address பண்ணி paste பண்ணுங்க</p>
+                  {addForm.imageUri && (
+                    <div className="mt-2 w-20 h-20 rounded-xl overflow-hidden border border-gray-100 bg-gray-50">
+                      <img src={getProxiedImageUrl(addForm.imageUri)} alt="preview"
+                        className="w-full h-full object-cover"
+                        onError={e => { e.target.style.display = 'none'; }} />
+                    </div>
+                  )}
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1"><ExternalLink size={12} /> Product Page URL (Store Link)</label>
+                  <input type="url" placeholder="https://supercollections.in/product/dry-fit-t-shirt-royal-blue/" value={addForm.permalink}
+                    onChange={e => setAddForm(f => ({ ...f, permalink: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                  <p className="text-[10px] text-gray-400 mt-1">Website-ல product page-ஐ open பண்ணி address bar-ல இருக்கிற URL copy பண்ணுங்க</p>
+                </div>
+              </div>
+              <button type="submit" disabled={addLoading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-60 transition-colors cursor-pointer">
+                {addLoading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+                {addLoading ? 'Saving…' : 'Add Product'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {syncMessage && (
         <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-6">

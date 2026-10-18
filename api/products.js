@@ -59,12 +59,15 @@ export const addProduct = async (req, res) => {
             name:       product.name,
             code:       product.code       || null,
             category:   product.category   || null,
+            categories: Array.isArray(product.categories) ? product.categories : (product.category ? [product.category] : []),
             pattern:    product.pattern     || null,
             color:      product.color       || null,
             price:      product.price       !== undefined ? String(product.price) : null,
             stock:      product.stock       !== undefined ? String(product.stock) : '0',
             sizes:      Array.isArray(product.sizes) ? product.sizes : [],
-            image_uri:  product.imageUri    || product.image_uri || null
+            image_uri:  product.imageUri    || product.image_uri || null,
+            permalink:  product.permalink   || null,
+            status:     'publish'   // chatbot filters by status='publish' — must set for manually-added products
         };
 
         const { data, error } = await supabase
@@ -174,17 +177,18 @@ export const deleteProduct = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 function dbRowToProduct(row) {
     return {
-        id:        row.id,
-        name:      row.name,
-        code:      row.code,
-        category:  row.category,
-        pattern:   row.pattern,
-        color:     row.color,
-        price:     row.price,
-        stock:     row.stock,
-        sizes:     row.sizes    || [],
-        imageUri:  row.image_uri,
-        permalink: row.permalink || null
+        id:         row.id,
+        name:       row.name,
+        code:       row.code,
+        category:   row.category,
+        categories: row.categories || [],
+        pattern:    row.pattern,
+        color:      row.color,
+        price:      row.price,
+        stock:      row.stock,
+        sizes:      row.sizes    || [],
+        imageUri:   row.image_uri,
+        permalink:  row.permalink || null
     };
 }
 
