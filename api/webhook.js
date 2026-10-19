@@ -2542,6 +2542,8 @@ const normalizeSearchSpelling = (s) => s
     // words "white"/"t-"/"shirts" instead of "tshirt", letting it wrongly tie/outscore the real
     // "White Shirts" category on a plain "white shirt" search.
     .replace(/\bt[.\s-]*shirt?s?\b/g, 'tshirt')
+    .replace(/\bparty\s*wear\b/g, 'party wear')
+    .replace(/\bpartywear\b/g, 'party wear')
     .replace(/\bphants?\b/g, 'pant')
     .replace(/\bpants?\b/g, 'pant')
     .replace(/\bfoot\s*bal+s?\b/g, 'football')
@@ -3391,7 +3393,7 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: STOCK_OUT_COMPLAINT_REPLY };
     }
 
-    const searchKeywords = ['hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'acid', 'zipper', 'stripe', 'stripes', 'sleeveless', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
+    const searchKeywords = ['party', 'partywear', 'hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'acid', 'zipper', 'stripe', 'stripes', 'sleeveless', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
     if (searchKeywords.some(kw => t.includes(kw))) {
         return { type: 'SEARCH', query: t };
     }
@@ -3988,6 +3990,12 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     if (!collageUrl && (subCatKey.includes('chava') || subCatKey.includes('chava_shirt') || subCatKey.includes('chava_shirts'))) {
         collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_chava_shirts_1792200630233.jpg';
     }
+    if (!collageUrl && (subCatKey.includes('party_wear') || subCatKey.includes('party'))) {
+        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_1792378831132_l9aq5.jpg';
+    }
+    if (!collageUrl && (subCatKey === 't_shirts' || subCatKey === 't-shirts' || subCatKey === 'tshirt' || subCatKey === 't_shirt' || subCatKey.includes('polo_t'))) {
+        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_1792417972988_uye5b.jpg';
+    }
     if (!collageUrl) {
         console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);
         collageUrl = await createProductCollage(previewProducts, 1, productsPool);
@@ -4077,7 +4085,12 @@ export const COLOR_KEYWORDS = ['cream', 'white', 'black', 'blue', 'navy', 'grey'
 // both collapse to the same ambiguous "green", unable to tell the two shades apart. Checked against
 // the cleaned query STRING (before word-splitting) so the whole phrase — not just its last word —
 // becomes the colorTerm in the SEARCH case below.
-export const COMPOUND_COLOR_KEYWORDS = ['navy blue', 'royal blue', 'sage green', 'olive green', 'dark grey', 'light steel grey'];
+export const COMPOUND_COLOR_KEYWORDS = [
+    'navy blue', 'royal blue', 'light blue', 'teal blue', 'sky blue',
+    'sage green', 'olive green', 'dark olive green', 'mint green', 'light green', 'forest green',
+    'dusty rose', 'dusty pink', 'light pink', 'deep teal', 'dark brown',
+    'dark grey', 'light steel grey', 'light grey', 'charcoal grey'
+];
 
 // Extracts the colour token WooCommerce's own product-title convention puts in parentheses (e.g.
 // "Premium Cotton Pant (Navy Blue)" -> "navy blue"). This is the authoritative colour for a
@@ -4610,12 +4623,41 @@ async function handleIntent(intentResult, session, products, from) {
                         return await prepareProductsPageResponse(session, products, '🏃 3pcs Track Pants', { subCategoryDisplayName: '3pcs Track Pants' });
                     }
                 }
+                if (genericWords.some(w => w === 'tshirt' || w === 'tshirts' || simpleStem(w) === 'tshirt')) {
+                    const tShirtProducts = inStock.filter(p =>
+                        (p.category === 'T-Shirts' && !p.name.toLowerCase().includes('dry fit') && !p.name.toLowerCase().includes('acid wash')) ||
+                        p.name.toLowerCase().includes('polo t-shirt')
+                    );
+                    if (tShirtProducts.length > 0) {
+                        session.selectedParentCategory = 'T-Shirts';
+                        session.selectedSubCategory = 'T-Shirts';
+                        session.searchProducts = tShirtProducts;
+                        session.state = "AWAITING_SUBCATEGORY_SELECTION";
+                        return await prepareProductsPageResponse(session, products, '👕 T-Shirts', { subCategoryDisplayName: 'T-Shirts' });
+                    }
+                }
                 const parentName = GENERIC_TERM_TO_PARENT[genericWords[0]] || GENERIC_TERM_TO_PARENT[simpleStem(genericWords[0])];
                 if (parentName) return showSubcategoryListForParent(parentName, products, session);
             }
 
             if (queryWords.length === 0) {
                 return buildGuidedFallbackReply(session);
+            }
+
+            // If the query is specifically asking for polo t-shirts, route directly to the 11 in-stock Polo T-Shirts under T-Shirts
+            const isPoloQuery = (queryWords.includes('polo') || cleanedQ.includes('polo')) && !queryWords.includes('pant') && !cleanedQ.includes('pant');
+            if (isPoloQuery) {
+                const poloProducts = inStock.filter(p =>
+                    (p.category === 'T-Shirts' && !p.name.toLowerCase().includes('dry fit') && !p.name.toLowerCase().includes('acid wash')) ||
+                    p.name.toLowerCase().includes('polo t-shirt')
+                );
+                if (poloProducts.length > 0) {
+                    session.selectedParentCategory = 'T-Shirts';
+                    session.selectedSubCategory = 'T-Shirts';
+                    session.searchProducts = poloProducts;
+                    session.state = "AWAITING_SUBCATEGORY_SELECTION";
+                    return await prepareProductsPageResponse(session, products, '👕 T-Shirts', { subCategoryDisplayName: 'T-Shirts' });
+                }
             }
 
             // ─── Out-of-stock category short-circuit ───
@@ -4804,8 +4846,36 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = chavaCat;
             }
 
+            // Specific routing for party wear queries:
+            const isPartyWearSearch = cleanedQ.includes('party') || queryWords.includes('party') ||
+                cleanedQ.includes('partywear') || queryWords.includes('partywear');
+            if (isPartyWearSearch) {
+                const partyWearCat = inStock.find(p => (p.category || '').toLowerCase() === 'party wear shirts')?.category
+                    || 'Party Wear Shirts';
+                bestCategory = partyWearCat;
+            }
+
+            // Specific routing for T-Shirts / Polo T-Shirts queries:
+            const isPoloOrTshirtSearch = cleanedQ.includes('polo') ||
+                cleanedQ === 'tshirt' || cleanedQ === 't shirt' || cleanedQ === 't-shirt' ||
+                cleanedQ === 'tshirts' || cleanedQ === 't shirts' || cleanedQ === 't-shirts';
+            if (isPoloOrTshirtSearch) {
+                const tShirtCat = inStock.find(p => (p.category || '').toLowerCase() === 't-shirts')?.category
+                    || 'T-Shirts';
+                bestCategory = tShirtCat;
+            }
+
             const categoryProducts = applyPriceFilter(
                 inStock.filter(p => {
+                    if (isPoloOrTshirtSearch) {
+                        return (p.category === 'T-Shirts' && !(p.name || '').toLowerCase().includes('dry fit') && !(p.name || '').toLowerCase().includes('acid wash')) ||
+                            (p.name || '').toLowerCase().includes('polo t-shirt');
+                    }
+                    if (isPartyWearSearch) {
+                        return (p.category || '').toLowerCase().includes('party') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('party'))) ||
+                            (p.name || '').toLowerCase().includes('party');
+                    }
                     if (isChavaSearch) {
                         return (p.category || '').toLowerCase().includes('chava') ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('chava'))) ||
