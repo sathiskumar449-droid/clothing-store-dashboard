@@ -3,6 +3,8 @@
 import { supabase } from '../lib/supabase.js';
 import { verifyWooWebhookSignature } from '../lib/wooWebhookAuth.js';
 import { clearProductsCache } from './webhook.js';
+import { fetchProductImageFromPermalink } from '../lib/utils.js';
+import { refreshSitemapCategoryUrls } from '../lib/categoryUrls.js';
 
 const WOOCOMMERCE_WEBHOOK_SECRET = (process.env.WOOCOMMERCE_WEBHOOK_SECRET || '').trim();
 
@@ -453,10 +455,15 @@ const mapWooProductToDb = (p) => {
         stock:       mapWooStockToSupabase(p),
         sizes:       sizes,
         image_uri:   (() => {
-            const src = p.images?.[0]?.src || null;
+            let src = p.images?.[0]?.src || p.images?.[0]?.url || p.images?.[0]?.guid || p.image_uri || p.imageUri || null;
+            if (!src && Array.isArray(p.images) && p.images.length > 0) {
+                src = typeof p.images[0] === 'string' ? p.images[0] : (p.images[0]?.src || null);
+            }
             if (!src) return null;
-            // Remove www. prefix so images load via the canonical non-www domain
-            return src.replace(/^(https?:\/\/)www\./i, '$1');
+            if (src.includes('supercollections.in') && !src.includes('www.supercollections.in')) {
+                return src.replace('://supercollections.in', '://www.supercollections.in');
+            }
+            return src;
         })(),
         permalink:   p.permalink || null,
         status:      p.status || 'publish'
@@ -781,6 +788,14 @@ export const handleWooWebhook = async (req, res) => {
             }
 
             const dbProduct = mapWooProductToDb(payload);
+            if (!dbProduct.image_uri && dbProduct.permalink) {
+                try {
+                    const liveImg = await fetchProductImageFromPermalink(dbProduct.permalink);
+                    if (liveImg) dbProduct.image_uri = liveImg;
+                } catch (imgErr) {
+                    console.warn(`[WooWebhook] Could not fetch live image from permalink for product ${payload.id}:`, imgErr.message);
+                }
+            }
             console.log('[WooWebhook] Mapped row about to be upserted:', JSON.stringify(dbProduct));
             const { error } = await supabase
                 .from('products')
@@ -788,6 +803,9 @@ export const handleWooWebhook = async (req, res) => {
 
             if (error) throw error;
             console.log(`✅ [WooCommerce Webhook] Product ${payload.id} (${payload.name}) synced successfully.`);
+
+            // Refresh live category URLs in background so new categories are discovered immediately
+            refreshSitemapCategoryUrls().catch(() => {});
         }
         
         else if (topic === 'product.deleted') {

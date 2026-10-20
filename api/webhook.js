@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase.js';
 import { createProductCollage, createRecommendationCollage, createPromoCollage } from '../lib/collage.js';
 import { getCategoryUrl } from '../lib/categoryUrls.js';
 import { detectNewFaqIntent } from '../lib/intents.js';
-import { addWhatsAppUTM, SIZE_QTY_STRUCTURED_STATES, ORDER_GUIDE_VIDEO_URL, GUIDED_FALLBACK_REPLY, buildGuidedFallbackReply } from '../lib/utils.js';
+import { addWhatsAppUTM, SIZE_QTY_STRUCTURED_STATES, ORDER_GUIDE_VIDEO_URL, GUIDED_FALLBACK_REPLY, buildGuidedFallbackReply, fetchProductImageFromPermalink } from '../lib/utils.js';
 
 dotenv.config();
 
@@ -3948,6 +3948,21 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     // Collage is just a visual preview alongside the website link — capped at 9 products since
     // it was never paginated to begin with (ctaOptions never exposed Next/Prev buttons).
     const previewProducts = allProducts.slice(0, 9);
+
+    // Auto-heal missing images: If any preview product has no image, automatically fetch it from its live website permalink
+    for (const p of previewProducts) {
+        if (!p.imageUri && !p.image_uri && p.permalink) {
+            try {
+                const liveImg = await fetchProductImageFromPermalink(p.permalink);
+                if (liveImg) {
+                    p.imageUri = liveImg;
+                    p.image_uri = liveImg;
+                    supabase.from('products').update({ image_uri: liveImg }).eq('id', p.id).then(() => {}).catch(() => {});
+                }
+            } catch (_) {}
+        }
+    }
+
     console.log('[Collage] Order going into createProductCollage:', previewProducts.map((p, i) => `${i + 1}=${p.color || ''} ${p.name}`.trim()));
     // Include the ordered product IDs AND each product's own image URL in the cache key — IDs
     // alone caught an order drift, but a store owner correcting a wrong/duplicated photo on an
@@ -3995,6 +4010,9 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     }
     if (!collageUrl && (subCatKey === 't_shirts' || subCatKey === 't-shirts' || subCatKey === 'tshirt' || subCatKey === 't_shirt' || subCatKey.includes('polo_t'))) {
         collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_1792417972988_uye5b.jpg';
+    }
+    if (!collageUrl && (subCatKey === 'stripe_shirts' || subCatKey === 'stripe_shirt' || subCatKey === 'stripes_shirts' || subCatKey === 'stripes_shirt' || (subCatKey.includes('stripe') && !subCatKey.includes('t_shirt') && !subCatKey.includes('tshirt')))) {
+        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_1792462789382_8h9bs.jpg';
     }
     if (!collageUrl) {
         console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);

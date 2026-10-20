@@ -6,8 +6,27 @@ import axios from 'axios';
 const PROD_API_URL = 'https://clothing-store-api-two.vercel.app';
 const PROD_API_KEY = 'e2f198b6ca69db732f7475aef0150e70298905b430f9c6e2';
 
-const rawBaseUrl = import.meta.env.VITE_API_URL || PROD_API_URL;
-const BASE_URL = rawBaseUrl.endsWith('/api') ? rawBaseUrl : `${rawBaseUrl.replace(/\/+$/, '')}/api`;
+function getApiBaseUrl() {
+  const isBrowser = typeof window !== 'undefined';
+  const isLocalhost = isBrowser && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.endsWith('.local')
+  );
+
+  let raw = import.meta.env.VITE_API_URL;
+  // If running in browser on a production/remote domain, never call localhost
+  if (isBrowser && !isLocalhost) {
+    if (!raw || raw.includes('localhost') || raw.includes('127.0.0.1')) {
+      raw = PROD_API_URL;
+    }
+  }
+
+  raw = raw || PROD_API_URL;
+  return raw.endsWith('/api') ? raw : `${raw.replace(/\/+$/, '')}/api`;
+}
+
+const BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: BASE_URL,

@@ -9,7 +9,22 @@ const PAGE_SIZE = 24;
 
 // Route product images through the backend proxy so the browser never needs to
 // reach supercollections.in directly (blocked by Cloudflare/hosting firewall).
-const API_BASE = (import.meta.env.VITE_API_URL || 'https://clothing-store-api-two.vercel.app').replace(/\/api$/, '');
+function getApiBase() {
+  const isBrowser = typeof window !== 'undefined';
+  const isLocalhost = isBrowser && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  );
+  let raw = import.meta.env.VITE_API_URL;
+  if (isBrowser && !isLocalhost) {
+    if (!raw || raw.includes('localhost') || raw.includes('127.0.0.1')) {
+      raw = 'https://clothing-store-api-two.vercel.app';
+    }
+  }
+  raw = raw || 'https://clothing-store-api-two.vercel.app';
+  return raw.replace(/\/api$/, '');
+}
+const API_BASE = getApiBase();
 const getProxiedImageUrl = (url) => {
   if (!url) return null;
   return `${API_BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
