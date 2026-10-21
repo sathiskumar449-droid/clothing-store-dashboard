@@ -5,6 +5,7 @@ import { verifyWooWebhookSignature } from '../lib/wooWebhookAuth.js';
 import { clearProductsCache } from './webhook.js';
 import { fetchProductImageFromPermalink } from '../lib/utils.js';
 import { refreshSitemapCategoryUrls } from '../lib/categoryUrls.js';
+import { autoUpdateCategoryCollage } from '../lib/collage.js';
 
 const WOOCOMMERCE_WEBHOOK_SECRET = (process.env.WOOCOMMERCE_WEBHOOK_SECRET || '').trim();
 
@@ -82,6 +83,10 @@ export const addProduct = async (req, res) => {
 
         console.log('✅ Product Saved');
         clearProductsCache();
+        refreshSitemapCategoryUrls().catch(() => {});
+        if (newProduct.category) {
+            autoUpdateCategoryCollage(newProduct.category, null).catch(() => {});
+        }
 
         // Shape the response to match the original JSON format
         res.json({
@@ -129,6 +134,9 @@ export const updateProduct = async (req, res) => {
         }
 
         clearProductsCache();
+        if (data?.category) {
+            autoUpdateCategoryCollage(data.category, null).catch(() => {});
+        }
 
         res.json({
             success: true,
@@ -566,6 +574,11 @@ export const syncProducts = async (req, res) => {
         console.log(`✅ Successfully synced ${dbProducts.length} products to database! (${deletedCount} removed)`);
         clearProductsCache();
 
+        // Automatically warm category URLs and collages in background
+        refreshSitemapCategoryUrls().catch(() => {});
+        const uniqueCategories = [...new Set(dbProducts.map(p => p.category).filter(Boolean))];
+        Promise.allSettled(uniqueCategories.slice(0, 15).map(cat => autoUpdateCategoryCollage(cat, dbProducts))).catch(() => {});
+
         res.json({
             success: true,
             message: `Successfully synced ${dbProducts.length} products to database! Removed ${deletedCount} no-longer-published product(s).`,
@@ -804,8 +817,11 @@ export const handleWooWebhook = async (req, res) => {
             if (error) throw error;
             console.log(`✅ [WooCommerce Webhook] Product ${payload.id} (${payload.name}) synced successfully.`);
 
-            // Refresh live category URLs in background so new categories are discovered immediately
+            // Refresh live category URLs & automatically update category collage in background
             refreshSitemapCategoryUrls().catch(() => {});
+            if (dbProduct.category) {
+                autoUpdateCategoryCollage(dbProduct.category, null).catch(() => {});
+            }
         }
         
         else if (topic === 'product.deleted') {

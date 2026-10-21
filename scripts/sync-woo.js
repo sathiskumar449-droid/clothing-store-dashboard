@@ -4,6 +4,8 @@
 
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+import { refreshSitemapCategoryUrls } from '../lib/categoryUrls.js';
+import { autoUpdateCategoryCollage } from '../lib/collage.js';
 
 dotenv.config();
 
@@ -247,6 +249,20 @@ async function runSync() {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`\n🎉 SYNC FINISHED in ${elapsed}s!`);
     console.log(`📊 Total Synced: ${dbProducts.length} products | Removed: ${deletedCount} deleted products\n`);
+
+    // 7. Auto-refresh live category URLs and category collages in background
+    console.log('🔄 Updating category URLs and warming up collage cache...');
+    try {
+        await refreshSitemapCategoryUrls();
+        const uniqueCategories = [...new Set(dbProducts.map(p => p.category).filter(Boolean))];
+        const topCategories = uniqueCategories.slice(0, 15);
+        for (const cat of topCategories) {
+            await autoUpdateCategoryCollage(cat, dbProducts);
+        }
+        console.log('✅ Category URLs and Collages successfully updated!');
+    } catch (postSyncErr) {
+        console.warn('⚠️ Post-sync category URL / collage update skipped:', postSyncErr.message);
+    }
 }
 
 runSync().catch(err => {

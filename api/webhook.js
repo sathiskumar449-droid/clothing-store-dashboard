@@ -2504,15 +2504,16 @@ const SEARCH_EN_STOP = new Set(['is', 'are', 'available', 'do', 'you', 'have', '
     'needed', 'wanted', 'wants', 'i', 'my', 'me', 'us', 'we', 'this', 'that', 'one', 'ones',
     'looking', 'for', 'tell', 'me', 'price', 'cost', 'how', 'much', 'under', 'below', 'less',
     'than', 'find', 'display', 'search', 'some', 'can', 'give', 'look',
-    // Quantity/order-question filler — a customer asking "how many can I order" or "single
-    // piece" about an already-identified product is asking about QUANTITY, not naming an extra
-    // product attribute, so these must never be able to veto an otherwise-good category match
-    // (see Bug: "Brand T Shirt 10 pieces how much bro" was wrongly going to the not-found reply).
-    'pieces', 'piece', 'pcs', 'pc', 'qty', 'quantity', 'single', 'minimum', 'min']);
+    // Quantity/order-question filler & browsing keywords
+    'pieces', 'piece', 'pcs', 'pc', 'qty', 'quantity', 'single', 'minimum', 'min',
+    'collection', 'collections', 'catalog', 'catalogue', 'model', 'models', 'design', 'designs',
+    'item', 'items', 'variety', 'varieties', 'photo', 'photos', 'image', 'images', 'pic', 'pics',
+    'picture', 'pictures', 'sample', 'samples', 'link', 'links', 'details', 'detail', 'list', 'showcase']);
 const SEARCH_TA_STOP = new Set(['iruka', 'irukkuma', 'irukka', 'iruku', 'irruku', 'iruke', 'pakanum',
     'vaikanum', 'panunga', 'sollu', 'kodu', 'kudu', 'da', 'bro', 'anna', 'sir', 'madam', 'la', 'ku',
     'ah', 'ha', 'na', 'tharinga', 'kudunga', 'thareengala', 'venum', 'vendum', 'venam', 'vena',
     'enaku', 'eanku', 'yenaku', 'enakku', 'yenakku', 'naaku', 'kaatu', 'kaattunga', 'hai',
+    'padam', 'padangal', 'kaatunga', 'paakanum',
     // Additional intent-filler verbs ("send it", "needed") that aren't covered above — stripped
     // the same way as the rest of this set so they never participate in catalog scoring.
     'anuppu', 'anuppunga', 'vendiyathu', 'vendiathu',
@@ -3978,59 +3979,61 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     // whenever the visual output of that function changes again. Old rows under the
     // previous prefix just become unreachable dead rows; no manual cache-clearing needed.
     const COLLAGE_CACHE_VERSION = 'v2';
-    const subCatKey = (session.selectedSubCategory || ctaOptions?.subCategoryDisplayName || '').toLowerCase().replace(/\s+/g, '_');
+    const subCatKey = (session.selectedSubCategory || ctaOptions?.subCategoryDisplayName || '').toLowerCase().replace(/[\s\/-]+/g, '_');
     const cacheKey = COLLAGE_CACHE_VERSION + '_' + subCatKey + '_preview_' + orderSignature;
     let collageUrl = null;
+
+    // 1. Check exact cache key (matches current set of products)
     if (subCatKey) {
         const { data: cachedCollage } = await supabase
             .from('collage_cache')
             .select('collage_url')
-            .or(`cache_key.eq.${cacheKey},cache_key.eq.${COLLAGE_CACHE_VERSION}_${subCatKey}_preview,cache_key.eq.${COLLAGE_CACHE_VERSION}_${subCatKey}`)
-            .limit(1)
+            .eq('cache_key', cacheKey)
             .maybeSingle();
+
         if (cachedCollage?.collage_url) {
-            console.log(`[Collage] Cache HIT: ${cachedCollage.collage_url}`);
+            console.log(`[Collage] Exact Cache HIT: ${cachedCollage.collage_url}`);
             collageUrl = cachedCollage.collage_url;
         }
     }
-    if (!collageUrl && subCatKey.includes('korean_linen')) {
-        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_korean_linen_shirts_1791769780047.jpg';
-    }
-    if (!collageUrl && (subCatKey.includes('acid_wash') || subCatKey.includes('acid'))) {
-        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_acid_wash_t_shirts_1791852416470.jpg';
-    }
-    if (!collageUrl && (subCatKey.includes('3pcs') || subCatKey.includes('track_pant'))) {
-        collageUrl = 'https://www.supercollections.in/wp-content/uploads/2026/10/track-pant-colours-1170x1566-2.jpg';
-    }
-    if (!collageUrl && (subCatKey.includes('chava') || subCatKey.includes('chava_shirt') || subCatKey.includes('chava_shirts'))) {
-        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_chava_shirts_1792200630233.jpg';
-    }
-    if (!collageUrl && (subCatKey.includes('party_wear') || subCatKey.includes('party'))) {
-        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_1792378831132_l9aq5.jpg';
-    }
-    if (!collageUrl && (subCatKey === 't_shirts' || subCatKey === 't-shirts' || subCatKey === 'tshirt' || subCatKey === 't_shirt' || subCatKey.includes('polo_t'))) {
-        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_1792417972988_uye5b.jpg';
-    }
-    if (!collageUrl && (subCatKey === 'stripe_shirts' || subCatKey === 'stripe_shirt' || subCatKey === 'stripes_shirts' || subCatKey === 'stripes_shirt' || (subCatKey.includes('stripe') && !subCatKey.includes('t_shirt') && !subCatKey.includes('tshirt')))) {
-        collageUrl = 'https://rekditdhciooibaiifei.supabase.co/storage/v1/object/public/collages/collage_1792462789382_8h9bs.jpg';
-    }
-    if (!collageUrl) {
-        console.log(`[Collage] Cache MISS: ${cacheKey}, generating...`);
-        collageUrl = await createProductCollage(previewProducts, 1, productsPool);
-        if (collageUrl && session.selectedSubCategory) {
-            try {
-                const { error } = await supabase
-                    .from('collage_cache')
-                    .upsert(
-                        { cache_key: cacheKey, collage_url: collageUrl },
-                        { onConflict: 'cache_key' }
-                    );
 
-                if (error) {
-                    console.warn('[Collage] Cache save failed:', error.message);
-                }
-            } catch (err) {
-                console.warn('[Collage] Cache save failed:', err.message);
+    // 2. If no exact match (new products added), generate dynamically with fast timeout
+    if (!collageUrl) {
+        console.log(`[Collage] Cache MISS for ${cacheKey}, generating live...`);
+        try {
+            collageUrl = await createProductCollage(previewProducts, 1, productsPool, true);
+        } catch (genErr) {
+            console.warn('[Collage] Live generation error:', genErr.message);
+        }
+
+        if (collageUrl) {
+            // Save to cache asynchronously so we never block WhatsApp reply
+            const keysToSave = [
+                cacheKey,
+                `${COLLAGE_CACHE_VERSION}_${subCatKey}_preview`,
+                `${COLLAGE_CACHE_VERSION}_${subCatKey}`
+            ];
+            for (const k of keysToSave) {
+                supabase.from('collage_cache')
+                    .upsert({ cache_key: k, collage_url: collageUrl }, { onConflict: 'cache_key' })
+                    .then(() => {}).catch(() => {});
+            }
+        } else if (subCatKey) {
+            // 3. Fallback: check if ANY prior cached collage exists for this category in cache
+            const { data: fallbackCollage } = await supabase
+                .from('collage_cache')
+                .select('collage_url')
+                .ilike('cache_key', `%${subCatKey}%`)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (fallbackCollage?.collage_url) {
+                console.log(`[Collage] Using prior category collage fallback: ${fallbackCollage.collage_url}`);
+                collageUrl = fallbackCollage.collage_url;
+            } else if (previewProducts[0]?.imageUri || previewProducts[0]?.image_uri) {
+                // 4. Last resort: use the single sample image of the first product
+                collageUrl = previewProducts[0].imageUri || previewProducts[0].image_uri;
             }
         }
     }
@@ -4908,8 +4911,10 @@ async function handleIntent(intentResult, session, products, from) {
                             (Array.isArray(p.categories) && p.categories.includes('3pcs Track Pants')) ||
                             (p.name || '').toLowerCase().includes('3pcs track pant');
                     }
-                    return p.category === bestCategory ||
-                        (Array.isArray(p.categories) && p.categories.includes(bestCategory));
+                    const target = (bestCategory || '').toLowerCase().trim();
+                    const pCat = (p.category || '').toLowerCase().trim();
+                    const pCats = (Array.isArray(p.categories) ? p.categories : []).map(c => (c || '').toLowerCase().trim());
+                    return pCat === target || pCats.includes(target) || (target.length > 3 && (pCat.includes(target) || pCats.some(c => c.includes(target))));
                 })
             );
             if (categoryProducts.length === 0) {

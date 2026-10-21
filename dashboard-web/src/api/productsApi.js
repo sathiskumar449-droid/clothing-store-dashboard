@@ -46,7 +46,11 @@ export const getWooProducts = async () => {
     stock_quantity: product.stock_quantity,
     manage_stock: product.manage_stock,
     permalink: product.permalink,
-    categories: (product.categories || []).map(category => ({ name: category.name })),
+    categories: (product.categories || []).map(category => ({
+      id: category.id,
+      name: category.name,
+      slug: category.slug
+    })),
     attributes: (product.attributes || []).map(attribute => ({
       name: attribute.name,
       options: attribute.options

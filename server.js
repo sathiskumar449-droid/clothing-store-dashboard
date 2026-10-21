@@ -79,6 +79,8 @@ app.post('/api/products/sync-from-woo', requireApiKey, syncFromWoo);
 app.get('/api/products/woo/page', requireApiKey, getWooProductsPage);
 app.get('/api/products/woo/:id/variations', requireApiKey, getWooProductVariations);
 app.post('/api/webhook/woocommerce', handleWooWebhook);
+app.post('/api/woocommerce-product-webhook', handleWooWebhook);
+app.post('/api/woocommerce-webhook', handleWooWebhook);
 
 // =============================
 // 📦 Orders API
