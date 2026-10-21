@@ -4819,14 +4819,28 @@ async function handleIntent(intentResult, session, products, from) {
                 }
             }
 
+            // Specific routing for linen pants queries:
+            // When customer types "linen pant", "linen pants", "lenin pant", "lenin pants", etc.
+            const isLinenPantSearch = (queryWords.includes('lenin') || queryWords.includes('linen') || cleanedQ.includes('linen') || cleanedQ.includes('lenin')) &&
+                (queryWords.includes('pant') || queryWords.includes('pants') || cleanedQ.includes('pant') || cleanedQ.includes('pants'));
+
+            if (isLinenPantSearch) {
+                const linenPantCat = inStock.find(p => (p.category || '').toLowerCase() === 'linen pants')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('linen pant'))?.category
+                    || 'Linen Pants';
+                bestCategory = linenPantCat;
+            }
+
             // Specific routing for linen / Korean linen shirt queries:
             // When customer types "lenin", "linen", "korean linen shirt", "linen shirt", etc.
-            // without specifying "half sleeve" or "cotton", route directly to "Korean Linen Shirts".
+            // without specifying "half sleeve" or "cotton" or "pant", route directly to "Korean Linen Shirts".
             const isLinenSearch = (queryWords.includes('lenin') || queryWords.includes('linen') || queryWords.includes('korean')) &&
+                !queryWords.includes('pant') && !cleanedQ.includes('pant') &&
+                !queryWords.includes('pants') && !cleanedQ.includes('pants') &&
                 !queryWords.includes('half') && !cleanedQ.includes('half') &&
                 !queryWords.includes('cotton') && !cleanedQ.includes('cotton');
 
-            if (isLinenSearch) {
+            if (isLinenSearch && !isLinenPantSearch) {
                 const koreanLinenCat = inStock.find(p => (p.category || '').toLowerCase() === 'korean linen shirts')?.category;
                 if (koreanLinenCat) {
                     bestCategory = koreanLinenCat;
@@ -4888,6 +4902,11 @@ async function handleIntent(intentResult, session, products, from) {
 
             const categoryProducts = applyPriceFilter(
                 inStock.filter(p => {
+                    if (isLinenPantSearch) {
+                        return (p.category || '').toLowerCase() === 'linen pants' ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase() === 'linen pants')) ||
+                            (p.name || '').toLowerCase().includes('linen pant');
+                    }
                     if (isPoloOrTshirtSearch) {
                         return (p.category === 'T-Shirts' && !(p.name || '').toLowerCase().includes('dry fit') && !(p.name || '').toLowerCase().includes('acid wash')) ||
                             (p.name || '').toLowerCase().includes('polo t-shirt');
