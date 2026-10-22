@@ -1233,7 +1233,8 @@ async function sendButtons(to, bodyText, buttons, options = {}) {
 
 // Normalize user query by correcting common spelling variations and typos
 const normalizeQuery = (queryText) => {
-    let t = queryText.toLowerCase().trim();
+    let t = (queryText || '').toLowerCase().trim();
+    t = t.replace(/\bboot\s+cuts?\b/g, 'bootcut');
 
     const replacements = {
         'shit': 'shirt',
@@ -1246,6 +1247,7 @@ const normalizeQuery = (queryText) => {
         'coton': 'cotton',
         'palin': 'plain',
         'tshirt': 't-shirt',
+        'boot-cut': 'bootcut',
     };
 
     let words = t.split(/\s+/);
@@ -1776,7 +1778,7 @@ export const getParentCategory = (categoryName) => {
     if (catLower.includes('track') || catLower.includes('jogger') || catLower.includes('popcorn track')) {
         return 'Track Pants';
     }
-    if (['pant', 'phant', 'jeans', 'trouser', 'cargo', 'lycra', 'laycra'].some(kw => catLower.includes(kw))) {
+    if (['pant', 'phant', 'jeans', 'trouser', 'cargo', 'lycra', 'laycra', 'bootcut'].some(kw => catLower.includes(kw))) {
         return 'Pants';
     }
     if (['shirt', 'linen', 'lenin', 'chava', 'printed', 'stripes', 'cotton shirt'].some(kw => catLower.includes(kw))) {
@@ -1830,10 +1832,15 @@ const getEffectiveCategory = (product) => {
 // "primary" — checking the full categories array (case/whitespace-insensitive) catches all of them.
 const productMatchesSubCategory = (p, subCategory) => {
     const target = (subCategory || '').toLowerCase().trim();
+    const targetNorm = target.endsWith('s') ? target.slice(0, -1) : target;
     const cats = Array.isArray(p.categories) && p.categories.length > 0
         ? p.categories
         : [p.category];
-    return cats.some(c => (c || '').toLowerCase().trim() === target);
+    return cats.some(c => {
+        const cLower = (c || '').toLowerCase().trim();
+        const cNorm = cLower.endsWith('s') ? cLower.slice(0, -1) : cLower;
+        return cLower === target || cNorm === targetNorm;
+    });
 };
 
 // Helper to calculate active category counts
@@ -2545,6 +2552,7 @@ const normalizeSearchSpelling = (s) => s
     .replace(/\bt[.\s-]*shirt?s?\b/g, 'tshirt')
     .replace(/\bparty\s*wear\b/g, 'party wear')
     .replace(/\bpartywear\b/g, 'party wear')
+    .replace(/\bboot\s*cuts?\b/g, 'bootcut')
     .replace(/\bphants?\b/g, 'pant')
     .replace(/\bpants?\b/g, 'pant')
     .replace(/\bfoot\s*bal+s?\b/g, 'football')
@@ -3343,6 +3351,9 @@ function detectIntent(text, products = [], session = null) {
     if (!foundCategory && (/\bhood(y|ies|ie)?\b/i.test(t) || t.includes('hood'))) {
         foundCategory = 'Hoody';
     }
+    if (!foundCategory && /\bboot\s*cut(s)?\b/i.test(t)) {
+        foundCategory = 'Pants';
+    }
 
     if (foundCategory) {
         return { type: 'SEARCH', query: t };
@@ -3394,7 +3405,7 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: STOCK_OUT_COMPLAINT_REPLY };
     }
 
-    const searchKeywords = ['party', 'partywear', 'hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'acid', 'zipper', 'stripe', 'stripes', 'sleeveless', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget'];
+    const searchKeywords = ['party', 'partywear', 'hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'acid', 'zipper', 'stripe', 'stripes', 'sleeveless', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget', 'bootcut', 'boot cut'];
     if (searchKeywords.some(kw => t.includes(kw))) {
         return { type: 'SEARCH', query: t };
     }
@@ -3455,6 +3466,12 @@ function matchParentCategory(text, parentCategories) {
         'pants': 'Pants',
         'phant': 'Pants',
         'phants': 'Pants',
+        'bootcut': 'Pants',
+        'boot cut': 'Pants',
+        'bootcut pant': 'Pants',
+        'bootcut pants': 'Pants',
+        'boot cut pant': 'Pants',
+        'boot cut pants': 'Pants',
         'jeans': 'Pants',
         'jean': 'Pants',
         'shorts': 'Shorts',
@@ -4831,6 +4848,18 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = linenPantCat;
             }
 
+            // Specific routing for bootcut pants queries:
+            // When customer types "bootcut", "boot cut", "bootcut pant", "boot cut pant", etc.
+            const isBootcutSearch = queryWords.includes('bootcut') || cleanedQ.includes('bootcut') ||
+                query.toLowerCase().includes('bootcut') || query.toLowerCase().includes('boot cut');
+
+            if (isBootcutSearch) {
+                const bootcutCat = inStock.find(p => (p.category || '').toLowerCase() === 'bootcut pants')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('bootcut'))?.category
+                    || 'Bootcut Pants';
+                bestCategory = bootcutCat;
+            }
+
             // Specific routing for linen / Korean linen shirt queries:
             // When customer types "lenin", "linen", "korean linen shirt", "linen shirt", etc.
             // without specifying "half sleeve" or "cotton" or "pant", route directly to "Korean Linen Shirts".
@@ -4906,6 +4935,10 @@ async function handleIntent(intentResult, session, products, from) {
                         return (p.category || '').toLowerCase() === 'linen pants' ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase() === 'linen pants')) ||
                             (p.name || '').toLowerCase().includes('linen pant');
+                    }
+                    if (isBootcutSearch) {
+                        return (p.category || '').toLowerCase() === 'bootcut pants' ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase() === 'bootcut pants'));
                     }
                     if (isPoloOrTshirtSearch) {
                         return (p.category === 'T-Shirts' && !(p.name || '').toLowerCase().includes('dry fit') && !(p.name || '').toLowerCase().includes('acid wash')) ||
