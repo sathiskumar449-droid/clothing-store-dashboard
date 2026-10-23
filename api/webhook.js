@@ -3405,7 +3405,7 @@ function detectIntent(text, products = [], session = null) {
         return { type: 'FAQ', reply: STOCK_OUT_COMPLAINT_REPLY };
     }
 
-    const searchKeywords = ['party', 'partywear', 'hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'acid', 'zipper', 'stripe', 'stripes', 'sleeveless', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget', 'bootcut', 'boot cut'];
+    const searchKeywords = ['party', 'partywear', 'hoody', 'hoodie', 'hoodies', 'printed', 'linen', 'lenin', 'korean', 'cotton', 'cargo', 'acid', 'zipper', 'stripe', 'stripes', 'sleeveless', 'black', 'white', 'green', 'blue', 'red', 'under', 'below', 'budget', 'bootcut', 'boot cut', 'brush'];
     if (searchKeywords.some(kw => t.includes(kw))) {
         return { type: 'SEARCH', query: t };
     }
@@ -3460,6 +3460,10 @@ function matchParentCategory(text, parentCategories) {
         'tshirts': 'T-Shirts',
         't-shirt': 'T-Shirts',
         't-shirts': 'T-Shirts',
+        'brush cotton shirt': 'Shirts',
+        'brush cotton shirts': 'Shirts',
+        'brush cotton': 'Shirts',
+        'brush': 'Shirts',
         'shirt': 'Shirts',
         'shirts': 'Shirts',
         'pant': 'Pants',
@@ -4919,6 +4923,16 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = partyWearCat;
             }
 
+            // Specific routing for brush cotton shirt queries:
+            // When customer types "brush cotton", "brush cotton shirt", "brush cotton shirts", "brush shirt", etc.
+            const isBrushCottonSearch = cleanedQ.includes('brush') || queryWords.includes('brush');
+            if (isBrushCottonSearch) {
+                const brushCat = inStock.find(p => (p.category || '').toLowerCase() === 'brush cotton shirt')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('brush'))?.category
+                    || 'Brush Cotton Shirt';
+                bestCategory = brushCat;
+            }
+
             // Specific routing for T-Shirts / Polo T-Shirts queries:
             const isPoloOrTshirtSearch = cleanedQ.includes('polo') ||
                 cleanedQ === 'tshirt' || cleanedQ === 't shirt' || cleanedQ === 't-shirt' ||
@@ -4939,6 +4953,11 @@ async function handleIntent(intentResult, session, products, from) {
                     if (isBootcutSearch) {
                         return (p.category || '').toLowerCase() === 'bootcut pants' ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase() === 'bootcut pants'));
+                    }
+                    if (isBrushCottonSearch) {
+                        return (p.category || '').toLowerCase().includes('brush') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('brush'))) ||
+                            (p.name || '').toLowerCase().includes('brush');
                     }
                     if (isPoloOrTshirtSearch) {
                         return (p.category === 'T-Shirts' && !(p.name || '').toLowerCase().includes('dry fit') && !(p.name || '').toLowerCase().includes('acid wash')) ||
