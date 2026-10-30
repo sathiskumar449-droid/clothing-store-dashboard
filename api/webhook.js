@@ -4943,6 +4943,16 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = tShirtCat;
             }
 
+            // Specific routing for Chinese Collar Shirt queries:
+            // When customer types "chinese collar", "chinese collar shirt", "chinese collar shirts", "chinese shirt", etc.
+            const isChineseCollarSearch = cleanedQ.includes('chinese') || queryWords.includes('chinese');
+            if (isChineseCollarSearch) {
+                const chineseCat = inStock.find(p => (p.category || '').toLowerCase() === 'chinese collar shirt')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('chinese'))?.category
+                    || 'Chinese Collar Shirt';
+                bestCategory = chineseCat;
+            }
+
             const categoryProducts = applyPriceFilter(
                 inStock.filter(p => {
                     if (isLinenPantSearch) {
@@ -4981,6 +4991,11 @@ async function handleIntent(intentResult, session, products, from) {
                         return p.category === '3pcs Track Pants' ||
                             (Array.isArray(p.categories) && p.categories.includes('3pcs Track Pants')) ||
                             (p.name || '').toLowerCase().includes('3pcs track pant');
+                    }
+                    if (isChineseCollarSearch) {
+                        return (p.category || '').toLowerCase().includes('chinese') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('chinese'))) ||
+                            (p.name || '').toLowerCase().includes('chinese');
                     }
                     const target = (bestCategory || '').toLowerCase().trim();
                     const pCat = (p.category || '').toLowerCase().trim();
@@ -5075,6 +5090,7 @@ async function handleIntent(intentResult, session, products, from) {
             // one arbitrary listing's image. Only an actual single-product category still falls
             // through to the plain Scenario A single-photo reply below.
             if (categoryProducts.length > 1) {
+                categoryProducts.sort((a, b) => (b.id || 0) - (a.id || 0));
                 session.searchProducts = categoryProducts;
                 const capSub = bestCategory.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
                 const emoji = getCategoryEmoji(session.selectedParentCategory || '');
