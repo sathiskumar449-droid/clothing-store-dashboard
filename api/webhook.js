@@ -4686,8 +4686,31 @@ async function handleIntent(intentResult, session, products, from) {
                 return buildGuidedFallbackReply(session);
             }
 
+            // If the query is specifically asking for polo fit pants, route directly to Polo Fit White Pant
+            const isPoloPantQuery = (queryWords.includes('polo') || cleanedQ.includes('polo')) &&
+                (queryWords.includes('pant') || cleanedQ.includes('pant') || queryWords.includes('pants') || cleanedQ.includes('pants') || queryWords.includes('fit') || cleanedQ.includes('fit')) &&
+                !queryWords.includes('tshirt') && !cleanedQ.includes('tshirt') && !queryWords.includes('t-shirt') && !cleanedQ.includes('t-shirt') && !cleanedQ.includes('t shirt');
+            if (isPoloPantQuery) {
+                const poloPantProducts = inStock.filter(p =>
+                    (p.category || '').toLowerCase().includes('polo fit') ||
+                    (p.name || '').toLowerCase().includes('polo fit') ||
+                    (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('polo fit')))
+                );
+                if (poloPantProducts.length > 0) {
+                    session.selectedParentCategory = 'Pants';
+                    session.selectedSubCategory = 'Polo Fit White Pant';
+                    if (poloPantProducts.length > 1) {
+                        session.searchProducts = poloPantProducts;
+                        session.state = "AWAITING_SUBCATEGORY_SELECTION";
+                        return await prepareProductsPageResponse(session, products, '👖 Polo Fit White Pant', { subCategoryDisplayName: 'Polo Fit White Pant' });
+                    }
+                    return buildCategoryAvailableReply(poloPantProducts[0], products);
+                }
+            }
+
             // If the query is specifically asking for polo t-shirts, route directly to the 11 in-stock Polo T-Shirts under T-Shirts
-            const isPoloQuery = (queryWords.includes('polo') || cleanedQ.includes('polo')) && !queryWords.includes('pant') && !cleanedQ.includes('pant');
+            const isPoloQuery = (queryWords.includes('polo') || cleanedQ.includes('polo')) &&
+                !queryWords.includes('pant') && !cleanedQ.includes('pant') && !queryWords.includes('pants') && !cleanedQ.includes('pants') && !queryWords.includes('fit') && !cleanedQ.includes('fit');
             if (isPoloQuery) {
                 const poloProducts = inStock.filter(p =>
                     (p.category === 'T-Shirts' && !p.name.toLowerCase().includes('dry fit') && !p.name.toLowerCase().includes('acid wash')) ||
@@ -4933,10 +4956,24 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = brushCat;
             }
 
+            // Specific routing for Polo Fit Pants queries:
+            // When customer types "polo fit pant", "polo fit pants", "polo pant", "polo pants", "polo fit", etc.
+            const isPoloPantSearch = (cleanedQ.includes('polo') || queryWords.includes('polo')) &&
+                (cleanedQ.includes('pant') || queryWords.includes('pant') || cleanedQ.includes('pants') || queryWords.includes('pants') || cleanedQ.includes('fit') || queryWords.includes('fit')) &&
+                !cleanedQ.includes('tshirt') && !cleanedQ.includes('t shirt') && !cleanedQ.includes('t-shirt') &&
+                !queryWords.includes('tshirt') && !queryWords.includes('t-shirt');
+            if (isPoloPantSearch) {
+                const poloPantCat = inStock.find(p => (p.category || '').toLowerCase().includes('polo fit'))?.category
+                    || 'Polo Fit White Pant';
+                bestCategory = poloPantCat;
+            }
+
             // Specific routing for T-Shirts / Polo T-Shirts queries:
-            const isPoloOrTshirtSearch = cleanedQ.includes('polo') ||
+            const isPoloOrTshirtSearch = !isPoloPantSearch && (
+                (cleanedQ.includes('polo') && !cleanedQ.includes('pant') && !cleanedQ.includes('pants') && !cleanedQ.includes('fit')) ||
                 cleanedQ === 'tshirt' || cleanedQ === 't shirt' || cleanedQ === 't-shirt' ||
-                cleanedQ === 'tshirts' || cleanedQ === 't shirts' || cleanedQ === 't-shirts';
+                cleanedQ === 'tshirts' || cleanedQ === 't shirts' || cleanedQ === 't-shirts'
+            );
             if (isPoloOrTshirtSearch) {
                 const tShirtCat = inStock.find(p => (p.category || '').toLowerCase() === 't-shirts')?.category
                     || 'T-Shirts';
@@ -4968,6 +5005,11 @@ async function handleIntent(intentResult, session, products, from) {
                         return (p.category || '').toLowerCase().includes('brush') ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('brush'))) ||
                             (p.name || '').toLowerCase().includes('brush');
+                    }
+                    if (isPoloPantSearch) {
+                        return (p.category || '').toLowerCase().includes('polo fit') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('polo fit'))) ||
+                            (p.name || '').toLowerCase().includes('polo fit');
                     }
                     if (isPoloOrTshirtSearch) {
                         return (p.category === 'T-Shirts' && !(p.name || '').toLowerCase().includes('dry fit') && !(p.name || '').toLowerCase().includes('acid wash')) ||
