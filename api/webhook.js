@@ -4990,6 +4990,16 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = chineseCat;
             }
 
+            // Specific routing for Embroidered Shirt queries:
+            // When customer types "embroidered shirt", "embroidered shirts", "embroidered", "embroider shirt", etc.
+            const isEmbroideredSearch = cleanedQ.includes('embroider') || queryWords.includes('embroider') || queryWords.includes('embroidered');
+            if (isEmbroideredSearch) {
+                const embroideredCat = inStock.find(p => (p.category || '').toLowerCase() === 'embroidered shirt')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('embroider'))?.category
+                    || 'Embroidered Shirt';
+                bestCategory = embroideredCat;
+            }
+
             const categoryProducts = applyPriceFilter(
                 inStock.filter(p => {
                     if (isLinenPantSearch) {
@@ -5038,6 +5048,11 @@ async function handleIntent(intentResult, session, products, from) {
                         return (p.category || '').toLowerCase().includes('chinese') ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('chinese'))) ||
                             (p.name || '').toLowerCase().includes('chinese');
+                    }
+                    if (isEmbroideredSearch) {
+                        return (p.category || '').toLowerCase().includes('embroider') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('embroider'))) ||
+                            (p.name || '').toLowerCase().includes('embroider');
                     }
                     const target = (bestCategory || '').toLowerCase().trim();
                     const pCat = (p.category || '').toLowerCase().trim();
