@@ -4990,13 +4990,16 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = chineseCat;
             }
 
-            // Specific routing for Embroidered Shirt queries:
-            // When customer types "embroidered shirt", "embroidered shirts", "embroidered", "embroider shirt", etc.
-            const isEmbroideredSearch = cleanedQ.includes('embroider') || queryWords.includes('embroider') || queryWords.includes('embroidered');
+            // Specific routing for Bottom Embroidery Shirt / Embroidered Shirt queries:
+            // When customer types "bottom embroidery shirt", "bottom embroidery", "embroidered shirt", "embroidered", "embroidery", etc.
+            const isEmbroideredSearch = cleanedQ.includes('embroid') ||
+                queryWords.some(w => w.includes('embroid')) ||
+                cleanedQ.includes('bottom embroidery');
             if (isEmbroideredSearch) {
-                const embroideredCat = inStock.find(p => (p.category || '').toLowerCase() === 'embroidered shirt')?.category
-                    || inStock.find(p => (p.category || '').toLowerCase().includes('embroider'))?.category
-                    || 'Embroidered Shirt';
+                const embroideredCat = inStock.find(p => (p.category || '').toLowerCase() === 'bottom embroidery shirt')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('bottom embroidery'))?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('embroid'))?.category
+                    || 'Bottom Embroidery Shirt';
                 bestCategory = embroideredCat;
             }
 
@@ -5050,9 +5053,9 @@ async function handleIntent(intentResult, session, products, from) {
                             (p.name || '').toLowerCase().includes('chinese');
                     }
                     if (isEmbroideredSearch) {
-                        return (p.category || '').toLowerCase().includes('embroider') ||
-                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('embroider'))) ||
-                            (p.name || '').toLowerCase().includes('embroider');
+                        return (p.category || '').toLowerCase().includes('bottom embroidery') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('bottom embroidery'))) ||
+                            (p.name || '').toLowerCase().includes('bottom embroidery');
                     }
                     const target = (bestCategory || '').toLowerCase().trim();
                     const pCat = (p.category || '').toLowerCase().trim();
