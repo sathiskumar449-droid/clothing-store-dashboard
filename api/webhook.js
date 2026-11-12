@@ -1248,6 +1248,10 @@ const normalizeQuery = (queryText) => {
         'palin': 'plain',
         'tshirt': 't-shirt',
         'boot-cut': 'bootcut',
+        'tarck': 'track',
+        'tarcks': 'tracks',
+        'trak': 'track',
+        'traks': 'tracks',
     };
 
     let words = t.split(/\s+/);
@@ -4062,7 +4066,7 @@ export async function prepareProductsPageResponse(session, productsPool, queryLa
     const displayName = ctaOptions.subCategoryDisplayName;
     const url = getCategoryUrl(session.selectedSubCategory || displayName);
     let buttonText = `Shop ${displayName}`;
-    if (displayName.toLowerCase().includes('3pcs track')) buttonText = 'Shop Track Pants';
+    if (displayName.toLowerCase().includes('track')) buttonText = 'Shop Track Pants';
     else if (buttonText.length > 20) buttonText = 'Shop Now';
 
     return {
@@ -4914,14 +4918,24 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = acidWashCat;
             }
 
+            // Specific routing for Lycra track pants queries:
+            const isLycraTrackSearch = cleanedQ.includes('lycra') || queryWords.includes('lycra');
+            if (isLycraTrackSearch) {
+                const lycraCat = inStock.find(p => (p.category || '').toLowerCase() === 'lycra track pant')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('lycra'))?.category
+                    || 'Lycra Track Pant';
+                bestCategory = lycraCat;
+            }
+
             // Specific routing for 3pcs track pants queries:
-            const is3pcsTrackSearch = cleanedQ.includes('3pcs') || queryWords.includes('3pcs') ||
+            const is3pcsTrackSearch = !isLycraTrackSearch && (cleanedQ.includes('3pcs') || queryWords.includes('3pcs') ||
                 ((queryWords.includes('track') || cleanedQ.includes('track')) &&
                  !queryWords.includes('popcorn') && !cleanedQ.includes('popcorn') &&
                  !queryWords.includes('adidas') && !cleanedQ.includes('adidas') &&
                  !queryWords.includes('baggy') && !cleanedQ.includes('baggy') &&
                  !queryWords.includes('cargo') && !cleanedQ.includes('cargo') &&
-                 !queryWords.includes('jogger') && !cleanedQ.includes('jogger'));
+                 !queryWords.includes('lycra') && !cleanedQ.includes('lycra') &&
+                 !queryWords.includes('jogger') && !cleanedQ.includes('jogger')));
             if (is3pcsTrackSearch) {
                 const threePcsCat = inStock.find(p => (p.category || '').toLowerCase() === '3pcs track pants')?.category
                     || '3pcs Track Pants';
@@ -5046,6 +5060,11 @@ async function handleIntent(intentResult, session, products, from) {
                         return p.category === '3pcs Track Pants' ||
                             (Array.isArray(p.categories) && p.categories.includes('3pcs Track Pants')) ||
                             (p.name || '').toLowerCase().includes('3pcs track pant');
+                    }
+                    if (isLycraTrackSearch) {
+                        return (p.category || '').toLowerCase().includes('lycra') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('lycra'))) ||
+                            (p.name || '').toLowerCase().includes('lycra');
                     }
                     if (isChineseCollarSearch) {
                         return (p.category || '').toLowerCase().includes('chinese') ||
