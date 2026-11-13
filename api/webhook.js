@@ -4918,6 +4918,15 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = acidWashCat;
             }
 
+            // Specific routing for Cargo Track queries:
+            const isCargoTrackSearch = (cleanedQ.includes('cargo') || queryWords.includes('cargo')) &&
+                (cleanedQ.includes('track') || queryWords.includes('track') || cleanedQ.includes('trak') || queryWords.includes('trak') || cleanedQ.includes('tarck') || queryWords.includes('tarck'));
+            if (isCargoTrackSearch) {
+                const cargoTrackCat = inStock.find(p => (p.category || '').toLowerCase() === 'cargo track')?.category
+                    || 'Cargo Track';
+                bestCategory = cargoTrackCat;
+            }
+
             // Specific routing for Lycra track pants queries:
             const isLycraTrackSearch = cleanedQ.includes('lycra') || queryWords.includes('lycra');
             if (isLycraTrackSearch) {
@@ -4928,7 +4937,7 @@ async function handleIntent(intentResult, session, products, from) {
             }
 
             // Specific routing for 3pcs track pants queries:
-            const is3pcsTrackSearch = !isLycraTrackSearch && (cleanedQ.includes('3pcs') || queryWords.includes('3pcs') ||
+            const is3pcsTrackSearch = !isLycraTrackSearch && !isCargoTrackSearch && (cleanedQ.includes('3pcs') || queryWords.includes('3pcs') ||
                 ((queryWords.includes('track') || cleanedQ.includes('track')) &&
                  !queryWords.includes('popcorn') && !cleanedQ.includes('popcorn') &&
                  !queryWords.includes('adidas') && !cleanedQ.includes('adidas') &&
@@ -5065,6 +5074,11 @@ async function handleIntent(intentResult, session, products, from) {
                         return (p.category || '').toLowerCase().includes('lycra') ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('lycra'))) ||
                             (p.name || '').toLowerCase().includes('lycra');
+                    }
+                    if (isCargoTrackSearch) {
+                        return (p.category || '').toLowerCase() === 'cargo track' ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase() === 'cargo track')) ||
+                            (p.name || '').toLowerCase().startsWith('cargo track -');
                     }
                     if (isChineseCollarSearch) {
                         return (p.category || '').toLowerCase().includes('chinese') ||
