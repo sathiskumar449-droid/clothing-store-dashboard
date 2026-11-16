@@ -1365,9 +1365,9 @@ const stripVariantSuffix = (name) => (name || '').toLowerCase().replace(/\s*\([^
 // Exported for lib/intents.js's colour-context matcher (see matchColorQuery), which needs the same
 // fuzzy image-fallback chain a normal product-card reply gets — not just a bare product.imageUri check.
 export const getProductImageUri = (product, allProducts = []) => {
-    if (product.imageUri && product.imageUri.startsWith('http') && product.imageUri !== 'null' && product.imageUri !== 'undefined') {
-
-        return product.imageUri;
+    const directUri = product.imageUri || product.image_uri;
+    if (directUri && directUri.startsWith('http') && directUri !== 'null' && directUri !== 'undefined') {
+        return directUri;
     }
 
     const prodTag = getProductTag(product);
@@ -4690,23 +4690,26 @@ async function handleIntent(intentResult, session, products, from) {
                 return buildGuidedFallbackReply(session);
             }
 
-            // If the query is specifically asking for polo fit pants, route directly to Polo Fit White Pant
-            const isPoloPantQuery = (queryWords.includes('polo') || cleanedQ.includes('polo')) &&
+            // If the query is specifically asking for polo fit pants, route directly to Polofit Pant
+            const isPoloPantQuery = (queryWords.includes('polo') || cleanedQ.includes('polo') || queryWords.includes('polofit') || cleanedQ.includes('polofit')) &&
                 (queryWords.includes('pant') || cleanedQ.includes('pant') || queryWords.includes('pants') || cleanedQ.includes('pants') || queryWords.includes('fit') || cleanedQ.includes('fit')) &&
+                colorTerms.length === 0 && !compoundColorMatch &&
                 !queryWords.includes('tshirt') && !cleanedQ.includes('tshirt') && !queryWords.includes('t-shirt') && !cleanedQ.includes('t-shirt') && !cleanedQ.includes('t shirt');
             if (isPoloPantQuery) {
                 const poloPantProducts = inStock.filter(p =>
+                    (p.category || '').toLowerCase().includes('polofit') ||
                     (p.category || '').toLowerCase().includes('polo fit') ||
+                    (p.name || '').toLowerCase().includes('polofit') ||
                     (p.name || '').toLowerCase().includes('polo fit') ||
-                    (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('polo fit')))
+                    (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('polofit') || (c || '').toLowerCase().includes('polo fit')))
                 );
                 if (poloPantProducts.length > 0) {
                     session.selectedParentCategory = 'Pants';
-                    session.selectedSubCategory = 'Polo Fit White Pant';
+                    session.selectedSubCategory = 'Polofit Pant';
                     if (poloPantProducts.length > 1) {
                         session.searchProducts = poloPantProducts;
                         session.state = "AWAITING_SUBCATEGORY_SELECTION";
-                        return await prepareProductsPageResponse(session, products, '👖 Polo Fit White Pant', { subCategoryDisplayName: 'Polo Fit White Pant' });
+                        return await prepareProductsPageResponse(session, products, '👖 Polofit Pant', { subCategoryDisplayName: 'Polofit Pant' });
                     }
                     return buildCategoryAvailableReply(poloPantProducts[0], products);
                 }
@@ -4980,14 +4983,14 @@ async function handleIntent(intentResult, session, products, from) {
             }
 
             // Specific routing for Polo Fit Pants queries:
-            // When customer types "polo fit pant", "polo fit pants", "polo pant", "polo pants", "polo fit", etc.
-            const isPoloPantSearch = (cleanedQ.includes('polo') || queryWords.includes('polo')) &&
+            // When customer types "polo fit pant", "polo fit pants", "polo pant", "polo pants", "polofit", "polofit pant", etc.
+            const isPoloPantSearch = (cleanedQ.includes('polo') || queryWords.includes('polo') || cleanedQ.includes('polofit') || queryWords.includes('polofit')) &&
                 (cleanedQ.includes('pant') || queryWords.includes('pant') || cleanedQ.includes('pants') || queryWords.includes('pants') || cleanedQ.includes('fit') || queryWords.includes('fit')) &&
                 !cleanedQ.includes('tshirt') && !cleanedQ.includes('t shirt') && !cleanedQ.includes('t-shirt') &&
                 !queryWords.includes('tshirt') && !queryWords.includes('t-shirt');
             if (isPoloPantSearch) {
-                const poloPantCat = inStock.find(p => (p.category || '').toLowerCase().includes('polo fit'))?.category
-                    || 'Polo Fit White Pant';
+                const poloPantCat = inStock.find(p => (p.category || '').toLowerCase().includes('polofit') || (p.category || '').toLowerCase().includes('polo fit'))?.category
+                    || 'Polofit Pant';
                 bestCategory = poloPantCat;
             }
 
@@ -5043,8 +5046,10 @@ async function handleIntent(intentResult, session, products, from) {
                             (p.name || '').toLowerCase().includes('brush');
                     }
                     if (isPoloPantSearch) {
-                        return (p.category || '').toLowerCase().includes('polo fit') ||
-                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('polo fit'))) ||
+                        return (p.category || '').toLowerCase().includes('polofit') ||
+                            (p.category || '').toLowerCase().includes('polo fit') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('polofit') || (c || '').toLowerCase().includes('polo fit'))) ||
+                            (p.name || '').toLowerCase().includes('polofit') ||
                             (p.name || '').toLowerCase().includes('polo fit');
                     }
                     if (isPoloOrTshirtSearch) {
