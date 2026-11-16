@@ -5138,15 +5138,18 @@ async function handleIntent(intentResult, session, products, from) {
                     const isWithoutPocket = /\b(without|with\s*out|no)\s*pocket\b/i.test(query);
                     const isWithPocket = !isWithoutPocket && /\b(with\s*pocket|pocket)\b/i.test(query);
 
+                    // Pick the newest in-stock White T-Shirt by id or image upload date
+                    const newestWhiteProduct = [...categoryProducts].sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0] || categoryProducts[0];
+
                     if (isWithoutPocket) {
-                        const withoutProduct = categoryProducts.find(p => /without\s*pocket/i.test(p.name)) || categoryProducts[0];
+                        const withoutProduct = categoryProducts.find(p => /without\s*pocket/i.test(p.name)) || newestWhiteProduct;
                         return buildSpecificProductReply(withoutProduct, products);
                     } else if (isWithPocket) {
-                        const withProduct = categoryProducts.find(p => /with\s*pocket/i.test(p.name) && !/without/i.test(p.name)) || categoryProducts[0];
+                        const withProduct = categoryProducts.find(p => /with\s*pocket/i.test(p.name) && !/without/i.test(p.name)) || newestWhiteProduct;
                         return buildSpecificProductReply(withProduct, products);
                     } else {
                         // Customer asked for "white t shirt" generally -> send sample product card with common category link
-                        const sampleProduct = categoryProducts.find(p => /without\s*pocket/i.test(p.name)) || categoryProducts[0];
+                        const sampleProduct = newestWhiteProduct;
                         return buildSpecificProductReply(sampleProduct, products, {
                             title: '*White T Shirts*',
                             url: getCategoryUrl('white t-shirt')
