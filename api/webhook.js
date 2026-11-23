@@ -4987,10 +4987,12 @@ async function handleIntent(intentResult, session, products, from) {
 
             // Specific routing for party wear queries:
             const isPartyWearSearch = cleanedQ.includes('party') || queryWords.includes('party') ||
-                cleanedQ.includes('partywear') || queryWords.includes('partywear');
+                cleanedQ.includes('partywear') || queryWords.includes('partywear') ||
+                cleanedQ.includes('paryy') || queryWords.includes('paryy');
             if (isPartyWearSearch) {
-                const partyWearCat = inStock.find(p => (p.category || '').toLowerCase() === 'party wear shirts')?.category
-                    || 'Party Wear Shirts';
+                const partyWearCat = inStock.find(p => (p.category || '').toLowerCase() === 'party wear')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('party'))?.category
+                    || 'Party Wear';
                 bestCategory = partyWearCat;
             }
 
