@@ -3353,7 +3353,7 @@ function detectIntent(text, products = [], session = null) {
         foundCategory = 'Pants';
     }
     if (!foundCategory && (/\bhood(y|ies|ie)?\b/i.test(t) || t.includes('hood'))) {
-        foundCategory = 'Hoody';
+        foundCategory = 'Hoodies';
     }
     if (!foundCategory && /\bboot\s*cut(s)?\b/i.test(t)) {
         foundCategory = 'Pants';
@@ -3455,9 +3455,9 @@ function matchParentCategory(text, parentCategories) {
     // T-Shirts keys must come before the plain 'shirt'/'shirts' keys: t.includes('shirt') is true
     // for "t-shirts" too, so checking 'shirt' first would misclassify T-Shirts input as Shirts.
     const mappings = {
-        'hoody': 'Hoody',
-        'hoodie': 'Hoody',
-        'hoodies': 'Hoody',
+        'hoody': 'Hoodies',
+        'hoodie': 'Hoodies',
+        'hoodies': 'Hoodies',
         'new arrival': 'New Arrivals',
         'new arrivals': 'New Arrivals',
         'tshirt': 'T-Shirts',
@@ -5063,6 +5063,15 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = embroideredCat;
             }
 
+            // Specific routing for Hoodies queries:
+            const isHoodieSearch = cleanedQ.includes('hood') || queryWords.some(w => w.includes('hood'));
+            if (isHoodieSearch) {
+                const hoodieCat = inStock.find(p => (p.category || '').toLowerCase() === 'hoodies')?.category
+                    || inStock.find(p => (p.category || '').toLowerCase().includes('hood'))?.category
+                    || 'Hoodies';
+                bestCategory = hoodieCat;
+            }
+
             const categoryProducts = applyPriceFilter(
                 inStock.filter(p => {
                     if (isLinenPantSearch) {
@@ -5139,6 +5148,11 @@ async function handleIntent(intentResult, session, products, from) {
                         return (p.category || '').toLowerCase().includes('bottom embroidery') ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('bottom embroidery'))) ||
                             (p.name || '').toLowerCase().includes('bottom embroidery');
+                    }
+                    if (isHoodieSearch) {
+                        return (p.category || '').toLowerCase().includes('hood') ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('hood'))) ||
+                            (p.name || '').toLowerCase().includes('hood');
                     }
                     const target = (bestCategory || '').toLowerCase().trim();
                     const pCat = (p.category || '').toLowerCase().trim();
