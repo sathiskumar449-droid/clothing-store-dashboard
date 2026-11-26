@@ -4765,9 +4765,11 @@ async function handleIntent(intentResult, session, products, from) {
             // Threshold of 3 requires at least one category-NAME-level hit (weight 2) plus
             // something else, so a single loose weight-1 title mention can't trigger this alone.
             if (bestFullCategory && bestFullScore >= 3) {
+                const normBestFull = bestFullCategory.toLowerCase().replace(/s\b/g, '').trim();
                 const hasStock = products.some(p =>
                     Number(p.stock) > 0 &&
-                    (p.category === bestFullCategory || (Array.isArray(p.categories) && p.categories.includes(bestFullCategory))));
+                    ((p.category || '').toLowerCase().replace(/s\b/g, '').trim() === normBestFull ||
+                     (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().replace(/s\b/g, '').trim() === normBestFull))));
                 if (!hasStock) {
                     return buildCategoryOutOfStockReply(bestFullCategory);
                 }
@@ -5072,6 +5074,16 @@ async function handleIntent(intentResult, session, products, from) {
                 bestCategory = hoodieCat;
             }
 
+            // Specific routing for Collar T-Shirt queries (excluding Chinese collar shirts):
+            const isCollarTShirtSearch = !isChineseCollarSearch &&
+                (cleanedQ.includes('collar') || queryWords.includes('collar')) &&
+                (cleanedQ.includes('tshirt') || cleanedQ.includes('t shirt') || cleanedQ.includes('thsirt') || queryWords.includes('tshirt') || queryWords.includes('thsirt'));
+            if (isCollarTShirtSearch) {
+                const collarCat = inStock.find(p => (p.category || '').toLowerCase() === 'collar t shirt')?.category
+                    || 'Collar T Shirt';
+                bestCategory = collarCat;
+            }
+
             const categoryProducts = applyPriceFilter(
                 inStock.filter(p => {
                     if (isLinenPantSearch) {
@@ -5153,6 +5165,11 @@ async function handleIntent(intentResult, session, products, from) {
                         return (p.category || '').toLowerCase().includes('hood') ||
                             (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase().includes('hood'))) ||
                             (p.name || '').toLowerCase().includes('hood');
+                    }
+                    if (isCollarTShirtSearch) {
+                        return (p.category || '').toLowerCase() === 'collar t shirt' ||
+                            (Array.isArray(p.categories) && p.categories.some(c => (c || '').toLowerCase() === 'collar t shirt')) ||
+                            (p.name || '').toLowerCase().startsWith('collar t shirt -');
                     }
                     const target = (bestCategory || '').toLowerCase().trim();
                     const pCat = (p.category || '').toLowerCase().trim();
